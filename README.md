@@ -187,7 +187,7 @@ Si estás tomando el relevo de este proyecto, esto es lo mínimo que necesitas s
 
 ## Créditos
 
-Desarrollado como proyecto de **Servicio Social Universitario** por **[Tu Nombre]** · [tu-email@universidad.edu.mx]
+Desarrollado como proyecto de **Servicio Social Universitario** por **[Tania Hdz Lira]** · [therna24@itam.mx]
 
 Datos agronómicos basados en el catálogo de plantas del huerto universitario.
 
