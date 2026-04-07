@@ -1,0 +1,1335 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Huerto Universitario · Tracker</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --soil: #3d2b1f;
+    --soil-light: #5a3e2b;
+    --leaf: #4a7c59;
+    --leaf-bright: #6ab04c;
+    --harvest: #e8a838;
+    --harvest-glow: #f5c842;
+    --water: #4a9eba;
+    --alert: #c0392b;
+    --alert-soft: #e74c3c;
+    --compost: #8b6914;
+    --parchment: #f5f0e8;
+    --parchment-dark: #ede5d0;
+    --ink: #1a1208;
+    --ink-soft: #3d2b1f;
+    --panel: #faf7f0;
+    --border: #c8b99a;
+    --shadow: rgba(61,43,31,0.15);
+    --transplant: #7b6ef6;
+    --germinate: #22b573;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--parchment);
+    color: var(--ink);
+    min-height: 100vh;
+    background-image:
+      radial-gradient(ellipse at 10% 0%, rgba(74,124,89,0.08) 0%, transparent 50%),
+      radial-gradient(ellipse at 90% 100%, rgba(232,168,56,0.06) 0%, transparent 50%);
+  }
+
+  /* ── HEADER ── */
+  header {
+    background: var(--soil);
+    color: var(--parchment);
+    padding: 0 2rem;
+    display: flex; align-items: center; gap: 1.5rem;
+    height: 64px;
+    box-shadow: 0 2px 12px var(--shadow);
+    position: sticky; top: 0; z-index: 100;
+  }
+  header h1 {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.4rem;
+    letter-spacing: 0.03em;
+    flex: 1;
+  }
+  header h1 span { color: var(--harvest-glow); }
+  .header-status {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.7rem;
+    opacity: 0.7;
+    display: flex; align-items: center; gap: 0.5rem;
+  }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #888; transition: background 0.4s; }
+  .status-dot.online { background: var(--leaf-bright); box-shadow: 0 0 6px var(--leaf-bright); }
+  .status-dot.error { background: var(--alert); }
+
+  /* ── LAYOUT ── */
+  .app { display: grid; grid-template-columns: 280px 1fr 320px; height: calc(100vh - 64px); overflow: hidden; }
+
+  /* ── LEFT PANEL: PLANT CATALOGUE ── */
+  .panel-left {
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .panel-header {
+    padding: 1rem 1.2rem 0.8rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--parchment-dark);
+  }
+  .panel-header h2 {
+    font-family: 'Playfair Display', serif;
+    font-size: 1rem;
+    margin-bottom: 0.5rem;
+  }
+  .search-box {
+    width: 100%; padding: 0.4rem 0.7rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--parchment);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.8rem;
+    color: var(--ink);
+  }
+  .search-box:focus { outline: none; border-color: var(--leaf); }
+  .filter-tabs {
+    display: flex; gap: 0.3rem; margin-top: 0.5rem; flex-wrap: wrap;
+  }
+  .filter-tab {
+    padding: 0.2rem 0.6rem;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    background: transparent;
+    font-size: 0.7rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: 'DM Sans', sans-serif;
+    color: var(--ink-soft);
+  }
+  .filter-tab.active {
+    background: var(--leaf);
+    border-color: var(--leaf);
+    color: white;
+  }
+  .plant-list { flex: 1; overflow-y: auto; padding: 0.5rem; }
+  .plant-card {
+    padding: 0.7rem 0.8rem;
+    margin-bottom: 0.4rem;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    cursor: grab;
+    transition: all 0.15s;
+    background: var(--parchment);
+    display: flex; align-items: center; gap: 0.6rem;
+    user-select: none;
+  }
+  .plant-card:hover { border-color: var(--leaf); background: white; transform: translateX(2px); }
+  .plant-card.dragging { opacity: 0.4; }
+  .plant-icon {
+    width: 32px; height: 32px; border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.2rem; flex-shrink: 0;
+  }
+  .plant-info { min-width: 0; }
+  .plant-name { font-size: 0.78rem; font-weight: 500; line-height: 1.2; }
+  .plant-meta { font-size: 0.65rem; color: #888; font-family: 'DM Mono', monospace; }
+  .type-badge {
+    font-size: 0.6rem; padding: 0.1rem 0.4rem; border-radius: 10px; margin-left: auto; flex-shrink: 0;
+    font-family: 'DM Mono', monospace; font-weight: 500;
+  }
+  .type-hoja { background: #e8f5e9; color: #2e7d32; }
+  .type-raíz { background: #fff3e0; color: #e65100; }
+  .type-fruto { background: #fce4ec; color: #c62828; }
+  .type-flor { background: #f3e5f5; color: #6a1b9a; }
+  .type-tallo { background: #e8eaf6; color: #283593; }
+  .type-semilla { background: #f9fbe7; color: #558b2f; }
+
+  /* ── CENTER: GARDEN MAP ── */
+  .panel-center {
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .garden-toolbar {
+    padding: 0.7rem 1.2rem;
+    background: var(--parchment-dark);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 0.8rem;
+    flex-wrap: wrap;
+  }
+  .garden-toolbar h2 {
+    font-family: 'Playfair Display', serif;
+    font-size: 1rem;
+    flex: 1;
+  }
+  .btn {
+    padding: 0.35rem 0.8rem; border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--parchment);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all 0.15s;
+    color: var(--ink);
+  }
+  .btn:hover { background: white; border-color: var(--leaf); color: var(--leaf); }
+  .btn-primary { background: var(--leaf); border-color: var(--leaf); color: white; }
+  .btn-primary:hover { background: #3d6b4a; border-color: #3d6b4a; color: white; }
+  .btn-danger { border-color: var(--alert); color: var(--alert); }
+  .btn-danger:hover { background: var(--alert); color: white; }
+  .btn-ai { background: var(--soil); border-color: var(--soil); color: var(--harvest-glow); }
+  .btn-ai:hover { background: var(--soil-light); }
+
+  .garden-scroll { flex: 1; overflow: auto; padding: 1.5rem; background: #e8e0d0;
+    background-image: repeating-linear-gradient(0deg, transparent, transparent 39px, rgba(0,0,0,0.04) 39px, rgba(0,0,0,0.04) 40px),
+    repeating-linear-gradient(90deg, transparent, transparent 39px, rgba(0,0,0,0.04) 39px, rgba(0,0,0,0.04) 40px);
+  }
+  .garden-grid {
+    display: grid;
+    gap: 12px;
+    width: fit-content;
+    min-width: 100%;
+  }
+
+  /* ── MESA DE CULTIVO ── */
+  .bed {
+    border: 2px solid var(--soil);
+    border-radius: 10px;
+    background: #c8b080;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4'%3E%3Ccircle cx='2' cy='2' r='0.8' fill='rgba(0,0,0,0.08)'/%3E%3C/svg%3E");
+    position: relative;
+    transition: all 0.2s;
+    min-width: 120px; min-height: 100px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .bed.drag-over { border-color: var(--leaf-bright); background: #b5c98a; box-shadow: 0 0 0 3px rgba(106,176,76,0.3); }
+  .bed.has-plant { background: #8fa867; cursor: pointer; }
+  .bed.urgent { border-color: var(--alert); animation: pulse-red 2s infinite; }
+  .bed.harvest-soon { border-color: var(--harvest); animation: pulse-orange 2.5s infinite; }
+  .bed.needs-transplant { border-color: var(--transplant); }
+  @keyframes pulse-red {
+    0%,100% { box-shadow: 0 0 0 0 rgba(192,57,43,0.3); }
+    50% { box-shadow: 0 0 0 6px rgba(192,57,43,0); }
+  }
+  @keyframes pulse-orange {
+    0%,100% { box-shadow: 0 0 0 0 rgba(232,168,56,0.4); }
+    50% { box-shadow: 0 0 0 6px rgba(232,168,56,0); }
+  }
+  .bed-inner { padding: 0.6rem; text-align: center; width: 100%; }
+  .bed-label { font-size: 0.6rem; font-family: 'DM Mono', monospace; color: rgba(255,255,255,0.7); margin-bottom: 0.3rem; }
+  .bed-plant-icon { font-size: 2rem; display: block; line-height: 1; }
+  .bed-plant-name { font-size: 0.7rem; font-weight: 600; color: white; text-shadow: 0 1px 3px rgba(0,0,0,0.5); margin-top: 0.2rem; }
+  .bed-days { font-size: 0.65rem; font-family: 'DM Mono', monospace; color: rgba(255,255,255,0.85); margin-top: 0.1rem; }
+  .bed-alerts { display: flex; gap: 2px; justify-content: center; margin-top: 0.3rem; flex-wrap: wrap; }
+  .alert-dot { width: 8px; height: 8px; border-radius: 50%; cursor: help; }
+  .ad-harvest { background: var(--harvest-glow); }
+  .ad-water { background: var(--water); }
+  .ad-nitrogen { background: #8bc34a; }
+  .ad-potassium { background: #ff7043; }
+  .ad-compost { background: var(--compost); }
+  .ad-transplant { background: var(--transplant); }
+  .bed-empty-hint { font-size: 0.7rem; color: rgba(100,70,40,0.5); font-style: italic; }
+
+  /* ── RIGHT PANEL: DETAIL + AI ── */
+  .panel-right {
+    background: var(--panel);
+    border-left: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .detail-header {
+    padding: 1rem 1.2rem 0.8rem;
+    background: var(--parchment-dark);
+    border-bottom: 1px solid var(--border);
+  }
+  .detail-header h2 { font-family: 'Playfair Display', serif; font-size: 1rem; }
+  .detail-scroll { flex: 1; overflow-y: auto; padding: 1rem 1.2rem; }
+
+  .detail-empty {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    height: 200px; color: #aaa; text-align: center; gap: 0.5rem;
+  }
+  .detail-empty span { font-size: 2.5rem; }
+  .detail-empty p { font-size: 0.8rem; }
+
+  .detail-card { background: white; border-radius: 10px; border: 1px solid var(--border); overflow: hidden; margin-bottom: 1rem; }
+  .detail-card-header {
+    padding: 0.8rem 1rem;
+    background: var(--soil);
+    color: var(--parchment);
+    display: flex; align-items: center; gap: 0.7rem;
+  }
+  .detail-card-header .plant-icon-lg { font-size: 1.8rem; }
+  .detail-card-header h3 { font-family: 'Playfair Display', serif; font-size: 1rem; }
+  .detail-card-header .bed-id { font-family: 'DM Mono', monospace; font-size: 0.65rem; opacity: 0.6; }
+  .detail-body { padding: 1rem; }
+
+  .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; margin-bottom: 1rem; }
+  .info-item label { font-size: 0.65rem; color: #888; font-family: 'DM Mono', monospace; display: block; margin-bottom: 0.1rem; }
+  .info-item .val { font-size: 0.82rem; font-weight: 500; }
+  .info-item.full { grid-column: 1/-1; }
+
+  .progress-bar { height: 6px; border-radius: 3px; background: #eee; overflow: hidden; margin-top: 0.3rem; }
+  .progress-fill { height: 100%; border-radius: 3px; transition: width 0.5s; }
+
+  .nutrient-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 0.5rem; margin-bottom: 1rem; }
+  .nutrient-item { background: var(--parchment); border-radius: 6px; padding: 0.5rem; text-align: center; }
+  .nutrient-item .n-label { font-size: 0.6rem; font-family: 'DM Mono', monospace; color: #888; display: block; }
+  .nutrient-item .n-val { font-size: 1.1rem; font-weight: 700; }
+  .nutrient-item .n-bar { height: 4px; border-radius: 2px; margin-top: 4px; }
+  .n-nitrogen .n-val { color: #2e7d32; } .n-nitrogen .n-bar { background: #2e7d32; }
+  .n-phosphorus .n-val { color: #e65100; } .n-phosphorus .n-bar { background: #e65100; }
+  .n-potassium .n-val { color: #6a1b9a; } .n-potassium .n-bar { background: #6a1b9a; }
+
+  .section-title { font-size: 0.7rem; font-family: 'DM Mono', monospace; color: #888; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem; }
+
+  .alerts-list { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 1rem; }
+  .alert-item {
+    padding: 0.5rem 0.7rem; border-radius: 6px;
+    font-size: 0.75rem; display: flex; align-items: center; gap: 0.5rem;
+  }
+  .alert-item.warn { background: #fff8e1; border-left: 3px solid var(--harvest); }
+  .alert-item.danger { background: #ffebee; border-left: 3px solid var(--alert); }
+  .alert-item.info { background: #e8f5e9; border-left: 3px solid var(--leaf); }
+  .alert-item.purple { background: #f3e5f5; border-left: 3px solid var(--transplant); }
+
+  .form-group { margin-bottom: 0.8rem; }
+  .form-group label { font-size: 0.68rem; font-family: 'DM Mono', monospace; color: #666; display: block; margin-bottom: 0.3rem; }
+  .form-group input, .form-group select, .form-group textarea {
+    width: 100%; padding: 0.4rem 0.6rem;
+    border: 1px solid var(--border); border-radius: 6px;
+    font-family: 'DM Sans', sans-serif; font-size: 0.8rem;
+    background: var(--parchment); color: var(--ink);
+  }
+  .form-group input:focus, .form-group select:focus { outline: none; border-color: var(--leaf); }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+  .slider-group { display: flex; align-items: center; gap: 0.5rem; }
+  .slider-group input[type=range] { flex: 1; }
+  .slider-group .slider-val { font-family: 'DM Mono', monospace; font-size: 0.75rem; min-width: 28px; text-align: right; }
+
+  /* ── AI CHAT ── */
+  .ai-section { border-top: 1px solid var(--border); }
+  .ai-toggle {
+    padding: 0.8rem 1.2rem;
+    background: var(--soil);
+    color: var(--parchment);
+    display: flex; align-items: center; justify-content: space-between;
+    cursor: pointer;
+    font-size: 0.8rem;
+    user-select: none;
+  }
+  .ai-toggle span { color: var(--harvest-glow); font-weight: 600; font-family: 'DM Mono', monospace; }
+  .ai-body { padding: 0.8rem 1.2rem; background: #1a1208; max-height: 300px; overflow: hidden; display: none; flex-direction: column; gap: 0.5rem; }
+  .ai-body.open { display: flex; }
+  .ai-messages { flex: 1; overflow-y: auto; max-height: 180px; display: flex; flex-direction: column; gap: 0.4rem; }
+  .ai-msg { padding: 0.5rem 0.7rem; border-radius: 6px; font-size: 0.75rem; line-height: 1.4; }
+  .ai-msg.user { background: rgba(74,124,89,0.2); color: #a8d8b0; align-self: flex-end; max-width: 85%; }
+  .ai-msg.ai { background: rgba(232,168,56,0.1); color: #d4b060; max-width: 95%; }
+  .ai-msg.loading { color: #888; font-style: italic; }
+  .ai-input-row { display: flex; gap: 0.5rem; }
+  .ai-input-row input {
+    flex: 1; padding: 0.4rem 0.6rem;
+    background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 6px; color: var(--parchment);
+    font-family: 'DM Sans', sans-serif; font-size: 0.75rem;
+  }
+  .ai-input-row input:focus { outline: none; border-color: var(--harvest-glow); }
+  .ai-send { padding: 0.4rem 0.8rem; background: var(--harvest); border: none; border-radius: 6px; color: white; cursor: pointer; font-size: 0.8rem; }
+  .ai-send:hover { background: var(--harvest-glow); color: var(--ink); }
+
+  /* ── MODAL ── */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+    display: none; align-items: center; justify-content: center; z-index: 1000;
+    backdrop-filter: blur(3px);
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--parchment); border-radius: 12px;
+    width: min(480px, 95vw); max-height: 85vh; overflow-y: auto;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    animation: modal-in 0.2s ease;
+  }
+  @keyframes modal-in {
+    from { transform: scale(0.95) translateY(10px); opacity: 0; }
+    to { transform: scale(1) translateY(0); opacity: 1; }
+  }
+  .modal-header {
+    padding: 1.2rem 1.5rem 1rem;
+    background: var(--soil); color: var(--parchment);
+    border-radius: 12px 12px 0 0;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .modal-header h3 { font-family: 'Playfair Display', serif; font-size: 1.1rem; }
+  .modal-close { background: none; border: none; color: var(--parchment); font-size: 1.4rem; cursor: pointer; opacity: 0.7; }
+  .modal-close:hover { opacity: 1; }
+  .modal-body { padding: 1.5rem; }
+  .modal-footer { padding: 1rem 1.5rem; border-top: 1px solid var(--border); display: flex; gap: 0.7rem; justify-content: flex-end; }
+
+  /* ── TOAST ── */
+  #toast {
+    position: fixed; bottom: 1.5rem; right: 1.5rem;
+    background: var(--soil); color: var(--parchment);
+    padding: 0.7rem 1.2rem; border-radius: 8px;
+    font-size: 0.8rem; z-index: 9999;
+    transform: translateY(100px); opacity: 0;
+    transition: all 0.3s; pointer-events: none;
+    max-width: 280px;
+  }
+  #toast.show { transform: translateY(0); opacity: 1; }
+  #toast.green { background: var(--leaf); }
+  #toast.red { background: var(--alert); }
+
+  /* ── LEGEND ── */
+  .legend { display: flex; gap: 0.8rem; flex-wrap: wrap; font-size: 0.65rem; }
+  .legend-item { display: flex; align-items: center; gap: 0.3rem; }
+  .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+  /* ── CONFIG MODAL ── */
+  .config-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem 1rem; margin-bottom: 1rem; }
+  .config-item { display: flex; flex-direction: column; gap: 0.2rem; }
+  .config-item label { font-size: 0.65rem; font-family: 'DM Mono', monospace; color: #666; }
+  .config-item input { padding: 0.35rem 0.5rem; border: 1px solid var(--border); border-radius: 5px; font-size: 0.78rem; }
+
+  /* scrollbar */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🌿 Huerto <span>Universitario</span></h1>
+  <div class="header-status">
+    <div class="status-dot" id="statusDot"></div>
+    <span id="statusText">Conectando…</span>
+  </div>
+  <button class="btn" onclick="openConfig()">⚙ Configurar</button>
+  <button class="btn btn-primary" onclick="openAddBed()">+ Mesa</button>
+</header>
+
+<div class="app">
+  <!-- LEFT: Plant catalogue -->
+  <aside class="panel-left">
+    <div class="panel-header">
+      <h2>📋 Catálogo de Plantas</h2>
+      <input class="search-box" id="plantSearch" placeholder="Buscar planta…" oninput="filterPlants()">
+      <div class="filter-tabs" id="filterTabs">
+        <button class="filter-tab active" onclick="setFilter('all',this)">Todas</button>
+        <button class="filter-tab" onclick="setFilter('hoja',this)">Hoja</button>
+        <button class="filter-tab" onclick="setFilter('raíz',this)">Raíz</button>
+        <button class="filter-tab" onclick="setFilter('fruto',this)">Fruto</button>
+        <button class="filter-tab" onclick="setFilter('flor',this)">Flor</button>
+        <button class="filter-tab" onclick="setFilter('tallo',this)">Tallo</button>
+      </div>
+    </div>
+    <div class="plant-list" id="plantList"></div>
+  </aside>
+
+  <!-- CENTER: Garden map -->
+  <main class="panel-center">
+    <div class="garden-toolbar">
+      <h2>🗺 Mapa del Huerto</h2>
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:var(--harvest-glow)"></div> Cosechar pronto</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--alert)"></div> Urgente</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--transplant)"></div> Transplantar</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--water)"></div> Regar</div>
+      </div>
+      <button class="btn btn-ai" onclick="askAiOverview()">🤖 Revisar huerto con IA</button>
+    </div>
+    <div class="garden-scroll">
+      <div class="garden-grid" id="gardenGrid"></div>
+    </div>
+  </main>
+
+  <!-- RIGHT: Detail + AI -->
+  <aside class="panel-right">
+    <div class="detail-header">
+      <h2>🔍 Detalle</h2>
+    </div>
+    <div class="detail-scroll" id="detailPanel">
+      <div class="detail-empty">
+        <span>🌱</span>
+        <p>Selecciona una mesa de cultivo para ver detalles</p>
+      </div>
+    </div>
+    <div class="ai-section">
+      <div class="ai-toggle" onclick="toggleAI()">
+        <span>🤖 Asistente IA</span>
+        <span id="aiToggleIcon">▲</span>
+      </div>
+      <div class="ai-body" id="aiBody">
+        <div class="ai-messages" id="aiMessages">
+          <div class="ai-msg ai">Hola! Soy tu asistente del huerto. Puedo ayudarte con fechas de cosecha, alertas de nutrientes, rotación de cultivos y más. ¿En qué te ayudo?</div>
+        </div>
+        <div class="ai-input-row">
+          <input id="aiInput" placeholder="Pregunta algo sobre el huerto…" onkeydown="if(e.key==='Enter')sendAI()">
+          <button class="ai-send" onclick="sendAI()">↑</button>
+        </div>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<!-- MODAL: Add/Edit Bed -->
+<div class="modal-overlay" id="bedModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="bedModalTitle">Nueva Mesa de Cultivo</h3>
+      <button class="modal-close" onclick="closeModal('bedModal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Nombre / ID de la Mesa</label>
+        <input id="bedName" placeholder="Ej: Mesa A1, Cama Norte…">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Columna (posición X)</label>
+          <input id="bedCol" type="number" min="1" max="10" value="1">
+        </div>
+        <div class="form-group">
+          <label>Fila (posición Y)</label>
+          <input id="bedRow" type="number" min="1" max="10" value="1">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Planta asignada</label>
+        <select id="bedPlant">
+          <option value="">— Sin planta —</option>
+        </select>
+      </div>
+      <div id="plantDateFields" style="display:none">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Fecha de siembra</label>
+            <input id="bedSeedDate" type="date">
+          </div>
+          <div class="form-group">
+            <label>Fecha de trasplante</label>
+            <input id="bedTransplantDate" type="date">
+          </div>
+        </div>
+        <p class="section-title" style="margin-bottom:0.7rem">Niveles de Nutrientes del Suelo</p>
+        <div class="form-group">
+          <label>Nitrógeno (N) — nivel actual</label>
+          <div class="slider-group">
+            <input type="range" id="soilN" min="0" max="3" step="0.1" value="1.5" oninput="updateSliderVal('soilN','soilNVal')">
+            <span class="slider-val" id="soilNVal">1.5</span>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Fósforo (P) — nivel actual</label>
+          <div class="slider-group">
+            <input type="range" id="soilP" min="0" max="2" step="0.1" value="1" oninput="updateSliderVal('soilP','soilPVal')">
+            <span class="slider-val" id="soilPVal">1.0</span>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Potasio (K) — nivel actual</label>
+          <div class="slider-group">
+            <input type="range" id="soilK" min="0" max="2.5" step="0.1" value="1.2" oninput="updateSliderVal('soilK','soilKVal')">
+            <span class="slider-val" id="soilKVal">1.2</span>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Notas del equipo</label>
+          <textarea id="bedNotes" rows="2" placeholder="Observaciones, tratamientos, etc."></textarea>
+        </div>
+        <div class="form-group">
+          <label>¿Necesita composta?</label>
+          <select id="bedCompost">
+            <option value="no">No</option>
+            <option value="pronto">Pronto</option>
+            <option value="urgente">Urgente</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-danger" id="deleteBedBtn" onclick="deleteSelectedBed()" style="display:none;margin-right:auto">Eliminar Mesa</button>
+      <button class="btn" onclick="closeModal('bedModal')">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveBed()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Config -->
+<div class="modal-overlay" id="configModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>⚙ Configuración</h3>
+      <button class="modal-close" onclick="closeModal('configModal')">×</button>
+    </div>
+    <div class="modal-body">
+      <p class="section-title" style="margin-bottom:0.8rem">Firebase Realtime Database</p>
+      <div class="form-group">
+        <label>Firebase Database URL</label>
+        <input id="cfgFirebaseUrl" placeholder="https://tu-proyecto-default-rtdb.firebaseio.com">
+      </div>
+      <p style="font-size:0.72rem;color:#888;margin:-0.4rem 0 1rem">Obtén esto en Firebase Console → Realtime Database</p>
+      <p class="section-title" style="margin-bottom:0.8rem">Gemini API</p>
+      <div class="form-group">
+        <label>Gemini API Key</label>
+        <input id="cfgGeminiKey" type="password" placeholder="AIza…">
+      </div>
+      <p style="font-size:0.72rem;color:#888;margin:-0.4rem 0 1rem">Consigue tu key en <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:var(--leaf)">Google AI Studio</a></p>
+      <p class="section-title" style="margin-bottom:0.8rem">Diseño del Huerto</p>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Columnas del grid</label>
+          <input id="cfgCols" type="number" min="1" max="10" value="4">
+        </div>
+        <div class="form-group">
+          <label>Filas del grid</label>
+          <input id="cfgRows" type="number" min="1" max="10" value="3">
+        </div>
+      </div>
+      <p class="section-title" style="margin-bottom:0.8rem">Nombre del Huerto</p>
+      <div class="form-group">
+        <input id="cfgName" placeholder="Huerto Universitario">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('configModal')">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveConfig()">Guardar Configuración</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════
+//  PLANT DATABASE (from CSV)
+// ═══════════════════════════════════════════
+const PLANTS = [
+  {id:'ACELGA',name:'Acelga',type:'hoja',emoji:'🥬',photo:'',daysSeed:[50,70],daysTransplant:null,rootDepth:[30,60],N:1.5,P:1,K:1.2,waterMm:[25,35],minTemp:5,optTemp:'15-22',maxTemp:30,photoperiod:'6-8',spacing:[25,35],rowSpacing:40},
+  {id:'TOMATERA',name:'Tomatera',type:'fruto',emoji:'🍅',daysSeed:[90,120],daysTransplant:[60,80],rootDepth:[60,120],N:1,P:1,K:2,waterMm:[30,45],minTemp:10,optTemp:'18-25',maxTemp:35,photoperiod:'8-10',spacing:[40,60],rowSpacing:90},
+  {id:'LECHUGA_SILVESTRE',name:'Lactuca Serriola',type:'hoja',emoji:'🥗',daysSeed:[45,60],daysTransplant:null,rootDepth:[50,100],N:1.5,P:1,K:1,waterMm:[15,25],minTemp:5,optTemp:'15-22',maxTemp:32,photoperiod:'6-8',spacing:[25,30],rowSpacing:35},
+  {id:'APIO_SILVESTRE',name:'Apio Silvestre',type:'hoja',emoji:'🌿',daysSeed:[80,120],daysTransplant:null,rootDepth:[30,60],N:1.5,P:1,K:1.3,waterMm:[30,40],minTemp:8,optTemp:'15-21',maxTemp:30,photoperiod:'6-8',spacing:[25,30],rowSpacing:45},
+  {id:'CARDOSANTO',name:'Cardosanto',type:'hoja',emoji:'🌾',daysSeed:[70,120],daysTransplant:null,rootDepth:[50,100],N:0.8,P:1,K:1.2,waterMm:[10,20],minTemp:10,optTemp:'20-30',maxTemp:38,photoperiod:'6-8',spacing:[40,60],rowSpacing:70},
+  {id:'CILANTRO',name:'Cilantro',type:'hoja',emoji:'🌿',daysSeed:[90,120],daysTransplant:[30,45],rootDepth:[20,60],N:1.5,P:1,K:1,waterMm:[20,30],minTemp:5,optTemp:'15-22',maxTemp:30,photoperiod:'4-6',spacing:[15,20],rowSpacing:25},
+  {id:'OENOTHERA',name:'Oenothera Rosea',type:'hoja',emoji:'🌸',daysSeed:[60,90],daysTransplant:null,rootDepth:[40,80],N:1,P:1,K:1,waterMm:[10,20],minTemp:8,optTemp:'18-25',maxTemp:32,photoperiod:'6-8',spacing:[25,35],rowSpacing:35},
+  {id:'ARTEMISIA',name:'Artemisia',type:'hoja',emoji:'🌿',daysSeed:[90,120],daysTransplant:null,rootDepth:[60,100],N:1,P:1,K:1,waterMm:[10,20],minTemp:5,optTemp:'18-25',maxTemp:35,photoperiod:'6-8',spacing:[40,60],rowSpacing:70},
+  {id:'BOTON_ORO',name:'Botón de Oro',type:'hoja',emoji:'🌻',daysSeed:[90,120],daysTransplant:null,rootDepth:[100,200],N:1,P:1,K:1.3,waterMm:[15,30],minTemp:10,optTemp:'20-30',maxTemp:38,photoperiod:'6-8',spacing:[80,150],rowSpacing:150},
+  {id:'ZANAHORIA',name:'Zanahoria',type:'raíz',emoji:'🥕',daysSeed:[70,100],daysTransplant:null,rootDepth:[20,30],N:1,P:1,K:1.5,waterMm:[20,30],minTemp:7,optTemp:'16-21',maxTemp:30,photoperiod:'6-8',spacing:[5,10],rowSpacing:25},
+  {id:'CALENDULA',name:'Caléndula',type:'flor',emoji:'🌼',daysSeed:[50,60],daysTransplant:null,rootDepth:[30,50],N:1,P:1,K:1.2,waterMm:[15,25],minTemp:5,optTemp:'15-22',maxTemp:30,photoperiod:'6-8',spacing:[25,30],rowSpacing:35},
+  {id:'CICLAMEN',name:'Ciclamen',type:'flor',emoji:'🌺',daysSeed:[90,120],daysTransplant:null,rootDepth:[15,25],N:1,P:1,K:1.3,waterMm:[15,25],minTemp:5,optTemp:'12-18',maxTemp:25,photoperiod:'4-6',spacing:[20,25],rowSpacing:null},
+  {id:'LECHUGA',name:'Lechuga',type:'hoja',emoji:'🥬',daysSeed:[30,50],daysTransplant:[50,70],rootDepth:[20,40],N:1.5,P:1,K:1,waterMm:[20,30],minTemp:5,optTemp:'12-20',maxTemp:28,photoperiod:'4-6',spacing:[20,30],rowSpacing:35},
+  {id:'POTENTILLA',name:'Potentilla Norvegica',type:'hoja',emoji:'🌿',daysSeed:[60,90],daysTransplant:null,rootDepth:[30,60],N:1,P:1,K:1,waterMm:[15,25],minTemp:5,optTemp:'15-22',maxTemp:30,photoperiod:'6-8',spacing:[25,40],rowSpacing:40},
+  {id:'RABIZON',name:'Rabizón',type:'raíz',emoji:'🌱',daysSeed:[25,40],daysTransplant:null,rootDepth:[15,25],N:1,P:1,K:1.4,waterMm:[15,25],minTemp:5,optTemp:'10-20',maxTemp:28,photoperiod:'4-6',spacing:[5,8],rowSpacing:22},
+  {id:'ALBAHACA',name:'Albahaca',type:'hoja',emoji:'🌿',daysSeed:[30,45],daysTransplant:null,rootDepth:[30,50],N:1.4,P:1,K:1,waterMm:[20,30],minTemp:10,optTemp:'20-30',maxTemp:35,photoperiod:'6-8',spacing:[20,30],rowSpacing:35},
+  {id:'SANGUINUELO',name:'Sanguiñuelo Florido',type:'flor',emoji:'🌸',daysSeed:[90,120],daysTransplant:null,rootDepth:[60,120],N:1,P:1,K:1.3,waterMm:[15,30],minTemp:10,optTemp:'20-30',maxTemp:38,photoperiod:'6-8',spacing:[100,200],rowSpacing:300},
+  {id:'DELOSPERMA',name:'Delosperma Cooperi',type:'flor',emoji:'🌺',daysSeed:[60,90],daysTransplant:null,rootDepth:[15,30],N:0.8,P:1,K:1.2,waterMm:[5,15],minTemp:-5,optTemp:'18-28',maxTemp:38,photoperiod:'6-8',spacing:[30,50],rowSpacing:null},
+  {id:'COL',name:'Col',type:'hoja',emoji:'🥦',daysSeed:null,daysTransplant:[80,120],rootDepth:[30,60],N:1.5,P:1,K:1.3,waterMm:[25,35],minTemp:5,optTemp:'15-20',maxTemp:28,photoperiod:'6-8',spacing:[40,50],rowSpacing:60},
+  {id:'CHIA',name:'Chía',type:'semilla',emoji:'🌱',daysSeed:[90,150],daysTransplant:null,rootDepth:[60,100],N:1,P:1,K:1.5,waterMm:[15,25],minTemp:12,optTemp:'18-26',maxTemp:35,photoperiod:'10-12',spacing:[30,50],rowSpacing:60},
+  {id:'ALOE_ARBORESCENS',name:'Aloe Arborescens',type:'hoja',emoji:'🪴',daysSeed:[240,365],daysTransplant:null,rootDepth:[30,60],N:0.8,P:1,K:1.2,waterMm:[5,15],minTemp:5,optTemp:'18-28',maxTemp:38,photoperiod:'6-8',spacing:[80,100],rowSpacing:null},
+  {id:'OPUNTIA',name:'Opuntia Monacantha',type:'tallo',emoji:'🌵',daysSeed:[180,365],daysTransplant:null,rootDepth:[20,50],N:0.7,P:0.8,K:1.2,waterMm:[5,15],minTemp:0,optTemp:'20-30',maxTemp:40,photoperiod:'6-8',spacing:[100,200],rowSpacing:null},
+  {id:'CRASSULA',name:'Crassula Capitella',type:'hoja',emoji:'🪴',daysSeed:[60,90],daysTransplant:null,rootDepth:[10,20],N:0.7,P:0.8,K:1.2,waterMm:[5,10],minTemp:5,optTemp:'18-28',maxTemp:35,photoperiod:'4-6',spacing:[20,30],rowSpacing:null},
+  {id:'BERBERIS',name:'Berberis Julianae',type:'fruto',emoji:'🫐',daysSeed:[365,730],daysTransplant:null,rootDepth:[40,80],N:1,P:1,K:1,waterMm:[10,20],minTemp:-10,optTemp:'15-25',maxTemp:35,photoperiod:'6-8',spacing:[80,120],rowSpacing:null},
+  {id:'VID',name:'Vid',type:'fruto',emoji:'🍇',daysSeed:[150,200],daysTransplant:null,rootDepth:[100,300],N:1,P:1,K:1.6,waterMm:[15,30],minTemp:-5,optTemp:'18-30',maxTemp:38,photoperiod:'7-9',spacing:[150,300],rowSpacing:250},
+  {id:'NOPAL',name:'Nopal',type:'tallo',emoji:'🌵',daysSeed:[60,90],daysTransplant:null,rootDepth:[20,60],N:1,P:0.8,K:1,waterMm:[3,10],minTemp:-3,optTemp:'18-30',maxTemp:40,photoperiod:'6-8',spacing:[100,200],rowSpacing:250},
+  {id:'SABILA',name:'Sábila (Aloe Vera)',type:'hoja',emoji:'🪴',daysSeed:[240,365],daysTransplant:null,rootDepth:[20,40],N:0.6,P:0.6,K:1,waterMm:[3,8],minTemp:5,optTemp:'18-30',maxTemp:38,photoperiod:'6-8',spacing:[40,60],rowSpacing:null},
+  {id:'ECHEVERIA',name:'Echeveria Agavoides',type:'hoja',emoji:'🪴',daysSeed:[60,120],daysTransplant:null,rootDepth:[10,20],N:0.5,P:0.5,K:1,waterMm:[3,6],minTemp:5,optTemp:'18-28',maxTemp:35,photoperiod:'4-6',spacing:[15,25],rowSpacing:null},
+  {id:'ALGAZUL',name:'Algazul',type:'hoja',emoji:'🌿',daysSeed:[60,90],daysTransplant:null,rootDepth:[20,40],N:1,P:1,K:1.2,waterMm:[15,25],minTemp:10,optTemp:'18-28',maxTemp:35,photoperiod:'6-8',spacing:[20,30],rowSpacing:null},
+  {id:'CIRUELO',name:'Ciruelo Europeo',type:'fruto',emoji:'🍑',daysSeed:[150,180],daysTransplant:null,rootDepth:[100,200],N:1,P:1,K:1.5,waterMm:[20,35],minTemp:-10,optTemp:'15-25',maxTemp:35,photoperiod:'7-9',spacing:[400,600],rowSpacing:550},
+  {id:'ALIGUSTRE',name:'Aligustre',type:'hoja',emoji:'🌳',daysSeed:[90,180],daysTransplant:null,rootDepth:[50,100],N:1.2,P:1,K:1,waterMm:[15,25],minTemp:-5,optTemp:'15-30',maxTemp:38,photoperiod:'6-8',spacing:[50,100],rowSpacing:null},
+];
+
+// ═══════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════
+let config = {
+  firebaseUrl: '',
+  geminiKey: '',
+  cols: 4,
+  rows: 3,
+  gardenName: 'Huerto Universitario'
+};
+let beds = {}; // { bedId: { name, col, row, plantId, seedDate, transplantDate, soilN, soilP, soilK, notes, compost, lastWatered } }
+let selectedBedId = null;
+let editingBedId = null;
+let currentFilter = 'all';
+let dragPlantId = null;
+let firebaseRef = null;
+
+// ═══════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════
+function init() {
+  loadLocalConfig();
+  populatePlantList();
+  renderGarden();
+  populatePlantSelect();
+  document.getElementById('bedPlant').addEventListener('change', function() {
+    document.getElementById('plantDateFields').style.display = this.value ? 'block' : 'none';
+  });
+  document.getElementById('aiInput').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') sendAI();
+  });
+  tryConnectFirebase();
+  // Daily alerts check
+  setInterval(checkAllAlerts, 60000);
+}
+
+function loadLocalConfig() {
+  try {
+    const saved = localStorage.getItem('huertoConfig');
+    if (saved) { const c = JSON.parse(saved); Object.assign(config, c); }
+    const savedBeds = localStorage.getItem('huertoBeds');
+    if (savedBeds) beds = JSON.parse(savedBeds);
+  } catch(e) {}
+  document.getElementById('cfgFirebaseUrl').value = config.firebaseUrl || '';
+  document.getElementById('cfgGeminiKey').value = config.geminiKey || '';
+  document.getElementById('cfgCols').value = config.cols;
+  document.getElementById('cfgRows').value = config.rows;
+  document.getElementById('cfgName').value = config.gardenName;
+}
+
+function saveLocalConfig() {
+  localStorage.setItem('huertoConfig', JSON.stringify(config));
+}
+
+function saveLocalBeds() {
+  localStorage.setItem('huertoBeds', JSON.stringify(beds));
+}
+
+// ═══════════════════════════════════════════
+//  FIREBASE
+// ═══════════════════════════════════════════
+function tryConnectFirebase() {
+  if (!config.firebaseUrl) {
+    setStatus('offline', 'Sin Firebase — datos locales');
+    return;
+  }
+  setStatus('connecting', 'Conectando…');
+  // Fetch beds from Firebase
+  fetch(`${config.firebaseUrl}/beds.json`)
+    .then(r => r.json())
+    .then(data => {
+      if (data && typeof data === 'object') {
+        beds = data;
+        saveLocalBeds();
+        renderGarden();
+      }
+      setStatus('online', 'Firebase conectado');
+      // Poll every 10s
+      firebaseRef = setInterval(syncFromFirebase, 10000);
+    })
+    .catch(() => {
+      setStatus('error', 'Error Firebase — datos locales');
+    });
+}
+
+function syncFromFirebase() {
+  if (!config.firebaseUrl) return;
+  fetch(`${config.firebaseUrl}/beds.json`)
+    .then(r => r.json())
+    .then(data => {
+      if (data && typeof data === 'object') {
+        beds = data;
+        saveLocalBeds();
+        renderGarden();
+        if (selectedBedId && beds[selectedBedId]) renderDetail(selectedBedId);
+      }
+    })
+    .catch(() => {});
+}
+
+function pushToFirebase() {
+  if (!config.firebaseUrl) return;
+  fetch(`${config.firebaseUrl}/beds.json`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(beds)
+  }).catch(() => {});
+}
+
+function setStatus(state, text) {
+  const dot = document.getElementById('statusDot');
+  const txt = document.getElementById('statusText');
+  dot.className = 'status-dot ' + (state === 'online' ? 'online' : state === 'error' ? 'error' : '');
+  txt.textContent = text;
+}
+
+// ═══════════════════════════════════════════
+//  PLANT LIST
+// ═══════════════════════════════════════════
+function populatePlantList() {
+  filterPlants();
+}
+
+function filterPlants() {
+  const q = document.getElementById('plantSearch').value.toLowerCase();
+  const list = document.getElementById('plantList');
+  list.innerHTML = '';
+  PLANTS.filter(p =>
+    (currentFilter === 'all' || p.type === currentFilter) &&
+    (!q || p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q))
+  ).forEach(p => {
+    const div = document.createElement('div');
+    div.className = 'plant-card';
+    div.draggable = true;
+    div.dataset.plantId = p.id;
+    const harvestDays = p.daysTransplant ? p.daysTransplant[1] : (p.daysSeed ? p.daysSeed[1] : '?');
+    div.innerHTML = `
+      <div class="plant-icon" style="background:${typeColor(p.type)}20">${p.emoji}</div>
+      <div class="plant-info">
+        <div class="plant-name">${p.name}</div>
+        <div class="plant-meta">${harvestDays}d · ${p.waterMm[0]}-${p.waterMm[1]}mm/sem</div>
+      </div>
+      <span class="type-badge type-${p.type}">${p.type}</span>
+    `;
+    div.addEventListener('dragstart', e => { dragPlantId = p.id; div.classList.add('dragging'); });
+    div.addEventListener('dragend', () => div.classList.remove('dragging'));
+    div.addEventListener('dblclick', () => quickAssignToSelected(p.id));
+    list.appendChild(div);
+  });
+}
+
+function setFilter(f, btn) {
+  currentFilter = f;
+  document.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  filterPlants();
+}
+
+function typeColor(t) {
+  const m = {hoja:'#4a7c59',raíz:'#e65100',fruto:'#c62828',flor:'#6a1b9a',tallo:'#283593',semilla:'#558b2f'};
+  return m[t] || '#888';
+}
+
+// ═══════════════════════════════════════════
+//  GARDEN GRID
+// ═══════════════════════════════════════════
+function renderGarden() {
+  const grid = document.getElementById('gardenGrid');
+  grid.style.gridTemplateColumns = `repeat(${config.cols}, minmax(130px, 180px))`;
+  grid.innerHTML = '';
+
+  for (let r = 1; r <= config.rows; r++) {
+    for (let c = 1; c <= config.cols; c++) {
+      const bedId = `r${r}c${c}`;
+      const bed = beds[bedId];
+      const div = document.createElement('div');
+      div.className = 'bed';
+      div.dataset.bedId = bedId;
+      div.style.minHeight = '110px';
+
+      // Drag events
+      div.addEventListener('dragover', e => { e.preventDefault(); div.classList.add('drag-over'); });
+      div.addEventListener('dragleave', () => div.classList.remove('drag-over'));
+      div.addEventListener('drop', e => { e.preventDefault(); div.classList.remove('drag-over'); handleDrop(bedId); });
+      div.addEventListener('click', () => selectBed(bedId));
+
+      if (bed && bed.plantId) {
+        const plant = PLANTS.find(p => p.id === bed.plantId);
+        div.classList.add('has-plant');
+        const alerts = computeAlerts(bed, plant);
+        if (alerts.some(a => a.level === 'danger')) div.classList.add('urgent');
+        else if (alerts.some(a => a.type === 'harvest')) div.classList.add('harvest-soon');
+        else if (alerts.some(a => a.type === 'transplant')) div.classList.add('needs-transplant');
+
+        const daysInfo = getDaysInfo(bed, plant);
+        const alertDots = alerts.map(a => `<div class="alert-dot ${a.dotClass}" title="${a.msg}"></div>`).join('');
+
+        div.innerHTML = `
+          <div class="bed-inner">
+            <div class="bed-label">${bed.name || bedId}</div>
+            <span class="bed-plant-icon">${plant ? plant.emoji : '🌱'}</span>
+            <div class="bed-plant-name">${plant ? plant.name : bed.plantId}</div>
+            <div class="bed-days">${daysInfo}</div>
+            <div class="bed-alerts">${alertDots}</div>
+          </div>
+        `;
+      } else {
+        div.innerHTML = `
+          <div class="bed-inner">
+            <div class="bed-label">${bed ? (bed.name || bedId) : bedId}</div>
+            <div class="bed-empty-hint">Arrastrar planta<br>o click para editar</div>
+          </div>
+        `;
+      }
+      grid.appendChild(div);
+    }
+  }
+}
+
+function getDaysInfo(bed, plant) {
+  if (!bed.seedDate && !bed.transplantDate) return '';
+  const today = new Date();
+  if (bed.transplantDate) {
+    const tDate = new Date(bed.transplantDate);
+    const elapsed = Math.floor((today - tDate) / 86400000);
+    const remaining = plant && plant.daysTransplant ? plant.daysTransplant[1] - elapsed : null;
+    if (remaining !== null) {
+      if (remaining <= 0) return '⚠ Cosechar ya!';
+      if (remaining <= 7) return `🍂 ${remaining}d para cosechar`;
+      return `${elapsed}d trasplantado`;
+    }
+    return `${elapsed}d tras.`;
+  }
+  if (bed.seedDate) {
+    const sDate = new Date(bed.seedDate);
+    const elapsed = Math.floor((today - sDate) / 86400000);
+    if (plant && plant.daysTransplant) {
+      const tLeft = plant.daysSeed[1] - elapsed;
+      if (tLeft <= 0) return '⚠ Transplantar ya!';
+      if (tLeft <= 7) return `🌱 ${tLeft}d p/trasplantar`;
+    }
+    return `${elapsed}d sembrado`;
+  }
+  return '';
+}
+
+// ═══════════════════════════════════════════
+//  ALERTS ENGINE
+// ═══════════════════════════════════════════
+function computeAlerts(bed, plant) {
+  if (!plant) return [];
+  const alerts = [];
+  const today = new Date();
+
+  // Harvest/transplant timing
+  if (bed.transplantDate) {
+    const elapsed = Math.floor((today - new Date(bed.transplantDate)) / 86400000);
+    if (plant.daysTransplant) {
+      const remaining = plant.daysTransplant[1] - elapsed;
+      if (remaining <= 0) alerts.push({type:'harvest',level:'danger',dotClass:'ad-harvest',msg:'¡Cosechar ya! Superó el máximo de días'});
+      else if (remaining <= 14) alerts.push({type:'harvest',level:'warn',dotClass:'ad-harvest',msg:`Cosechar en ~${remaining} días`});
+    }
+  } else if (bed.seedDate) {
+    const elapsed = Math.floor((today - new Date(bed.seedDate)) / 86400000);
+    if (plant.daysSeed) {
+      const maxDays = plant.daysSeed[1];
+      if (plant.daysTransplant) {
+        if (elapsed >= maxDays) alerts.push({type:'transplant',level:'danger',dotClass:'ad-transplant',msg:'¡Trasplantar ya!'});
+        else if (elapsed >= maxDays - 7) alerts.push({type:'transplant',level:'warn',dotClass:'ad-transplant',msg:`Trasplantar en ~${maxDays-elapsed} días`});
+      } else {
+        const rem = maxDays - elapsed;
+        if (rem <= 0) alerts.push({type:'harvest',level:'danger',dotClass:'ad-harvest',msg:'¡Cosechar ya!'});
+        else if (rem <= 14) alerts.push({type:'harvest',level:'warn',dotClass:'ad-harvest',msg:`Cosechar en ~${rem} días`});
+      }
+    }
+  }
+
+  // Nutrient alerts
+  const soilN = parseFloat(bed.soilN) || 1;
+  const soilP = parseFloat(bed.soilP) || 1;
+  const soilK = parseFloat(bed.soilK) || 1;
+  if (soilN < plant.N * 0.6) alerts.push({type:'nitrogen',level:'warn',dotClass:'ad-nitrogen',msg:`Nitrógeno bajo (${soilN.toFixed(1)} / req. ${plant.N})`});
+  if (soilP < plant.P * 0.6) alerts.push({type:'phosphorus',level:'warn',dotClass:'ad-nitrogen',msg:`Fósforo bajo`});
+  if (soilK < plant.K * 0.6) alerts.push({type:'potassium',level:'danger',dotClass:'ad-potassium',msg:`Potasio bajo (${soilK.toFixed(1)} / req. ${plant.K})`});
+
+  // Compost
+  if (bed.compost === 'urgente') alerts.push({type:'compost',level:'danger',dotClass:'ad-compost',msg:'Necesita composta urgente'});
+  else if (bed.compost === 'pronto') alerts.push({type:'compost',level:'warn',dotClass:'ad-compost',msg:'Añadir composta pronto'});
+
+  return alerts;
+}
+
+function checkAllAlerts() {
+  // Re-render to update visual alerts
+  renderGarden();
+}
+
+// ═══════════════════════════════════════════
+//  BED DETAIL PANEL
+// ═══════════════════════════════════════════
+function selectBed(bedId) {
+  selectedBedId = bedId;
+  // Highlight
+  document.querySelectorAll('.bed').forEach(b => b.style.outline = '');
+  const el = document.querySelector(`[data-bed-id="${bedId}"]`);
+  if (el) el.style.outline = '3px solid var(--leaf-bright)';
+  renderDetail(bedId);
+}
+
+function renderDetail(bedId) {
+  const bed = beds[bedId];
+  const panel = document.getElementById('detailPanel');
+
+  if (!bed || !bed.plantId) {
+    panel.innerHTML = `
+      <div class="detail-empty">
+        <span>🌱</span>
+        <p>Mesa <b>${bedId}</b>${bed ? ` — ${bed.name || ''}` : ''}<br>Arrastra una planta o haz click en <b>Editar</b></p>
+      </div>
+      <div style="margin-top:1rem">
+        <button class="btn btn-primary" style="width:100%" onclick="openEditBed('${bedId}')">✏ Editar Mesa</button>
+      </div>
+    `;
+    return;
+  }
+
+  const plant = PLANTS.find(p => p.id === bed.plantId);
+  const alerts = plant ? computeAlerts(bed, plant) : [];
+  const today = new Date();
+
+  // Timeline progress
+  let progress = 0; let progressLabel = '';
+  if (bed.transplantDate && plant && plant.daysTransplant) {
+    const elapsed = Math.floor((today - new Date(bed.transplantDate)) / 86400000);
+    progress = Math.min(100, (elapsed / plant.daysTransplant[1]) * 100);
+    progressLabel = `${elapsed}d de ~${plant.daysTransplant[1]}d trasplantado`;
+  } else if (bed.seedDate && plant && plant.daysSeed) {
+    const elapsed = Math.floor((today - new Date(bed.seedDate)) / 86400000);
+    progress = Math.min(100, (elapsed / plant.daysSeed[1]) * 100);
+    progressLabel = `${elapsed}d de ~${plant.daysSeed[1]}d sembrado`;
+  }
+
+  const progressColor = progress >= 90 ? '#c0392b' : progress >= 70 ? '#e8a838' : '#4a7c59';
+
+  // Nutrient levels
+  const soilN = parseFloat(bed.soilN) || 1;
+  const soilP = parseFloat(bed.soilP) || 1;
+  const soilK = parseFloat(bed.soilK) || 1.2;
+  const nPct = Math.min(100, (soilN / (plant ? plant.N * 1.5 : 2)) * 100);
+  const pPct = Math.min(100, (soilP / (plant ? plant.P * 1.5 : 1.5)) * 100);
+  const kPct = Math.min(100, (soilK / (plant ? plant.K * 1.5 : 1.8)) * 100);
+
+  const alertsHtml = alerts.length ? alerts.map(a => `
+    <div class="alert-item ${a.level === 'danger' ? 'danger' : a.type === 'transplant' ? 'purple' : a.type === 'compost' ? 'warn' : 'warn'}">
+      <span>${a.level === 'danger' ? '🚨' : a.type === 'transplant' ? '🔄' : '⚠️'}</span>
+      <span>${a.msg}</span>
+    </div>
+  `).join('') : `<div class="alert-item info"><span>✅</span><span>Sin alertas activas</span></div>`;
+
+  panel.innerHTML = `
+    <div class="detail-card">
+      <div class="detail-card-header">
+        <span class="plant-icon-lg">${plant ? plant.emoji : '🌱'}</span>
+        <div>
+          <h3>${plant ? plant.name : bed.plantId}</h3>
+          <div class="bed-id">${bed.name || bedId} · Tipo: ${plant ? plant.type : '—'}</div>
+        </div>
+      </div>
+      <div class="detail-body">
+        ${progressLabel ? `
+        <div class="section-title">Progreso del cultivo</div>
+        <div class="progress-bar" style="margin-bottom:0.3rem">
+          <div class="progress-fill" style="width:${progress}%;background:${progressColor}"></div>
+        </div>
+        <div style="font-size:0.7rem;color:#888;margin-bottom:0.8rem;font-family:'DM Mono',monospace">${progressLabel} (${Math.round(progress)}%)</div>
+        ` : ''}
+
+        <div class="info-grid">
+          <div class="info-item">
+            <label>Sembrado</label>
+            <div class="val">${bed.seedDate ? new Date(bed.seedDate).toLocaleDateString('es-MX') : '—'}</div>
+          </div>
+          <div class="info-item">
+            <label>Trasplantado</label>
+            <div class="val">${bed.transplantDate ? new Date(bed.transplantDate).toLocaleDateString('es-MX') : '—'}</div>
+          </div>
+          <div class="info-item">
+            <label>Días siembra→cosecha</label>
+            <div class="val">${plant && plant.daysSeed ? plant.daysSeed.join('-') + 'd' : '—'}</div>
+          </div>
+          <div class="info-item">
+            <label>Días tras trasplante</label>
+            <div class="val">${plant && plant.daysTransplant ? plant.daysTransplant.join('-') + 'd' : '—'}</div>
+          </div>
+          <div class="info-item">
+            <label>Temp. óptima</label>
+            <div class="val">${plant ? plant.optTemp + '°C' : '—'}</div>
+          </div>
+          <div class="info-item">
+            <label>Agua semanal</label>
+            <div class="val">${plant ? plant.waterMm[0]+'-'+plant.waterMm[1]+' mm' : '—'}</div>
+          </div>
+          ${bed.notes ? `<div class="info-item full"><label>Notas del equipo</label><div class="val" style="font-size:0.75rem;white-space:pre-wrap">${bed.notes}</div></div>` : ''}
+        </div>
+
+        <div class="section-title">Nutrientes del suelo</div>
+        <div class="nutrient-grid">
+          <div class="nutrient-item n-nitrogen">
+            <span class="n-label">N (req: ${plant ? plant.N : '—'})</span>
+            <span class="n-val">${soilN.toFixed(1)}</span>
+            <div class="n-bar" style="width:${nPct}%;max-width:100%"></div>
+          </div>
+          <div class="nutrient-item n-phosphorus">
+            <span class="n-label">P (req: ${plant ? plant.P : '—'})</span>
+            <span class="n-val">${soilP.toFixed(1)}</span>
+            <div class="n-bar" style="width:${pPct}%;max-width:100%"></div>
+          </div>
+          <div class="nutrient-item n-potassium">
+            <span class="n-label">K (req: ${plant ? plant.K : '—'})</span>
+            <span class="n-val">${soilK.toFixed(1)}</span>
+            <div class="n-bar" style="width:${kPct}%;max-width:100%"></div>
+          </div>
+        </div>
+
+        <div class="section-title">Alertas</div>
+        <div class="alerts-list">${alertsHtml}</div>
+
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+          <button class="btn btn-primary" style="flex:1" onclick="openEditBed('${bedId}')">✏ Editar</button>
+          <button class="btn btn-ai" onclick="askAiBed('${bedId}')">🤖 Consultar IA</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ═══════════════════════════════════════════
+//  BED MODAL
+// ═══════════════════════════════════════════
+function openAddBed() {
+  editingBedId = null;
+  document.getElementById('bedModalTitle').textContent = 'Nueva Mesa de Cultivo';
+  document.getElementById('bedName').value = '';
+  document.getElementById('bedCol').value = 1;
+  document.getElementById('bedRow').value = 1;
+  document.getElementById('bedPlant').value = '';
+  document.getElementById('plantDateFields').style.display = 'none';
+  document.getElementById('bedSeedDate').value = '';
+  document.getElementById('bedTransplantDate').value = '';
+  document.getElementById('soilN').value = 1.5; document.getElementById('soilNVal').textContent = '1.5';
+  document.getElementById('soilP').value = 1; document.getElementById('soilPVal').textContent = '1.0';
+  document.getElementById('soilK').value = 1.2; document.getElementById('soilKVal').textContent = '1.2';
+  document.getElementById('bedNotes').value = '';
+  document.getElementById('bedCompost').value = 'no';
+  document.getElementById('deleteBedBtn').style.display = 'none';
+  openModal('bedModal');
+}
+
+function openEditBed(bedId) {
+  editingBedId = bedId;
+  const bed = beds[bedId] || {};
+  const [r, c] = bedId.match(/r(\d+)c(\d+)/).slice(1).map(Number);
+  document.getElementById('bedModalTitle').textContent = `Editar: ${bed.name || bedId}`;
+  document.getElementById('bedName').value = bed.name || '';
+  document.getElementById('bedCol').value = c;
+  document.getElementById('bedRow').value = r;
+  document.getElementById('bedPlant').value = bed.plantId || '';
+  document.getElementById('plantDateFields').style.display = bed.plantId ? 'block' : 'none';
+  document.getElementById('bedSeedDate').value = bed.seedDate || '';
+  document.getElementById('bedTransplantDate').value = bed.transplantDate || '';
+  document.getElementById('soilN').value = bed.soilN || 1.5; document.getElementById('soilNVal').textContent = parseFloat(bed.soilN || 1.5).toFixed(1);
+  document.getElementById('soilP').value = bed.soilP || 1; document.getElementById('soilPVal').textContent = parseFloat(bed.soilP || 1).toFixed(1);
+  document.getElementById('soilK').value = bed.soilK || 1.2; document.getElementById('soilKVal').textContent = parseFloat(bed.soilK || 1.2).toFixed(1);
+  document.getElementById('bedNotes').value = bed.notes || '';
+  document.getElementById('bedCompost').value = bed.compost || 'no';
+  document.getElementById('deleteBedBtn').style.display = 'block';
+  openModal('bedModal');
+}
+
+function saveBed() {
+  const col = parseInt(document.getElementById('bedCol').value);
+  const row = parseInt(document.getElementById('bedRow').value);
+  const bedId = `r${row}c${col}`;
+  const plantId = document.getElementById('bedPlant').value;
+  beds[bedId] = {
+    name: document.getElementById('bedName').value,
+    col, row, plantId,
+    seedDate: document.getElementById('bedSeedDate').value,
+    transplantDate: document.getElementById('bedTransplantDate').value,
+    soilN: parseFloat(document.getElementById('soilN').value),
+    soilP: parseFloat(document.getElementById('soilP').value),
+    soilK: parseFloat(document.getElementById('soilK').value),
+    notes: document.getElementById('bedNotes').value,
+    compost: document.getElementById('bedCompost').value,
+  };
+  // Expand grid if needed
+  if (col > config.cols) config.cols = col;
+  if (row > config.rows) config.rows = row;
+  saveLocalBeds();
+  pushToFirebase();
+  closeModal('bedModal');
+  renderGarden();
+  selectBed(bedId);
+  showToast('Mesa guardada ✓', 'green');
+}
+
+function deleteSelectedBed() {
+  if (!editingBedId) return;
+  if (!confirm(`¿Eliminar la mesa ${editingBedId}?`)) return;
+  delete beds[editingBedId];
+  saveLocalBeds();
+  pushToFirebase();
+  closeModal('bedModal');
+  renderGarden();
+  document.getElementById('detailPanel').innerHTML = '<div class="detail-empty"><span>🌱</span><p>Selecciona una mesa</p></div>';
+  showToast('Mesa eliminada');
+}
+
+function handleDrop(bedId) {
+  if (!dragPlantId) return;
+  if (!beds[bedId]) beds[bedId] = { col: parseInt(bedId.match(/c(\d+)/)[1]), row: parseInt(bedId.match(/r(\d+)/)[1]) };
+  beds[bedId].plantId = dragPlantId;
+  beds[bedId].seedDate = beds[bedId].seedDate || new Date().toISOString().split('T')[0];
+  dragPlantId = null;
+  saveLocalBeds();
+  pushToFirebase();
+  renderGarden();
+  selectBed(bedId);
+  showToast('Planta asignada ✓', 'green');
+}
+
+function quickAssignToSelected(plantId) {
+  if (!selectedBedId) { showToast('Selecciona una mesa primero'); return; }
+  if (!beds[selectedBedId]) { const m=selectedBedId.match(/r(\d+)c(\d+)/); beds[selectedBedId]={col:parseInt(m[2]),row:parseInt(m[1])}; }
+  beds[selectedBedId].plantId = plantId;
+  beds[selectedBedId].seedDate = beds[selectedBedId].seedDate || new Date().toISOString().split('T')[0];
+  saveLocalBeds();
+  pushToFirebase();
+  renderGarden();
+  renderDetail(selectedBedId);
+  showToast('Planta asignada ✓', 'green');
+}
+
+function populatePlantSelect() {
+  const sel = document.getElementById('bedPlant');
+  PLANTS.forEach(p => {
+    const o = document.createElement('option');
+    o.value = p.id; o.textContent = `${p.emoji} ${p.name}`;
+    sel.appendChild(o);
+  });
+}
+
+// ═══════════════════════════════════════════
+//  CONFIG MODAL
+// ═══════════════════════════════════════════
+function openConfig() {
+  document.getElementById('cfgFirebaseUrl').value = config.firebaseUrl || '';
+  document.getElementById('cfgGeminiKey').value = config.geminiKey || '';
+  document.getElementById('cfgCols').value = config.cols;
+  document.getElementById('cfgRows').value = config.rows;
+  document.getElementById('cfgName').value = config.gardenName;
+  openModal('configModal');
+}
+
+function saveConfig() {
+  config.firebaseUrl = document.getElementById('cfgFirebaseUrl').value.trim();
+  config.geminiKey = document.getElementById('cfgGeminiKey').value.trim();
+  config.cols = parseInt(document.getElementById('cfgCols').value) || 4;
+  config.rows = parseInt(document.getElementById('cfgRows').value) || 3;
+  config.gardenName = document.getElementById('cfgName').value || 'Huerto Universitario';
+  saveLocalConfig();
+  closeModal('configModal');
+  renderGarden();
+  if (config.firebaseUrl) { clearInterval(firebaseRef); tryConnectFirebase(); }
+  showToast('Configuración guardada ✓', 'green');
+}
+
+// ═══════════════════════════════════════════
+//  GEMINI AI
+// ═══════════════════════════════════════════
+function buildGardenContext() {
+  const bedList = Object.entries(beds).map(([id, bed]) => {
+    if (!bed.plantId) return null;
+    const plant = PLANTS.find(p => p.id === bed.plantId);
+    const alerts = plant ? computeAlerts(bed, plant) : [];
+    return `Mesa ${id} (${bed.name||id}): ${plant ? plant.name : bed.plantId}, sembrado: ${bed.seedDate||'N/A'}, trasplantado: ${bed.transplantDate||'N/A'}, N:${bed.soilN||'?'} P:${bed.soilP||'?'} K:${bed.soilK||'?'}, composta:${bed.compost||'no'}, alertas: ${alerts.map(a=>a.msg).join('; ')||'ninguna'}`;
+  }).filter(Boolean).join('\n');
+  return `Eres un experto en agricultura urbana universitaria. El huerto tiene las siguientes mesas:\n${bedList || 'Sin datos de mesas aún.'}\n\nResponde en español, de forma concisa y práctica.`;
+}
+
+async function callGemini(userMsg, systemContext) {
+  if (!config.geminiKey) return 'Configura tu Gemini API Key en ⚙ Configurar para usar el asistente IA.';
+  try {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${config.geminiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: systemContext + '\n\nPregunta del usuario: ' + userMsg }] }],
+        generationConfig: { temperature: 0.7, maxOutputTokens: 600 }
+      })
+    });
+    const data = await res.json();
+    if (data.error) return `Error Gemini: ${data.error.message}`;
+    return data.candidates?.[0]?.content?.parts?.[0]?.text || 'Sin respuesta.';
+  } catch(e) {
+    return 'Error al conectar con Gemini: ' + e.message;
+  }
+}
+
+async function sendAI() {
+  const input = document.getElementById('aiInput');
+  const msg = input.value.trim();
+  if (!msg) return;
+  input.value = '';
+  appendAIMsg(msg, 'user');
+  const loading = appendAIMsg('Consultando…', 'loading');
+  const context = buildGardenContext();
+  const reply = await callGemini(msg, context);
+  loading.remove();
+  appendAIMsg(reply, 'ai');
+}
+
+async function askAiBed(bedId) {
+  const bed = beds[bedId];
+  const plant = bed ? PLANTS.find(p => p.id === bed.plantId) : null;
+  if (!bed || !plant) return;
+  const alerts = computeAlerts(bed, plant);
+  const msg = `Analiza la mesa ${bedId} con ${plant.name}. Sembrado: ${bed.seedDate||'N/A'}, trasplantado: ${bed.transplantDate||'N/A'}. Alertas: ${alerts.map(a=>a.msg).join('; ')||'ninguna'}. Suelo: N:${bed.soilN||'?'} P:${bed.soilP||'?'} K:${bed.soilK||'?'}. Dame recomendaciones concretas.`;
+  if (!document.getElementById('aiBody').classList.contains('open')) toggleAI();
+  appendAIMsg(`Analizar ${plant.name} en ${bedId}`, 'user');
+  const loading = appendAIMsg('Analizando…', 'loading');
+  const reply = await callGemini(msg, buildGardenContext());
+  loading.remove();
+  appendAIMsg(reply, 'ai');
+}
+
+async function askAiOverview() {
+  const beds_with_plants = Object.values(beds).filter(b => b.plantId).length;
+  const msg = `Dame un resumen del estado general del huerto con ${beds_with_plants} mesas activas. ¿Qué necesita atención prioritaria? ¿Qué cosechar pronto? ¿Qué suelos están depletados?`;
+  if (!document.getElementById('aiBody').classList.contains('open')) toggleAI();
+  appendAIMsg('Revisión general del huerto', 'user');
+  const loading = appendAIMsg('Analizando todo el huerto…', 'loading');
+  const reply = await callGemini(msg, buildGardenContext());
+  loading.remove();
+  appendAIMsg(reply, 'ai');
+}
+
+function appendAIMsg(text, role) {
+  const msgs = document.getElementById('aiMessages');
+  const div = document.createElement('div');
+  div.className = `ai-msg ${role}`;
+  div.textContent = text;
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+  return div;
+}
+
+function toggleAI() {
+  const body = document.getElementById('aiBody');
+  const icon = document.getElementById('aiToggleIcon');
+  body.classList.toggle('open');
+  icon.textContent = body.classList.contains('open') ? '▼' : '▲';
+}
+
+// ═══════════════════════════════════════════
+//  UTILITIES
+// ═══════════════════════════════════════════
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+function updateSliderVal(sliderId, valId) {
+  document.getElementById(valId).textContent = parseFloat(document.getElementById(sliderId).value).toFixed(1);
+}
+
+let toastTimer;
+function showToast(msg, type='') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'show ' + type;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.className = '', 3000);
+}
+
+// Close modals on overlay click
+document.querySelectorAll('.modal-overlay').forEach(o => {
+  o.addEventListener('click', e => { if (e.target === o) o.classList.remove('open'); });
+});
+
+init();
+</script>
+</body>
+</html>
