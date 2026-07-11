@@ -1,7 +1,8 @@
 // js/auth.js
 import {
     auth,
-    signInWithEmailAndPassword,
+    GoogleAuthProvider,
+    signInWithPopup,
     signOut,
     onAuthStateChanged
 } from './firebase.js'; // Todo pasa por la instancia única, nunca por el CDN directo
@@ -19,8 +20,8 @@ export const AuthService = {
     },
 
     // Métodos de acceso
-    async login(email, password) {
-        return await signInWithEmailAndPassword(auth, email, password);
+    async loginConGoogle() {
+        return await signInWithPopup(auth, new GoogleAuthProvider());
     },
 
     async logout() {

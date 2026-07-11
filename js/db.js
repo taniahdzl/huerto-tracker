@@ -29,6 +29,16 @@ export async function obtenerCamas() {
     return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 }
 
+export async function obtenerQuimicos() {
+    const snapshot = await getDocs(collection(db, PATHS.quimicos));
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
+
+export async function obtenerInventario() {
+    const snapshot = await getDocs(collection(db, PATHS.inventario));
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
+
 export async function crearCama(camaId, datos) {
     const camaRef = doc(db, PATHS.camas, camaId);
     const existente = await getDoc(camaRef);

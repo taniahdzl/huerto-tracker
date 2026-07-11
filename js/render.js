@@ -16,8 +16,17 @@
 // denormalizados en main.js para que este módulo no necesite el catálogo:
 //   { id, nombre, col, fila, plantaId, plantaNombre, plantaTipo,
 //     fechaSiembra, fechaTrasplante, suelo:{N,P,K}, composta, notas, plagas }
+//
+// Desde la Fase de camas en espiral, `camas_cosecha` también contiene
+// documentos con tipo:'arco'|'circular' (geometría polar, array `plantas[]`
+// — ver diagnóstico de espiral). renderMapaHuerto asume grid cartesiano y
+// NUNCA debe recibirlos: main.js filtra a tipo:'rectangular' (o sin `tipo`,
+// documentos anteriores a este cambio) antes de llamar esta función.
 
-const EMOJI_POR_TIPO = {
+// Exportados: son la fuente de verdad visual del tipo de planta para toda
+// la app, incluida la vista en espiral (render-spiral-2d.js) — no debe
+// existir una segunda copia de este mapa ni de su fallback en otro módulo.
+export const EMOJI_POR_TIPO = {
     hoja:    '🥬',
     'raíz':  '🥕',
     fruto:   '🍅',
@@ -26,7 +35,7 @@ const EMOJI_POR_TIPO = {
     semilla: '🌰'
 };
 
-function emojiDePlanta(tipo) {
+export function emojiDePlanta(tipo) {
     return EMOJI_POR_TIPO[tipo] || '🌿';
 }
 

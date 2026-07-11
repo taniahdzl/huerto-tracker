@@ -3,40 +3,64 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    function isAdmin() {
+      return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.rol == 'admin';
+    }
+
     // Deny-by-default: cualquier colección no listada explícitamente
     // abajo queda bloqueada, tanto en lectura como en escritura.
     match /{document=**} {
       allow read, write: if false;
     }
 
+    // ── Catálogos y Camas: todos leen/crean/actualizan, solo admin elimina ──
     match /catalogo_semillas/{plantaId} {
-      allow read, write: if request.auth != null;
+      allow read, create, update: if request.auth != null;
+      allow delete: if request.auth != null && isAdmin();
+    }
+
+    match /catalogo_quimicos/{quimicoId} {
+      allow read, create, update: if request.auth != null;
+      allow delete: if request.auth != null && isAdmin();
     }
 
     match /camas_cosecha/{camaId} {
-      allow read, write: if request.auth != null;
+      allow read, create, update: if request.auth != null;
+      allow delete: if request.auth != null && isAdmin();
     }
 
-    // registro_actividad es un log de auditoría (ver _logActividad en
-    // js/db.js): se puede crear, nunca editar ni borrar una entrada ya
-    // escrita, o deja de servir como evidencia de trazabilidad.
+    // registro_actividad: sin cambios, fuera de la matriz RBAC de esta
+    // fase — sigue siendo log de auditoría append-only (ver _logActividad
+    // en db.js/chores.js/usuarios.js).
     match /registro_actividad/{logId} {
       allow read:          if request.auth != null;
       allow create:        if request.auth != null;
       allow update, delete: if false;
     }
 
+    // ── Inventario, Tareas, Asistencias: todos leen, solo admin escribe ──
     match /tareas/{tareaId} {
-      allow read, write: if request.auth != null;
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && isAdmin();
     }
 
-    // asistencias registra horas de crédito académico por estudiante.
-    // Mismo nivel que tareas por ahora (cualquier autenticado puede
-    // corregir un registro); si en algún momento importa que ni el
-    // propio estudiante pueda editarse horas, esto necesita reglas por
-    // rol, no solo por sesión.
     match /asistencias/{asistenciaId} {
-      allow read, write: if request.auth != null;
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && isAdmin();
+    }
+
+    match /inventario_general/{itemId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && isAdmin();
+    }
+
+    // ── Usuarios: todos leen, cada quien escribe su propio perfil,
+    // admin escribe cualquiera (esto es lo que hace que ajustarHoras()
+    // funcione de verdad sobre OTRA persona — antes de esta fase solo
+    // podías ajustarte tus propias horas).
+    match /usuarios/{userId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && (request.auth.uid == userId || isAdmin());
     }
   }
 }

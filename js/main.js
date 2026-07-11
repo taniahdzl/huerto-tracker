@@ -1,8 +1,10 @@
 // js/main.js
-// Orquestador de arranque + bridge de UI (login, modal de mesas, panel IA).
-// AuthService.init() decide si se muestra el huerto o el overlay de login;
-// este archivo es el único que toca el DOM — auth.js, db.js, render.js y
-// ai.js se mantienen puros (sin conocerse entre sí ni conocer el DOM).
+// Orquestador de arranque + bridge de UI (login con Google, modal de mesas,
+// panel IA, directorio orgánico de usuarios). AuthService.init() decide si
+// se muestra el huerto, el botón de login o el selector de rol de primer
+// login; este archivo es el único que toca el DOM — auth.js, db.js,
+// usuarios.js, render.js y ai.js se mantienen puros (sin conocerse entre
+// sí ni conocer el DOM).
 //
 // TODO (fuera de alcance): drag&drop, cálculo de alertas de cosecha/riego,
 // y el modal de Configuración (openConfig / configModal) — sigue sin
@@ -15,6 +17,7 @@ import { renderCatalogo, renderMapaHuerto, renderListaTareas } from './render.js
 import { generarRespuestaHuerto } from './ai.js';
 import { setUsuarioActual } from './session.js';
 import { obtenerTareas, crearTarea, completarTarea } from './chores.js';
+import { obtenerUsuario, registrarUsuario, obtenerDirectorioEstudiantes, ajustarHoras } from './usuarios.js';
 
 const statusDot   = document.getElementById('statusDot');
 const statusText  = document.getElementById('statusText');
@@ -24,9 +27,10 @@ const gardenGridEl = document.getElementById('gardenGrid');
 
 const loginOverlay = document.getElementById('login-overlay');
 const appRoot       = document.getElementById('appRoot');
-const emailInput    = document.getElementById('email');
-const passwordInput = document.getElementById('password');
-const loginBtn       = document.getElementById('login-btn');
+const googleLoginBtn    = document.getElementById('googleLoginBtn');
+const roleSelectionEl   = document.getElementById('roleSelection');
+const newUserRoleSelect = document.getElementById('newUserRole');
+const completeRegistroBtn = document.getElementById('completeRegistroBtn');
 const loginError    = document.getElementById('loginError');
 
 // ── Modal de mesa (cama) ──────────────────────────────────────────
@@ -69,11 +73,25 @@ const choresModalClose = document.getElementById('choresModalClose');
 const newChoreInput     = document.getElementById('newChoreInput');
 const addChoreBtn       = document.getElementById('addChoreBtn');
 const choresListEl       = document.getElementById('choresList');
+const choreAssigneesEl   = document.getElementById('choreAssignees');
+const choreFormEl        = document.querySelector('.chore-form');
 
-let catalogoActual = [];
-let camasActuales  = [];
-let tareasActuales = [];
-let editingCamaId  = null;
+// ── Panel de Admin ─────────────────────────────────────────────────
+const adminBtn          = document.getElementById('adminBtn');
+const adminModalClose   = document.getElementById('adminModalClose');
+const adminStudentSelect = document.getElementById('adminStudentSelect');
+const adminHoursInput    = document.getElementById('adminHoursInput');
+const adminSaveBtn       = document.getElementById('adminSaveBtn');
+
+let catalogoActual    = [];
+let camasActuales     = [];
+let tareasActuales    = [];
+let estudiantesActuales = [];
+let editingCamaId     = null;
+// perfil.rol vive en Firestore (usuarios/{uid}), no en el usuario de
+// Firebase Auth que guarda session.js — se cachea aquí porque openEditBed()
+// necesita saberlo y no tiene acceso al `perfil` local del portero.
+let esAdminActual     = false;
 
 function mostrarToast(mensaje, tipo = '') {
     if (!toast) return;
@@ -90,15 +108,13 @@ function closeModal(id) {
     document.getElementById(id).classList.remove('open');
 }
 
-// ── Login ──────────────────────────────────────────────────────────
+// ── Login (Google Auth) ─────────────────────────────────────────────
 
 const LOGIN_ERROR_MESSAGES = {
-    'auth/invalid-credential': 'Correo o contraseña incorrectos.',
-    'auth/wrong-password':     'Correo o contraseña incorrectos.',
-    'auth/user-not-found':     'Correo o contraseña incorrectos.',
-    'auth/invalid-email':      'El correo no tiene un formato válido.',
-    'auth/too-many-requests':  'Demasiados intentos. Espera un momento antes de volver a intentar.',
-    'auth/network-request-failed': 'Sin conexión. Revisa tu internet.'
+    'auth/popup-closed-by-user':     'Cerraste la ventana de Google antes de terminar.',
+    'auth/cancelled-popup-request':  'Ya había una ventana de Google abierta.',
+    'auth/popup-blocked':            'El navegador bloqueó la ventana emergente — permite popups para este sitio.',
+    'auth/network-request-failed':   'Sin conexión. Revisa tu internet.'
 };
 
 function mostrarErrorLogin(mensaje) {
@@ -107,33 +123,41 @@ function mostrarErrorLogin(mensaje) {
     loginError.style.display = mensaje ? 'block' : 'none';
 }
 
-async function handleLogin() {
-    const email = emailInput.value.trim();
-    const password = passwordInput.value;
+async function handleLoginConGoogle() {
     mostrarErrorLogin('');
-
-    if (!email || !password) {
-        mostrarErrorLogin('Ingresa correo y contraseña.');
-        return;
-    }
-
-    loginBtn.disabled = true;
-    loginBtn.textContent = 'Entrando…';
+    googleLoginBtn.disabled = true;
     try {
-        await AuthService.login(email, password);
-        // AuthService.init() se encarga de ocultar el overlay al detectar la sesión.
+        await AuthService.loginConGoogle();
+        // AuthService.init() se encarga del resto: overlay, directorio orgánico, huerto.
     } catch (e) {
-        mostrarErrorLogin(LOGIN_ERROR_MESSAGES[e.code] || 'No se pudo iniciar sesión. Intenta de nuevo.');
+        mostrarErrorLogin(LOGIN_ERROR_MESSAGES[e.code] || 'No se pudo iniciar sesión con Google. Intenta de nuevo.');
     } finally {
-        loginBtn.disabled = false;
-        loginBtn.textContent = 'Iniciar sesión';
+        googleLoginBtn.disabled = false;
     }
 }
 
-loginBtn.addEventListener('click', handleLogin);
-passwordInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') handleLogin();
-});
+async function handleCompletarRegistro() {
+    const user = AuthService.getCurrentUser();
+    if (!user) return;
+
+    completeRegistroBtn.disabled = true;
+    try {
+        await registrarUsuario(user.uid, user.email, newUserRoleSelect.value);
+        roleSelectionEl.style.display = 'none';
+        googleLoginBtn.style.display = '';
+        loginOverlay.classList.add('hidden');
+        appRoot.classList.remove('app-hidden');
+        iniciarHuerto();
+    } catch (e) {
+        console.error('[main] Error registrando usuario:', e);
+        mostrarErrorLogin('No se pudo completar el registro. Intenta de nuevo.');
+    } finally {
+        completeRegistroBtn.disabled = false;
+    }
+}
+
+googleLoginBtn.addEventListener('click', handleLoginConGoogle);
+completeRegistroBtn.addEventListener('click', handleCompletarRegistro);
 
 // ── Carga de datos ────────────────────────────────────────────────
 
@@ -154,7 +178,13 @@ async function iniciarHuerto() {
         camasActuales  = camas;
         poblarSelectPlantas();
         renderCatalogo(catalogo, plantListEl);
-        renderMapaHuerto(camas, gardenGridEl);
+        // renderMapaHuerto solo sabe dibujar el grid cartesiano — camas de
+        // tipo 'arco'/'circular' no tienen col/fila y se dibujarían todas
+        // apiladas en la celda 1,1. Se filtran aquí (no en render.js, que
+        // se mantiene agnóstico a qué es un "tipo") hasta que exista el
+        // renderer de espiral.
+        const camasRectangulares = camas.filter((c) => (c.tipo || 'rectangular') === 'rectangular');
+        renderMapaHuerto(camasRectangulares, gardenGridEl);
     } catch (e) {
         console.error('[main] Error cargando datos del huerto:', e);
         statusDot.classList.add('error');
@@ -196,7 +226,8 @@ function openEditBed(camaId) {
 
     editingCamaId = camaId;
     bedModalTitle.textContent = 'Editar Mesa de Cultivo';
-    deleteBedBtn.style.display = '';
+    // RBAC (Fase 12): camas_cosecha solo permite `delete` a admins.
+    deleteBedBtn.style.display = esAdminActual ? '' : 'none';
 
     bedNameInput.value = cama.nombre || '';
     bedColInput.value = cama.col || 1;
@@ -232,6 +263,9 @@ async function handleSaveBed() {
 
     const datos = {
         nombre,
+        // El modal actual solo sabe crear/editar camas rectangulares.
+        // Arco/circular llegan en una fase futura con su propio flujo.
+        tipo: 'rectangular',
         col:  Number(bedColInput.value) || 1,
         fila: Number(bedRowInput.value) || 1,
         plantaId,
@@ -323,11 +357,34 @@ gardenGridEl.addEventListener('click', (e) => {
 
 // ── Tareas ─────────────────────────────────────────────────────────
 
+// NOTA: esta función pinta DOM y por convención del proyecto debería vivir
+// en render.js (así viven renderCatalogo/renderMapaHuerto/renderListaTareas).
+// Se deja aquí porque fue instrucción explícita; si más adelante se quiere
+// alinear con el resto, es un mover-y-exportar sin lógica que cambiar.
+function renderizarSelectorEstudiantes() {
+    choreAssigneesEl.replaceChildren();
+    estudiantesActuales.forEach((estudiante) => {
+        const label = document.createElement('label');
+        label.className = 'chore-assignee-chip';
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.value = estudiante.id;
+
+        label.appendChild(checkbox);
+        label.appendChild(document.createTextNode(estudiante.email));
+
+        choreAssigneesEl.appendChild(label);
+    });
+}
+
 async function cargarYRenderizarTareas() {
     try {
-        const tareas = await obtenerTareas();
+        const [tareas, estudiantes] = await Promise.all([obtenerTareas(), obtenerDirectorioEstudiantes()]);
         tareasActuales = tareas;
+        estudiantesActuales = estudiantes;
         renderListaTareas(tareas, choresListEl, handleCompletarTarea);
+        renderizarSelectorEstudiantes();
     } catch (e) {
         console.error('[main] Error cargando tareas:', e);
         mostrarToast('No se pudieron cargar las tareas', 'red');
@@ -338,11 +395,14 @@ async function handleAddChore() {
     const titulo = newChoreInput.value.trim();
     if (!titulo) return;
 
+    const asignados = Array.from(choreAssigneesEl.querySelectorAll('input[type="checkbox"]:checked'))
+        .map((checkbox) => checkbox.value);
+
     addChoreBtn.disabled = true;
     try {
-        await crearTarea({ titulo, asignados: [] });
+        await crearTarea({ titulo, asignados });
         newChoreInput.value = '';
-        await cargarYRenderizarTareas();
+        await cargarYRenderizarTareas(); // también re-renderiza el selector, ya sin marcar
     } catch (e) {
         console.error('[main] Error creando tarea:', e);
         mostrarToast('No se pudo crear la tarea', 'red');
@@ -369,6 +429,64 @@ addChoreBtn.addEventListener('click', handleAddChore);
 newChoreInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') handleAddChore();
 });
+
+// ── Panel de Admin ─────────────────────────────────────────────────
+
+function poblarSelectorAdmin() {
+    adminStudentSelect.innerHTML = '<option value="">Selecciona un estudiante...</option>';
+    estudiantesActuales.forEach((estudiante) => {
+        const opt = document.createElement('option');
+        opt.value = estudiante.id;
+        opt.textContent = estudiante.email;
+        adminStudentSelect.appendChild(opt);
+    });
+}
+
+async function abrirAdminModal() {
+    // No confío solo en el caché de estudiantesActuales (Fase 11): si un
+    // admin abre este modal sin haber abierto antes el de Tareas, ese
+    // caché sigue vacío y el selector se vería vacío también.
+    try {
+        estudiantesActuales = await obtenerDirectorioEstudiantes();
+    } catch (e) {
+        console.error('[main] Error cargando directorio de estudiantes:', e);
+        mostrarToast('No se pudo cargar el directorio', 'red');
+        return;
+    }
+    poblarSelectorAdmin();
+    adminHoursInput.value = '';
+    openModal('adminModal');
+}
+
+async function handleAdminSave() {
+    const uid = adminStudentSelect.value;
+    const horas = parseInt(adminHoursInput.value, 10);
+
+    if (!uid) {
+        mostrarToast('Selecciona un estudiante', 'red');
+        return;
+    }
+    if (Number.isNaN(horas)) {
+        mostrarToast('Ingresa un número de horas válido', 'red');
+        return;
+    }
+
+    adminSaveBtn.disabled = true;
+    try {
+        await ajustarHoras(uid, horas);
+        closeModal('adminModal');
+        mostrarToast('Horas ajustadas', 'green');
+    } catch (e) {
+        console.error('[main] Error ajustando horas:', e);
+        mostrarToast('No se pudo ajustar las horas', 'red');
+    } finally {
+        adminSaveBtn.disabled = false;
+    }
+}
+
+adminBtn.addEventListener('click', abrirAdminModal);
+adminModalClose.addEventListener('click', () => closeModal('adminModal'));
+adminSaveBtn.addEventListener('click', handleAdminSave);
 
 // ── Asistente IA ───────────────────────────────────────────────────
 
@@ -421,25 +539,59 @@ aiInput.addEventListener('keydown', (e) => {
 });
 aiOverviewBtn.addEventListener('click', handleAiOverview);
 
-// ── Estado de sesión (portero) ───────────────────────────────────
+// ── Estado de sesión (portero) — directorio orgánico ──────────────
+//
+// Antes de arrancar el huerto, se consulta si ya existe perfil en
+// usuarios/{uid}. Si no existe (primer login de esa persona), el overlay
+// se queda visible, se oculta el botón de Google y se muestra el selector
+// de rol — el huerto solo arranca después de completar el registro
+// (handleCompletarRegistro) o, en logins siguientes, de inmediato.
 
-AuthService.init((user) => {
+AuthService.init(async (user) => {
     if (user) {
         setUsuarioActual(user);
-        loginOverlay.classList.add('hidden');
-        appRoot.classList.remove('app-hidden');
         mostrarErrorLogin('');
-        emailInput.value = '';
-        passwordInput.value = '';
 
         statusDot.classList.add('online');
         statusDot.classList.remove('error');
         statusText.textContent = `Conectado · ${user.email}`;
-        iniciarHuerto();
+
+        let perfil;
+        try {
+            perfil = await obtenerUsuario(user.uid);
+        } catch (e) {
+            console.error('[main] Error consultando el directorio de usuarios:', e);
+            mostrarErrorLogin('No se pudo verificar tu perfil. Intenta de nuevo.');
+            return;
+        }
+
+        if (perfil) {
+            loginOverlay.classList.add('hidden');
+            appRoot.classList.remove('app-hidden');
+
+            // RBAC (Fase 12): las reglas de Firestore ya bloquean estas
+            // acciones para no-admins — esto solo evita ofrecer en la UI
+            // botones que el backend va a rechazar.
+            esAdminActual = perfil.rol === 'admin';
+            adminBtn.style.display = esAdminActual ? '' : 'none';
+            choreFormEl.style.display = esAdminActual ? '' : 'none';
+
+            iniciarHuerto();
+        } else {
+            // Primer login de esta persona: directorio orgánico.
+            googleLoginBtn.style.display = 'none';
+            roleSelectionEl.style.display = 'block';
+            // loginOverlay se queda visible hasta completar el registro.
+        }
     } else {
         setUsuarioActual(null);
         loginOverlay.classList.remove('hidden');
         appRoot.classList.add('app-hidden');
+        googleLoginBtn.style.display = '';
+        roleSelectionEl.style.display = 'none';
+        adminBtn.style.display = 'none';
+        choreFormEl.style.display = '';
+        esAdminActual = false;
 
         statusDot.classList.remove('online');
         statusText.textContent = 'Sin sesión';

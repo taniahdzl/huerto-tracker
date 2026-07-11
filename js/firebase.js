@@ -14,7 +14,8 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import {
     getAuth,
-    signInWithEmailAndPassword,
+    GoogleAuthProvider,
+    signInWithPopup,
     signOut,
     onAuthStateChanged
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
@@ -50,7 +51,10 @@ export const PATHS = {
     camas:       'camas_cosecha',
     actividad:   'registro_actividad',
     tareas:      'tareas',
-    asistencias: 'asistencias'
+    asistencias: 'asistencias',
+    usuarios:    'usuarios',
+    quimicos:    'catalogo_quimicos',
+    inventario:  'inventario_general'
 };
 
 // ── Re-exports de Firestore/Auth ─────────────────────────────────
@@ -61,5 +65,5 @@ export {
     onSnapshot,
     addDoc, updateDoc, deleteDoc, setDoc, getDoc, getDocs,
     query, where, orderBy, serverTimestamp,
-    signInWithEmailAndPassword, signOut, onAuthStateChanged
+    GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged
 };
