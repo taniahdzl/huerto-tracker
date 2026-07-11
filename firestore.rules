@@ -1,0 +1,29 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Deny-by-default: cualquier colección no listada explícitamente
+    // abajo queda bloqueada, tanto en lectura como en escritura.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    match /catalogo_semillas/{plantaId} {
+      allow read, write: if request.auth != null;
+    }
+
+    match /camas_cosecha/{camaId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // registro_actividad es un log de auditoría (ver _logActividad en
+    // js/db.js): se puede crear, nunca editar ni borrar una entrada ya
+    // escrita, o deja de servir como evidencia de trazabilidad.
+    match /registro_actividad/{logId} {
+      allow read:          if request.auth != null;
+      allow create:        if request.auth != null;
+      allow update, delete: if false;
+    }
+  }
+}

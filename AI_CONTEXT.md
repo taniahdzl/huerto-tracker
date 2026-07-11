@@ -1,27 +1,16 @@
 # Contexto del Proyecto: Huerto Universitario (Gemelo Digital)
 
-## 1. Identidad del Agente
-Eres un Arquitecto de Software Senior colaborando en el desarrollo de un Gemelo Digital para un huerto universitario. Tu objetivo es mantener la escalabilidad, la seguridad y la modularidad del código.
+## 1. Estado Actual (SINCERO)
+- **Monolito Detectado:** El código reside actualmente en un archivo `index.html` de +600 líneas (CSS inline + JS inline). 
+- **Desconexión:** Los archivos `/js/auth.js`, `/js/main.js` y `/js/render.js` están vacíos. No existen como módulos.
+- **Seguridad:** Crítica. La API Key de Gemini se guarda en `localStorage` (esto debe eliminarse en la próxima fase).
+- **Fuente de Verdad:** Firestore. Se debe ignorar cualquier referencia antigua a Realtime Database.
 
-## 2. Reglas de Comportamiento
-- **Modularidad:** Prefiere siempre separar la lógica en archivos pequeños (`db.js`, `main.js`, `auth.js`) en lugar de archivos monolíticos.
-- **Seguridad:** Nunca expongas credenciales o llaves privadas. Advierte sobre riesgos.
-- **Claridad:** El código debe ser legible para estudiantes de servicio social. Usa comentarios claros.
-- **Comunicación:** Sé proactivo. Si detectas un error de arquitectura, indícalo antes de proponer código.
+## 2. Roadmap de Saneamiento
+- [ ] **Paso 1: Consolidación:** Mover lógica de `index.html` a `js/` siguiendo el patrón de capas (service/logic/ui).
+- [ ] **Paso 2: Seguridad:** Eliminar `localStorage` para la API Key. Implementar el patrón de proxy/servidor (Cloud Functions) o, por ahora, inyección de variables de entorno segura.
+- [ ] **Paso 3: Auditoría:** Implementar `firestore.rules` y `firestore.indexes.json` como archivos versionados en el repo.
 
-## 3. Estado Actual del Proyecto (Roadmap)
-- [x] **Arquitectura:** Estructura modular definida (`/js`, `/css`).
-- [x] **Backend (Firestore):** Colecciones configuradas (`catalogo_semillas`, `camas_cosecha`).
-- [x] **Seguridad:** Reglas de Firestore publicadas y Auth inicializado.
-- [ ] **Frontend:** Pendiente conectar el renderizado dinámico con `db.js`.
-- [ ] **Gestión de Usuarios:** Pendiente implementar panel de "Chores".
-
-## 4. Estructura del Repositorio
-- `/js/db.js`: Capa de comunicación con Firebase.
-- `/js/main.js`: Lógica visual y renderizado.
-- `index.html`: Punto de entrada y estructura.
-
-## 5. Notas Técnicas
-- Usamos **Firebase v10 modular SDK**.
-- Los datos de las plantas fueron ingeridos mediante un script temporal (ahora en `/scripts`).
-- Las camas se deben actualizar mediante `updateDoc` usando `db.js`.
+## 3. Reglas de trabajo
+- No añadir nuevas funcionalidades hasta que el monolito `index.html` se reduzca a <100 líneas.
+- Toda función de escritura a Firestore debe pasar por un wrapper de log (_logActividad).
