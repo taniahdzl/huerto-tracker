@@ -142,3 +142,35 @@ export function renderMapaHuerto(camas, contenedor) {
     contenedor.style.gridTemplateColumns = `repeat(${maxCol}, 1fr)`;
     contenedor.replaceChildren(fragment);
 }
+
+// ── Shape de `tareas` ────────────────────────────────────────────
+//   { id, titulo, estado: "pendiente"|"completada", asignados: [uid,...] }
+
+export function renderListaTareas(tareas, contenedor, onCompletarClick) {
+    const fragment = document.createDocumentFragment();
+
+    tareas.forEach((tarea) => {
+        const completada = tarea.estado === 'completada';
+
+        const li = document.createElement('li');
+        li.className = completada ? 'chore-item completada' : 'chore-item';
+        li.dataset.tareaId = tarea.id;
+
+        const titulo = document.createElement('span');
+        titulo.className = 'chore-item-titulo';
+        titulo.textContent = tarea.titulo || 'Sin título';
+        li.appendChild(titulo);
+
+        if (!completada) {
+            const btn = document.createElement('button');
+            btn.className = 'chore-complete-btn';
+            btn.textContent = '✅ Completar';
+            btn.addEventListener('click', () => onCompletarClick(tarea.id));
+            li.appendChild(btn);
+        }
+
+        fragment.appendChild(li);
+    });
+
+    contenedor.replaceChildren(fragment);
+}

@@ -4,24 +4,17 @@ import {
     collection, doc,
     getDocs, getDoc, setDoc, updateDoc, deleteDoc, addDoc, serverTimestamp
 } from './firebase.js';
-
-// Identidad del usuario actual, para _logActividad. La fija main.js una
-// vez que AuthService confirma la sesión — db.js no importa auth.js
-// directamente para no acoplar la capa de datos a la de sesión.
-let _usuario = null;
-
-export function setUsuarioActual(usuario) {
-    _usuario = usuario;
-}
+import { getUsuarioActual } from './session.js';
 
 function _logActividad(tipo, entidad, detalle) {
-    if (!_usuario) return Promise.resolve();
+    const usuario = getUsuarioActual();
+    if (!usuario) return Promise.resolve();
     return addDoc(collection(db, PATHS.actividad), {
         tipo,
         entidad,
         detalle: detalle || null,
-        usuario: _usuario.email,
-        uid: _usuario.uid,
+        usuario: usuario.email,
+        uid: usuario.uid,
         fecha: serverTimestamp()
     }).catch((e) => console.error('[db] Error registrando actividad:', e));
 }

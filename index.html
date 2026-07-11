@@ -405,6 +405,31 @@
     margin: -0.4rem 0 0.8rem;
   }
 
+  /* ── TAREAS (CHORES) ── */
+  .chore-form { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+  .chore-form input {
+    flex: 1; padding: 0.4rem 0.7rem;
+    border: 1px solid var(--border); border-radius: 6px;
+    background: var(--parchment); font-family: 'DM Sans', sans-serif;
+    font-size: 0.85rem; color: var(--ink);
+  }
+  .chore-form input:focus { outline: none; border-color: var(--leaf); }
+  .chore-list { list-style: none; display: flex; flex-direction: column; gap: 0.5rem; }
+  .chore-item {
+    display: flex; align-items: center; gap: 0.7rem;
+    padding: 0.6rem 0.8rem; border-radius: 8px;
+    background: var(--parchment); border: 1px solid var(--border);
+  }
+  .chore-item-titulo { flex: 1; font-size: 0.85rem; }
+  .chore-item.completada { opacity: 0.6; }
+  .chore-item.completada .chore-item-titulo { text-decoration: line-through; color: #888; }
+  .chore-complete-btn {
+    padding: 0.3rem 0.6rem; border-radius: 6px;
+    border: 1px solid var(--leaf); background: transparent; color: var(--leaf);
+    font-size: 0.75rem; cursor: pointer; white-space: nowrap;
+  }
+  .chore-complete-btn:hover { background: var(--leaf); color: white; }
+
   /* ── TOAST ── */
   #toast {
     position: fixed; bottom: 1.5rem; right: 1.5rem;
@@ -461,6 +486,7 @@
     <span id="statusText">Conectando…</span>
   </div>
   <button class="btn" onclick="openConfig()">⚙ Configurar</button>
+  <button class="btn" id="openChoresBtn">📋 Tareas</button>
   <button class="btn btn-primary" id="addBedBtn">+ Mesa</button>
 </header>
 
@@ -654,6 +680,23 @@
     <div class="modal-footer">
       <button class="btn" onclick="closeModal('configModal')">Cancelar</button>
       <button class="btn btn-primary" onclick="saveConfig()">Guardar Configuración</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Tareas -->
+<div class="modal-overlay" id="choresModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>📋 Tareas</h3>
+      <button class="modal-close" id="choresModalClose">×</button>
+    </div>
+    <div class="modal-body" id="choresModalBody">
+      <div class="chore-form">
+        <input id="newChoreInput" placeholder="Nueva tarea…">
+        <button class="btn btn-primary" id="addChoreBtn">+ Agregar</button>
+      </div>
+      <ul class="chore-list" id="choresList"></ul>
     </div>
   </div>
 </div>

@@ -10,9 +10,11 @@
 // hoy es un mock (ver TODO ahí sobre la Cloud Function pendiente).
 
 import { AuthService } from './auth.js';
-import { obtenerCatalogo, obtenerCamas, crearCama, actualizarCama, eliminarCama, setUsuarioActual } from './db.js';
-import { renderCatalogo, renderMapaHuerto } from './render.js';
+import { obtenerCatalogo, obtenerCamas, crearCama, actualizarCama, eliminarCama } from './db.js';
+import { renderCatalogo, renderMapaHuerto, renderListaTareas } from './render.js';
 import { generarRespuestaHuerto } from './ai.js';
+import { setUsuarioActual } from './session.js';
+import { obtenerTareas, crearTarea, completarTarea } from './chores.js';
 
 const statusDot   = document.getElementById('statusDot');
 const statusText  = document.getElementById('statusText');
@@ -61,8 +63,16 @@ const aiInput        = document.getElementById('aiInput');
 const aiSendBtn       = document.querySelector('.ai-send');
 const aiOverviewBtn  = document.querySelector('.btn-ai');
 
+// ── Modal de Tareas ────────────────────────────────────────────────
+const openChoresBtn    = document.getElementById('openChoresBtn');
+const choresModalClose = document.getElementById('choresModalClose');
+const newChoreInput     = document.getElementById('newChoreInput');
+const addChoreBtn       = document.getElementById('addChoreBtn');
+const choresListEl       = document.getElementById('choresList');
+
 let catalogoActual = [];
 let camasActuales  = [];
+let tareasActuales = [];
 let editingCamaId  = null;
 
 function mostrarToast(mensaje, tipo = '') {
@@ -291,6 +301,12 @@ bedPlantSelect.addEventListener('change', () => {
     plantDateFields.style.display = bedPlantSelect.value ? 'block' : 'none';
 });
 
+openChoresBtn.addEventListener('click', () => {
+    openModal('choresModal');
+    cargarYRenderizarTareas();
+});
+choresModalClose.addEventListener('click', () => closeModal('choresModal'));
+
 soilNInput.addEventListener('input', () => { soilNVal.textContent = Number(soilNInput.value).toFixed(1); });
 soilPInput.addEventListener('input', () => { soilPVal.textContent = Number(soilPInput.value).toFixed(1); });
 soilKInput.addEventListener('input', () => { soilKVal.textContent = Number(soilKInput.value).toFixed(1); });
@@ -303,6 +319,55 @@ gardenGridEl.addEventListener('click', (e) => {
     const bed = e.target.closest('.bed');
     if (!bed) return;
     openEditBed(bed.dataset.bedId);
+});
+
+// ── Tareas ─────────────────────────────────────────────────────────
+
+async function cargarYRenderizarTareas() {
+    try {
+        const tareas = await obtenerTareas();
+        tareasActuales = tareas;
+        renderListaTareas(tareas, choresListEl, handleCompletarTarea);
+    } catch (e) {
+        console.error('[main] Error cargando tareas:', e);
+        mostrarToast('No se pudieron cargar las tareas', 'red');
+    }
+}
+
+async function handleAddChore() {
+    const titulo = newChoreInput.value.trim();
+    if (!titulo) return;
+
+    addChoreBtn.disabled = true;
+    try {
+        await crearTarea({ titulo, asignados: [] });
+        newChoreInput.value = '';
+        await cargarYRenderizarTareas();
+    } catch (e) {
+        console.error('[main] Error creando tarea:', e);
+        mostrarToast('No se pudo crear la tarea', 'red');
+    } finally {
+        addChoreBtn.disabled = false;
+    }
+}
+
+async function handleCompletarTarea(tareaId) {
+    const tarea = tareasActuales.find((t) => t.id === tareaId);
+    if (!tarea) return;
+
+    try {
+        await completarTarea(tareaId, tarea.asignados || []);
+        mostrarToast('Tarea completada', 'green');
+        await cargarYRenderizarTareas();
+    } catch (e) {
+        console.error('[main] Error completando tarea:', e);
+        mostrarToast('No se pudo completar la tarea', 'red');
+    }
+}
+
+addChoreBtn.addEventListener('click', handleAddChore);
+newChoreInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') handleAddChore();
 });
 
 // ── Asistente IA ───────────────────────────────────────────────────

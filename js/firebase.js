@@ -46,9 +46,11 @@ export const auth = getAuth(app);
 
 // ── Colecciones (fuente de verdad: Firestore, no Realtime Database) ──
 export const PATHS = {
-    catalogo:  'catalogo_semillas',
-    camas:     'camas_cosecha',
-    actividad: 'registro_actividad'
+    catalogo:    'catalogo_semillas',
+    camas:       'camas_cosecha',
+    actividad:   'registro_actividad',
+    tareas:      'tareas',
+    asistencias: 'asistencias'
 };
 
 // ── Re-exports de Firestore/Auth ─────────────────────────────────
