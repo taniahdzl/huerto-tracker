@@ -44,9 +44,17 @@ service cloud.firestore {
       allow write: if request.auth != null && isAdmin();
     }
 
+    // asistencias es la fuente única de horas (Fase 13.2) — automáticas
+    // (Regla del Sábado), ad-hoc y ajustes de migración conviven aquí,
+    // todas con origen/motivo/autorizadoPor. Append-only: ni siquiera un
+    // admin puede update/delete, igual que registro_actividad — una
+    // corrección se hace con un nuevo registro negativo, nunca editando
+    // uno existente, para que el historial sea confiable para un reporte
+    // a la universidad.
     match /asistencias/{asistenciaId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null && isAdmin();
+      allow read:           if request.auth != null;
+      allow create:         if request.auth != null && isAdmin();
+      allow update, delete: if false;
     }
 
     match /inventario_general/{itemId} {
@@ -54,13 +62,36 @@ service cloud.firestore {
       allow write: if request.auth != null && isAdmin();
     }
 
-    // ── Usuarios: todos leen, cada quien escribe su propio perfil,
-    // admin escribe cualquiera (esto es lo que hace que ajustarHoras()
-    // funcione de verdad sobre OTRA persona — antes de esta fase solo
-    // podías ajustarte tus propias horas).
+    // ── Usuarios ──────────────────────────────────────────────────
+    // Un admin nunca se autoasigna — se promueve manualmente (Fase 13).
+    // create: solo el propio uid, y solo con rol en la whitelist —
+    // 'admin' es explícitamente imposible en la escritura inicial, sin
+    // importar qué mande el cliente. horasTotales debe nacer en 0 (no
+    // solo por convención de registrarUsuario(), sino forzado aquí).
+    // update: un admin puede escribir cualquier cosa en cualquier perfil
+    // (incluida la promoción a admin, y ajustarHoras()). Un no-admin
+    // editando su propio perfil (futura vista de Perfil/Ajustes) puede
+    // cambiar su rol solo entre estudiante/externo, y nunca sus propias
+    // horasTotales — eso sigue siendo exclusivo de ajustarHoras() por
+    // un admin.
     match /usuarios/{userId} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null && (request.auth.uid == userId || isAdmin());
+
+      allow create: if request.auth != null
+                    && request.auth.uid == userId
+                    && request.resource.data.rol in ['estudiante', 'externo']
+                    && request.resource.data.horasTotales == 0;
+
+      allow update: if request.auth != null && (
+        isAdmin() ||
+        (
+          request.auth.uid == userId &&
+          request.resource.data.rol in ['estudiante', 'externo'] &&
+          request.resource.data.horasTotales == resource.data.horasTotales
+        )
+      );
+
+      allow delete: if request.auth != null && isAdmin();
     }
   }
 }

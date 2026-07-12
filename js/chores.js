@@ -7,7 +7,9 @@
 import {
     db, PATHS,
     collection, doc,
-    getDocs, addDoc, updateDoc, serverTimestamp
+    getDocs, addDoc, updateDoc, serverTimestamp,
+    writeBatch, increment,
+    query, where, orderBy, limit
 } from './firebase.js';
 import { getUsuarioActual } from './session.js';
 
@@ -33,10 +35,36 @@ export async function crearTarea(datos) {
     const ref = await addDoc(collection(db, PATHS.tareas), {
         titulo: datos.titulo,
         estado: 'pendiente',
-        asignados: datos.asignados || []
+        asignados: datos.asignados || [],
+        // Exclusivamente para ordenar por antigüedad (obtenerProximaTarea).
+        // NO es fecha límite/vencimiento — el huerto no maneja eso, es un
+        // backlog que se va completando, ya descartado explícitamente.
+        fechaCreacion: serverTimestamp()
     });
     _logActividad('CREAR_TAREA', ref.id, datos.titulo);
     return ref.id;
+}
+
+// La tarea pendiente más antigua asignada a `uid`. Devuelve null si no hay
+// ninguna — es un estado válido (nadie tiene pendientes), no una falla.
+//
+// Requiere un índice compuesto en Firestore (asignados array-contains +
+// estado == + fechaCreacion orderBy) — no existe por defecto. La primera
+// vez que corra esta query sin el índice creado, Firestore va a lanzar un
+// error con un link directo para crearlo en un clic; hazlo antes de dar
+// por probado este widget, o `obtenerProximaTarea` va a fallar siempre.
+export async function obtenerProximaTarea(uid) {
+    const q = query(
+        collection(db, PATHS.tareas),
+        where('asignados', 'array-contains', uid),
+        where('estado', '==', 'pendiente'),
+        orderBy('fechaCreacion', 'asc'),
+        limit(1)
+    );
+    const snapshot = await getDocs(q);
+    if (snapshot.empty) return null;
+    const doc0 = snapshot.docs[0];
+    return { id: doc0.id, ...doc0.data() };
 }
 
 export async function asignarEstudiantes(tareaId, arrayDeIds) {
@@ -44,20 +72,70 @@ export async function asignarEstudiantes(tareaId, arrayDeIds) {
     _logActividad('ASIGNAR_ESTUDIANTES', tareaId, arrayDeIds.join(', '));
 }
 
-export async function registrarAsistencia({ estudianteId, horasTrabajadas, tareaIdAsociada }) {
-    await addDoc(collection(db, PATHS.asistencias), {
+// ── Horas: fuente única en `asistencias`, append-only ──────────────
+// Contexto (Fase 13.2): no todas las horas vienen de la Regla del Sábado.
+// También hay horas ad-hoc que un admin autoriza por tareas fuera del
+// ciclo semanal, y ajustes de migración de horas de semestres anteriores.
+// Los tres casos quedan en la MISMA colección (con `origen` distinguiendo
+// cuál es cuál) para que un reporte a la universidad sea una sola query,
+// no una reconciliación entre asistencias + registro_actividad.
+//
+// _registrarHoras es el único punto de escritura real de horas: hace, en
+// un writeBatch atómico, (a) crear el documento de asistencia y (b)
+// incrementar usuarios/{estudianteId}.horasTotales por el MISMO valor —
+// nunca dos números por separado, para que ambas escrituras sean
+// inseparables (o pasan las dos, o ninguna).
+//
+// Exportada — no es puramente privada al archivo, porque
+// usuarios.js.ajustarHoras() también la necesita (misma escritura
+// atómica, origen distinto). El prefijo `_` señala "no la llames desde
+// main.js directamente", no "privada a este módulo" — es la única
+// función de chores.js que otro módulo de datos importa.
+export async function _registrarHoras(estudianteId, horas, { tareaId = null, motivo = null, origen, autorizadoPor }) {
+    const batch = writeBatch(db);
+
+    const asistenciaRef = doc(collection(db, PATHS.asistencias));
+    batch.set(asistenciaRef, {
         estudianteId,
         fecha: new Date().toISOString().slice(0, 10),
-        horasTrabajadas,
-        tareaIdAsociada
+        horasTrabajadas: horas,
+        tareaId,
+        origen,
+        motivo,
+        autorizadoPor
     });
-    _logActividad('REGISTRAR_ASISTENCIA', estudianteId, `${horasTrabajadas}h en ${tareaIdAsociada}`);
+
+    batch.update(doc(db, PATHS.usuarios, estudianteId), {
+        horasTotales: increment(horas)
+    });
+
+    await batch.commit();
+
+    _logActividad(
+        origen === 'automatica' ? 'REGISTRAR_ASISTENCIA' : 'AJUSTE_HORAS_MANUAL',
+        estudianteId,
+        motivo ? `${horas}h — ${motivo}` : `${horas}h`
+    );
+
+    return asistenciaRef.id;
 }
 
 // LA REGLA DEL SÁBADO: si la tarea se completa en sábado, cada estudiante
 // asignado recibe asistencia automática de 15 horas para esa tarea.
 // Valor tal cual lo especifica la operación real del huerto (no lo ajusto:
-// una fila normal de 2-4h se registraría manualmente vía registrarAsistencia).
+// una fila normal de 2-4h se registra manualmente vía ajustarHoras).
+// autorizadoPor es quien está completando la tarea ahora mismo — siempre
+// un admin, porque las reglas de Firestore ya exigen isAdmin() para
+// escribir en `tareas`.
+export async function registrarAsistencia(estudianteId, tareaId) {
+    const admin = getUsuarioActual();
+    return _registrarHoras(estudianteId, 15, {
+        tareaId,
+        origen: 'automatica',
+        autorizadoPor: admin?.uid ?? null
+    });
+}
+
 export async function completarTarea(tareaId, arrayDeAsignados) {
     await updateDoc(doc(db, PATHS.tareas, tareaId), { estado: 'completada' });
     _logActividad('COMPLETAR_TAREA', tareaId);
@@ -65,13 +143,7 @@ export async function completarTarea(tareaId, arrayDeAsignados) {
     const esSabado = new Date().getDay() === 6;
     if (esSabado) {
         await Promise.all(
-            arrayDeAsignados.map((estudianteId) =>
-                registrarAsistencia({
-                    estudianteId,
-                    horasTrabajadas: 15,
-                    tareaIdAsociada: tareaId
-                })
-            )
+            arrayDeAsignados.map((estudianteId) => registrarAsistencia(estudianteId, tareaId))
         );
     }
 }

@@ -468,25 +468,54 @@
   ::-webkit-scrollbar { width: 5px; height: 5px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  /* ── SPA (Fase 13) ── */
+  /* .hidden con !important: los estados "mostrado" de vistas concretas
+     (ej. #view-splash con display:flex) usan selectores de igual o mayor
+     especificidad que .hidden — sin !important, .hidden podría perder el
+     empate/la especificidad y la vista seguiría visible. */
+  .hidden { display: none !important; }
+  .view { padding: 1.5rem; min-height: calc(100vh - 0px); }
+
+  #view-splash {
+    position: fixed; inset: 0; z-index: 3000;
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column; gap: 0.8rem;
+    background: var(--soil); color: var(--parchment);
+    padding: 0;
+  }
+  #view-splash .splash-logo { font-size: 3rem; }
+  #view-splash p { font-family: 'DM Mono', monospace; font-size: 0.8rem; opacity: 0.8; }
+
+  #view-dashboard .dashboard-welcome h2 {
+    font-family: 'Playfair Display', serif; font-size: 1.4rem; margin-bottom: 0.3rem;
+  }
+  #view-dashboard .dashboard-sub {
+    font-size: 0.8rem; color: #888; max-width: 480px; margin-bottom: 1.5rem;
+  }
+  #view-dashboard .dashboard-card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 1rem 1.2rem; max-width: 360px; margin-bottom: 1.5rem;
+  }
+  #view-dashboard .dashboard-card h3 {
+    font-family: 'DM Mono', monospace; font-size: 0.7rem; text-transform: uppercase;
+    letter-spacing: 0.05em; color: #888; margin-bottom: 0.4rem;
+  }
+  #view-dashboard .dashboard-card p { font-size: 0.9rem; }
+  #view-dashboard .dashboard-quicklinks {
+    display: flex; flex-wrap: wrap; gap: 0.6rem;
+  }
 </style>
 </head>
 <body>
 
+<!-- #login-overlay: exclusivamente el caso 1 del contrato (sin sesión).
+     El selector de rol vive en #view-setup — ver caso 2. -->
 <div id="login-overlay">
   <div class="login-box">
     <h1>🌿 Huerto <span>Universitario</span></h1>
     <p id="loginError" class="login-error" style="display:none"></p>
     <button id="googleLoginBtn" class="btn btn-primary" style="width:100%">G Ingresar con Google</button>
-    <div id="roleSelection" style="display:none">
-      <div class="form-group">
-        <label for="newUserRole">Primera vez por aquí — ¿cuál es tu rol?</label>
-        <select id="newUserRole">
-          <option value="estudiante">Estudiante/Miembro</option>
-          <option value="externo">Colaborador Externo</option>
-        </select>
-      </div>
-      <button id="completeRegistroBtn" class="btn btn-primary" style="width:100%">Completar Registro</button>
-    </div>
   </div>
 </div>
 
@@ -501,6 +530,63 @@
   <button class="btn btn-primary" id="addBedBtn">+ Mesa</button>
   <button class="btn btn-danger" id="adminBtn" style="display:none">⚙ Admin</button>
 </header>
+
+<!-- Fase 13: sistema de vistas SPA. Coexiste con #appRoot (arriba) por
+     ahora — #appRoot se queda oculto permanentemente hasta que Mapa/
+     Tareas/Admin se migren aquí uno por uno. -->
+<div id="app">
+
+  <!-- Splash: única vista visible por defecto (sin .hidden). Cubre la
+       pausa entre que carga la página y el primer 'auth:resuelto'. -->
+  <section class="view" id="view-splash">
+    <span class="splash-logo">🌿</span>
+    <p>Cargando Huerto Universitario…</p>
+  </section>
+
+  <!-- Dashboard: contenido mínimo real a propósito. La tarjeta de horas
+       acumuladas sigue sin construirse (usuarios.horasTotales — ver
+       Fase 13.2, ya resuelto en el esquema pero falta el widget). "Tu
+       próxima tarea" sí tiene datos reales (Fase 13.3). -->
+  <section class="view hidden" id="view-dashboard">
+    <div class="dashboard-welcome">
+      <h2>Bienvenido<span id="dashboardUserEmail"></span></h2>
+      <p class="dashboard-sub">
+        Panel en construcción — la tarjeta de horas acumuladas sigue
+        bloqueada hasta que exista su widget.
+      </p>
+    </div>
+    <div class="dashboard-card">
+      <h3>Tu próxima tarea</h3>
+      <p id="dashboardProximaTareaTexto">Cargando…</p>
+    </div>
+    <nav class="dashboard-quicklinks">
+      <button class="btn" data-vista="view-gemelo">🗺 Mapa</button>
+      <button class="btn" data-vista="view-tareas">📋 Tareas</button>
+      <button class="btn" data-vista="view-catalogos">📦 Catálogos</button>
+      <button class="btn" data-vista="view-perfil">👤 Perfil</button>
+      <button class="btn btn-danger" id="dashboardAdminLink" data-vista="view-admin" style="display:none">⚙ Admin</button>
+    </nav>
+  </section>
+
+  <!-- Placeholders vacíos — se llenan uno por uno en fases futuras. -->
+  <section class="view hidden" id="view-setup">
+    <div class="form-group">
+      <label for="newUserRole">Primera vez por aquí — ¿cuál es tu rol?</label>
+      <select id="newUserRole">
+        <option value="estudiante">Estudiante/Miembro</option>
+        <option value="externo">Colaborador Externo</option>
+      </select>
+    </div>
+    <p id="setupError" class="login-error" style="display:none"></p>
+    <button id="completeRegistroBtn" class="btn btn-primary">Completar Registro</button>
+  </section>
+  <section class="view hidden" id="view-gemelo"></section>
+  <section class="view hidden" id="view-tareas"></section>
+  <section class="view hidden" id="view-catalogos"></section>
+  <section class="view hidden" id="view-perfil"></section>
+  <section class="view hidden" id="view-admin"></section>
+
+</div>
 
 <div class="app app-hidden" id="appRoot">
   <!-- LEFT: Plant catalogue -->
@@ -729,8 +815,13 @@
         </select>
       </div>
       <div class="form-group">
-        <label for="adminHoursInput">Nuevas horas totales</label>
-        <input type="number" id="adminHoursInput" placeholder="Nuevas horas totales">
+        <label for="adminHoursInput">Horas a sumar o restar</label>
+        <input type="number" id="adminHoursInput" placeholder="Ej: 15 o -3">
+        <p style="font-size:0.72rem;color:#888;margin:0.3rem 0 0">Usa un número negativo para corregir a la baja.</p>
+      </div>
+      <div class="form-group">
+        <label for="adminHoursMotivo">Motivo</label>
+        <textarea id="adminHoursMotivo" rows="2" placeholder="15 horas de semestre anterior, ver correo del 3/marzo"></textarea>
       </div>
       <button class="btn btn-danger" id="adminSaveBtn">Ajustar Horas</button>
     </div>

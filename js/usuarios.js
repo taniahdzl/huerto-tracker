@@ -7,11 +7,16 @@
 import {
     db, PATHS,
     doc,
-    getDoc, getDocs, setDoc, updateDoc,
+    getDoc, getDocs, setDoc,
     collection, addDoc, serverTimestamp,
     query, where
 } from './firebase.js';
 import { getUsuarioActual } from './session.js';
+// _registrarHoras vive en chores.js (junto con la colección asistencias
+// que escribe) — usuarios.js la importa en vez de duplicar la escritura
+// atómica asistencia+horasTotales. Ver el comentario de cabecera de
+// _registrarHoras en chores.js para el porqué de este acoplamiento nuevo.
+import { _registrarHoras } from './chores.js';
 
 function _logActividad(tipo, entidad, detalle) {
     const usuario = getUsuarioActual();
@@ -50,12 +55,21 @@ export async function registrarUsuario(uid, email, rol) {
     _logActividad('REGISTRAR_USUARIO', uid, rol);
 }
 
-// Lista para cuando exista la UI de administrador. Con las reglas actuales
-// (firestore.rules: allow write si auth.uid == userId) SOLO funciona si el
-// usuario se ajusta sus propias horas — un admin ajustando las de otra
-// persona (el caso de uso real) fallará con permission-denied hasta que
-// se agreguen reglas por rol.
-export async function ajustarHoras(uid, nuevasHoras) {
-    await updateDoc(doc(db, PATHS.usuarios, uid), { horasTotales: nuevasHoras });
-    _logActividad('AJUSTE_HORAS_MANUAL', uid, nuevasHoras);
+// Fase 13.2: ya no existe forma de "poner" horasTotales a un valor
+// absoluto — solo sumar/restar con motivo documentado, vía la misma
+// escritura atómica (asistencia + increment) que usa la Regla del
+// Sábado. `horas` puede ser negativo (corrección a la baja) o positivo
+// (horas ad-hoc o migración de semestre anterior). El motivo es
+// obligatorio y se valida aquí, no solo en la UI — main.js valida antes
+// de llamar por UX, pero este es el guardia real.
+export async function ajustarHoras(estudianteId, horas, motivo) {
+    if (!motivo || !motivo.trim()) {
+        throw new Error('El motivo es obligatorio para ajustar horas.');
+    }
+    const admin = getUsuarioActual();
+    return _registrarHoras(estudianteId, horas, {
+        motivo: motivo.trim(),
+        origen: 'manual',
+        autorizadoPor: admin?.uid ?? null
+    });
 }
