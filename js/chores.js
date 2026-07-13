@@ -69,7 +69,7 @@ export async function obtenerProximaTarea(uid) {
 
 export async function asignarEstudiantes(tareaId, arrayDeIds) {
     await updateDoc(doc(db, PATHS.tareas, tareaId), { asignados: arrayDeIds });
-    _logActividad('ASIGNAR_ESTUDIANTES', tareaId, arrayDeIds.join(', '));
+    _logActividad('ASIGNAR_ESTUDIANTES', tareaId, arrayDeIds.length > 0 ? arrayDeIds.join(', ') : '(sin asignados)');
 }
 
 // ── Horas: fuente única en `asistencias`, append-only ──────────────
@@ -134,6 +134,15 @@ export async function registrarAsistencia(estudianteId, tareaId) {
         origen: 'automatica',
         autorizadoPor: admin?.uid ?? null
     });
+}
+
+// Usada por obtenerSesionConDetalle (db.js) para derivar asistentes/tareas
+// completadas de una fecha de bitácora — asistencias sigue siendo la fuente
+// única, bitacora_sesiones nunca duplica estos datos.
+export async function obtenerAsistenciasPorFecha(fecha) {
+    const q = query(collection(db, PATHS.asistencias), where('fecha', '==', fecha));
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 }
 
 export async function completarTarea(tareaId, arrayDeAsignados) {

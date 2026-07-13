@@ -1,0 +1,11 @@
+:root {
+  --color-primario: #2F5038;      /* verde profundo — marca, botones principales */
+  --color-primario-claro: #4F8A63;
+  --color-secundario: #B5643D;    /* terracota oscuro — ladrillo, anillo exterior */
+  --color-secundario-claro: #D9A788; /* terracota claro — anillo interior */
+  --color-acento: #E8A838;        /* dorado — cosecha/alertas positivas */
+  --color-fondo: #F7F4EE;         /* crema — fondo, contornos tipo "recorte de papel" */
+  --color-texto: #221D17;
+  --color-exitoso: #3F7A46;
+  --color-error: #B23A2C;
+}

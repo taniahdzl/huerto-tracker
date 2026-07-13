@@ -7,7 +7,7 @@
 import {
     db, PATHS,
     doc,
-    getDoc, getDocs, setDoc,
+    getDoc, getDocs, setDoc, updateDoc,
     collection, addDoc, serverTimestamp,
     query, where
 } from './firebase.js';
@@ -53,6 +53,23 @@ export async function registrarUsuario(uid, email, rol) {
     // función — es el primer registro de la persona en el directorio,
     // vale la pena que quede en el log de auditoría igual que el resto.
     _logActividad('REGISTRAR_USUARIO', uid, rol);
+}
+
+// Fase 13.7: un usuario cambia su PROPIO rol (nunca el de otro — eso
+// sigue siendo ajustarHoras/promoción manual por admin). 'admin' nunca es
+// un valor aceptable aquí, mismo criterio que el Setup inicial — se
+// rechaza en el cliente ANTES de escribir, aunque la regla de Firestore
+// ya lo rechazaría igual (defensa en profundidad, mismo patrón que
+// ajustarHoras con `motivo`). El payload contiene ÚNICAMENTE `rol`: la
+// regla exige que horasTotales no cambie en este request, así que ni
+// siquiera se referencia ese campo aquí — no hay forma de que este
+// payload lo toque por accidente.
+export async function actualizarRolPropio(uid, nuevoRol) {
+    if (!['estudiante', 'externo'].includes(nuevoRol)) {
+        throw new Error('Rol inválido.');
+    }
+    await updateDoc(doc(db, PATHS.usuarios, uid), { rol: nuevoRol });
+    _logActividad('ACTUALIZAR_ROL_PROPIO', uid, nuevoRol);
 }
 
 // Fase 13.2: ya no existe forma de "poner" horasTotales a un valor

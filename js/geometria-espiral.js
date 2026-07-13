@@ -16,17 +16,27 @@
 //
 //   tipo: 'arco' → cada planta usa POSICIÓN ANGULAR NORMALIZADA dentro del
 //   segmento de esa cama, no una coordenada polar completa:
-//     { plantaId, plantaTipo, t, fechaSiembra, fechaTrasplante, notas }
+//     { instanciaId, plantaId, plantaTipo, t, fechaSiembra, fechaTrasplante, notas, finalidad }
+//     - instanciaId: string único (crypto.randomUUID()) generado por quien
+//       siembra la planta. Es el único campo que identifica esta entrada de
+//       forma estable — plantaId se repite si hay dos plantas de la misma
+//       especie en la misma cama, así que crearHistorialCultivo/
+//       marcarParaSemilla (db.js) buscan por instanciaId, nunca por plantaId
+//       ni comparando el objeto completo.
 //     - t: number entre 0 y 1. t=0 → anguloInicio del segmento (calculado
 //       a partir de {anillo, indiceSegmento} + parámetros aprobados),
 //       t=1 → anguloFin del mismo segmento.
 //     - El radio NO se guarda por planta — se asume fijo al punto medio
 //       del ancho de la cama: (radioInterior + radioExterior) / 2. Así lo
 //       calculaba el editor 2D ya validado; no hay campo de radio aquí.
+//     - finalidad: 'cosecha' | 'semilla', default 'cosecha' si el campo no
+//       existe (agregado en Fase 13.6b, entradas más viejas pueden no
+//       tenerlo todavía).
 //
 //   tipo: 'circular' (la cama central) → cada planta usa una coordenada
 //   POLAR COMPLETA, porque el centro no es un arco con inicio/fin:
-//     { plantaId, plantaTipo, angle, r, fechaSiembra, fechaTrasplante, notas }
+//     { instanciaId, plantaId, plantaTipo, angle, r, fechaSiembra, fechaTrasplante, notas, finalidad }
+//     - instanciaId/finalidad: mismo significado que en 'arco' (ver arriba).
 //     - angle: number entre 0 y 360 (grados).
 //     - r: number entre 0 y radioCentro. El editor 2D lo topaba en
 //       radioCentro * 0.75 (no se permite sembrar hasta el borde exacto).

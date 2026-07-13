@@ -62,6 +62,25 @@ service cloud.firestore {
       allow write: if request.auth != null && isAdmin();
     }
 
+    // historial_cultivo: append-only, mismo criterio que asistencias —
+    // cualquiera puede cerrar un cultivo (create), nadie edita/borra un
+    // cierre ya escrito. Confirmado por grep (ver PASO B): ningún código
+    // existente hace update/delete sobre esta colección.
+    match /historial_cultivo/{registroId} {
+      allow read:           if request.auth != null;
+      allow create:         if request.auth != null;
+      allow update, delete: if false;
+    }
+
+    // bitacora_sesiones: append-only, sin restricción de una-por-fecha —
+    // corregir una entrada mal escrita es crear una nueva, no editar la
+    // vieja, mismo criterio que el resto del historial de auditoría.
+    match /bitacora_sesiones/{sesionId} {
+      allow read:           if request.auth != null;
+      allow create:         if request.auth != null;
+      allow update, delete: if false;
+    }
+
     // ── Usuarios ──────────────────────────────────────────────────
     // Un admin nunca se autoasigna — se promueve manualmente (Fase 13).
     // create: solo el propio uid, y solo con rol en la whitelist —

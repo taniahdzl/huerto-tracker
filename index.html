@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Huerto Universitario · Tracker</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/variables.css">
 <style>
   :root {
     --soil: #3d2b1f;
@@ -429,15 +430,48 @@
     padding: 0.6rem 0.8rem; border-radius: 8px;
     background: var(--parchment); border: 1px solid var(--border);
   }
-  .chore-item-titulo { flex: 1; font-size: 0.85rem; }
+  .chore-item-info { flex: 1; display: flex; flex-direction: column; gap: 0.1rem; }
+  .chore-item-titulo { font-size: 0.85rem; }
+  .chore-item-asignados { font-size: 0.7rem; color: #888; font-family: 'DM Mono', monospace; }
   .chore-item.completada { opacity: 0.6; }
   .chore-item.completada .chore-item-titulo { text-decoration: line-through; color: #888; }
+  #view-tareas .view-tareas-toolbar {
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 0.6rem; margin-bottom: 1rem;
+  }
   .chore-complete-btn {
     padding: 0.3rem 0.6rem; border-radius: 6px;
     border: 1px solid var(--leaf); background: transparent; color: var(--leaf);
     font-size: 0.75rem; cursor: pointer; white-space: nowrap;
   }
   .chore-complete-btn:hover { background: var(--leaf); color: white; }
+
+  /* ── CATÁLOGOS (Fase 13.6b) ── */
+  #view-catalogos .view-catalogos-toolbar {
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 0.6rem; margin-bottom: 1rem;
+  }
+  #view-catalogos .search-box { max-width: 240px; }
+  .catalogo-item {
+    display: flex; align-items: center; gap: 0.7rem;
+    padding: 0.6rem 0.8rem; border-radius: 8px;
+    background: var(--parchment); border: 1px solid var(--border);
+  }
+  .catalogo-item-info { flex: 1; display: flex; flex-direction: column; gap: 0.1rem; }
+  .catalogo-item-nombre { font-size: 0.85rem; }
+  .catalogo-item-meta { font-size: 0.7rem; color: #888; font-family: 'DM Mono', monospace; }
+  .catalogo-eliminar-btn { border-color: var(--alert); color: var(--alert); }
+  .catalogo-eliminar-btn:hover { background: var(--alert); color: white; }
+
+  /* ── ADMIN (Fase 13.8) ── */
+  .admin-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 0.5rem; }
+  .admin-table th {
+    text-align: left; font-family: 'DM Mono', monospace; font-size: 0.65rem;
+    text-transform: uppercase; letter-spacing: 0.05em; color: #888;
+    padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--border);
+  }
+  .admin-table td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--border); }
+  .admin-table tbody tr:hover { background: var(--parchment-dark); }
 
   /* ── TOAST ── */
   #toast {
@@ -493,15 +527,17 @@
   #view-dashboard .dashboard-sub {
     font-size: 0.8rem; color: #888; max-width: 480px; margin-bottom: 1.5rem;
   }
-  #view-dashboard .dashboard-card {
+  /* .dashboard-card: sin delimitar a #view-dashboard a propósito — la
+     reutiliza view-perfil (Fase 13.7). */
+  .dashboard-card {
     background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
     padding: 1rem 1.2rem; max-width: 360px; margin-bottom: 1.5rem;
   }
-  #view-dashboard .dashboard-card h3 {
+  .dashboard-card h3 {
     font-family: 'DM Mono', monospace; font-size: 0.7rem; text-transform: uppercase;
     letter-spacing: 0.05em; color: #888; margin-bottom: 0.4rem;
   }
-  #view-dashboard .dashboard-card p { font-size: 0.9rem; }
+  .dashboard-card p { font-size: 0.9rem; }
   #view-dashboard .dashboard-quicklinks {
     display: flex; flex-wrap: wrap; gap: 0.6rem;
   }
@@ -580,11 +616,76 @@
     <p id="setupError" class="login-error" style="display:none"></p>
     <button id="completeRegistroBtn" class="btn btn-primary">Completar Registro</button>
   </section>
-  <section class="view hidden" id="view-gemelo"></section>
-  <section class="view hidden" id="view-tareas"></section>
-  <section class="view hidden" id="view-catalogos"></section>
-  <section class="view hidden" id="view-perfil"></section>
-  <section class="view hidden" id="view-admin"></section>
+  <section class="view hidden" id="view-gemelo">
+    <div id="gemeloMapaContainer" style="width:min(90vh,900px); height:min(90vh,900px); margin:0 auto;"></div>
+  </section>
+  <section class="view hidden" id="view-tareas">
+    <div class="view-tareas-toolbar">
+      <div class="filter-tabs">
+        <button class="filter-tab active" data-filtro="mias">Asignadas a mí</button>
+        <button class="filter-tab" data-filtro="todas">Todas</button>
+      </div>
+      <button class="btn btn-primary" id="crearTareaBtn" style="display:none">+ Crear tarea</button>
+    </div>
+    <ul class="chore-list" id="tareasListaVista"></ul>
+  </section>
+  <section class="view hidden" id="view-catalogos">
+    <div class="view-catalogos-toolbar">
+      <div class="filter-tabs">
+        <button class="filter-tab active" data-tab-catalogo="semillas">Semillas</button>
+        <button class="filter-tab" data-tab-catalogo="quimicos">Químicos</button>
+        <button class="filter-tab" data-tab-catalogo="herramientas">Herramientas</button>
+      </div>
+      <input id="catalogosBusqueda" class="search-box" placeholder="Buscar por nombre…">
+      <button class="btn btn-primary" id="agregarCatalogoBtn" style="display:none">+ Agregar</button>
+    </div>
+    <ul class="chore-list" id="catalogosLista"></ul>
+  </section>
+  <section class="view hidden" id="view-perfil">
+    <div class="dashboard-card">
+      <h3>Correo</h3>
+      <p id="perfilEmail"></p>
+    </div>
+    <div class="dashboard-card">
+      <h3>Rol actual</h3>
+      <p id="perfilRolTexto"></p>
+    </div>
+    <div class="dashboard-card">
+      <h3>Horas acumuladas</h3>
+      <p id="perfilHoras"></p>
+    </div>
+    <div class="form-group" id="perfilRolSelectorGroup" style="max-width:320px">
+      <label for="perfilRolSelect">Cambiar rol</label>
+      <select id="perfilRolSelect">
+        <option value="estudiante">Estudiante/Miembro</option>
+        <option value="externo">Colaborador Externo</option>
+      </select>
+      <button class="btn btn-primary" id="perfilGuardarRolBtn" style="margin-top:0.5rem">Guardar Rol</button>
+    </div>
+    <button class="btn btn-danger" id="perfilLogoutBtn" style="margin-top:1rem">Cerrar sesión</button>
+  </section>
+  <section class="view hidden" id="view-admin">
+    <div class="dashboard-card" style="max-width:none">
+      <h3>Ajustar Horas</h3>
+      <button class="btn btn-danger" id="abrirAjusteHorasBtn">Ajustar Horas de un Estudiante</button>
+    </div>
+
+    <div class="dashboard-card" style="max-width:none">
+      <h3>Resumen de Horas por Estudiante</h3>
+      <table class="admin-table">
+        <thead><tr><th>Estudiante</th><th>Horas Totales</th></tr></thead>
+        <tbody id="resumenHorasBody"></tbody>
+      </table>
+    </div>
+
+    <div class="dashboard-card" style="max-width:none">
+      <h3>Registro de Actividad (últimas 50)</h3>
+      <table class="admin-table">
+        <thead><tr><th>Fecha</th><th>Tipo</th><th>Entidad</th><th>Detalle</th><th>Quién</th></tr></thead>
+        <tbody id="registroActividadBody"></tbody>
+      </table>
+    </div>
+  </section>
 
 </div>
 
@@ -782,20 +883,23 @@
   </div>
 </div>
 
-<!-- MODAL: Tareas -->
-<div class="modal-overlay" id="choresModal">
+<!-- MODAL: Crear Tarea (solo admin — Tareas en sí es una vista, no modal) -->
+<div class="modal-overlay" id="crearTareaModal">
   <div class="modal">
     <div class="modal-header">
-      <h3>📋 Tareas</h3>
-      <button class="modal-close" id="choresModalClose">×</button>
+      <h3>+ Crear Tarea</h3>
+      <button class="modal-close" id="crearTareaModalClose">×</button>
     </div>
-    <div class="modal-body" id="choresModalBody">
-      <div class="chore-form">
-        <input id="newChoreInput" placeholder="Nueva tarea…">
-        <button class="btn btn-primary" id="addChoreBtn">+ Agregar</button>
+    <div class="modal-body">
+      <div class="form-group">
+        <label for="crearTareaTitulo">Título</label>
+        <input id="crearTareaTitulo" placeholder="Nueva tarea…">
       </div>
-      <div id="choreAssignees" class="chore-assignees"></div>
-      <ul class="chore-list" id="choresList"></ul>
+      <div class="form-group">
+        <label>Asignar a</label>
+        <div id="crearTareaAssignees" class="chore-assignees"></div>
+      </div>
+      <button class="btn btn-primary" id="crearTareaSaveBtn">Crear</button>
     </div>
   </div>
 </div>
@@ -824,6 +928,107 @@
         <textarea id="adminHoursMotivo" rows="2" placeholder="15 horas de semestre anterior, ver correo del 3/marzo"></textarea>
       </div>
       <button class="btn btn-danger" id="adminSaveBtn">Ajustar Horas</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Semilla (crear/editar) — 3 modales pequeños separados, no uno
+     genérico: el shape de semilla es rico/anidado (requerimientos,
+     condiciones_optimas) vs. químico/herramienta que son planos con 2-3
+     campos. Parametrizar un solo modal habría necesitado tanta lógica
+     condicional como tener 3 modales simples — no vale la abstracción
+     para solo 3 tipos. -->
+<div class="modal-overlay" id="semillaModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="semillaModalTitle">Agregar Semilla</h3>
+      <button class="modal-close" id="semillaModalClose">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label for="semillaNombreInput">Nombre</label>
+        <input id="semillaNombreInput" placeholder="Ej: Lechuga">
+      </div>
+      <div class="form-group">
+        <label for="semillaTipoInput">Tipo</label>
+        <input id="semillaTipoInput" placeholder="hoja, raíz, fruto…">
+      </div>
+      <div class="form-group">
+        <label for="semillaDiasInput">Días siembra a cosecha</label>
+        <input type="number" id="semillaDiasInput" placeholder="Ej: 60">
+      </div>
+      <p style="font-size:0.72rem;color:#888;margin:-0.4rem 0 1rem">
+        Solo estos 3 campos son editables aquí — requerimientos de nutrientes
+        y condiciones óptimas no se tocan desde este formulario.
+      </p>
+      <button class="btn btn-primary" id="semillaSaveBtn">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Químico (crear/editar) -->
+<div class="modal-overlay" id="quimicoModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="quimicoModalTitle">Agregar Químico</h3>
+      <button class="modal-close" id="quimicoModalClose">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label for="quimicoNombreInput">Nombre</label>
+        <input id="quimicoNombreInput" placeholder="Ej: Sulfato de cobre">
+      </div>
+      <div class="form-group">
+        <label for="quimicoNotasInput">Notas de uso</label>
+        <textarea id="quimicoNotasInput" rows="2" placeholder="Dosis, frecuencia, precauciones…"></textarea>
+      </div>
+      <button class="btn btn-primary" id="quimicoSaveBtn">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Herramienta (crear/editar) — el formulario NUNCA incluye
+     `categoria` en el payload de actualizarInventario (ver handler en
+     main.js): esta pestaña ya filtra por categoria==='herramienta' y no
+     ofrece cambiarla, así que omitirla del payload es la forma más segura
+     de no pisarla. -->
+<div class="modal-overlay" id="herramientaModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="herramientaModalTitle">Agregar Herramienta</h3>
+      <button class="modal-close" id="herramientaModalClose">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label for="herramientaNombreInput">Nombre</label>
+        <input id="herramientaNombreInput" placeholder="Ej: Pala de jardín">
+      </div>
+      <div class="form-group">
+        <label for="herramientaCantidadInput">Cantidad</label>
+        <input type="number" id="herramientaCantidadInput" placeholder="Ej: 3">
+      </div>
+      <button class="btn btn-primary" id="herramientaSaveBtn">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Detalle de planta (PASO D) — se abre al hacer clic en una ficha
+     del render en espiral (render-spiral-2d.js). NPK (cama.suelo) NO se
+     muestra aquí a propósito, fuera de alcance hasta que exista un sistema
+     real de riesgo nutricional. -->
+<div class="modal-overlay" id="detallePlantaModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="detallePlantaTitulo">—</h3>
+      <button class="modal-close" id="detallePlantaModalClose">×</button>
+    </div>
+    <div class="modal-body">
+      <p id="detallePlantaEstado" style="font-weight:600"></p>
+      <p id="detallePlantaFecha"></p>
+      <p id="detallePlantaProgreso"></p>
+      <p id="detallePlantaPlagas" style="display:none"></p>
+      <button class="btn" id="detallePlantaSemillaBtn"></button>
+      <button class="btn btn-primary" id="detallePlantaCompletarBtn">✅ Marcar como completado</button>
     </div>
   </div>
 </div>

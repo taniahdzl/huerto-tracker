@@ -39,6 +39,25 @@ export function emojiDePlanta(tipo) {
     return EMOJI_POR_TIPO[tipo] || '🌿';
 }
 
+// Mismo criterio que EMOJI_POR_TIPO — única fuente de verdad, reutilizada
+// por render-spiral-2d.js para el anillo de progreso de cada ficha en
+// estado normal. Los valores son EXACTAMENTE el `color` (no el `background`)
+// de las clases .type-* declaradas en el <style> de index.html:144-149 —
+// no existe una variable CSS compartida entre ambos, así que si esas reglas
+// cambian, este mapa se actualiza a mano.
+export const COLOR_POR_TIPO = {
+    hoja:    '#2e7d32',
+    'raíz':  '#e65100',
+    fruto:   '#c62828',
+    flor:    '#6a1b9a',
+    tallo:   '#283593',
+    semilla: '#558b2f'
+};
+
+export function colorDePlanta(tipo) {
+    return COLOR_POR_TIPO[tipo] || '#757575';
+}
+
 export function renderCatalogo(plantas, contenedor) {
     const fragment = document.createDocumentFragment();
 
@@ -153,9 +172,13 @@ export function renderMapaHuerto(camas, contenedor) {
 }
 
 // ── Shape de `tareas` ────────────────────────────────────────────
-//   { id, titulo, estado: "pendiente"|"completada", asignados: [uid,...] }
+//   { id, titulo, estado: "pendiente"|"completada", asignados: [uid,...],
+//     fechaCreacion, asignadosNombres: [string,...] }
+// `asignadosNombres` es opcional y se denormaliza en main.js (mismo patrón
+// que plantaNombre/plantaTipo en camas) — este módulo no conoce el
+// directorio de usuarios, solo pinta lo que ya viene resuelto.
 
-export function renderListaTareas(tareas, contenedor, onCompletarClick) {
+export function renderListaTareas(tareas, contenedor, onCompletarClick, { esAdmin = false } = {}) {
     const fragment = document.createDocumentFragment();
 
     tareas.forEach((tarea) => {
@@ -165,12 +188,27 @@ export function renderListaTareas(tareas, contenedor, onCompletarClick) {
         li.className = completada ? 'chore-item completada' : 'chore-item';
         li.dataset.tareaId = tarea.id;
 
+        const info = document.createElement('div');
+        info.className = 'chore-item-info';
+
         const titulo = document.createElement('span');
         titulo.className = 'chore-item-titulo';
         titulo.textContent = tarea.titulo || 'Sin título';
-        li.appendChild(titulo);
+        info.appendChild(titulo);
 
-        if (!completada) {
+        const asignados = document.createElement('span');
+        asignados.className = 'chore-item-asignados';
+        asignados.textContent = (tarea.asignadosNombres && tarea.asignadosNombres.length)
+            ? tarea.asignadosNombres.join(', ')
+            : 'Sin asignar';
+        info.appendChild(asignados);
+
+        li.appendChild(info);
+
+        // RBAC de cliente: la seguridad real está en firestore.rules
+        // (create/update/delete de `tareas` es admin-only) — esto solo
+        // evita ofrecer un botón que el backend va a rechazar.
+        if (!completada && esAdmin) {
             const btn = document.createElement('button');
             btn.className = 'chore-complete-btn';
             btn.textContent = '✅ Completar';
@@ -179,6 +217,128 @@ export function renderListaTareas(tareas, contenedor, onCompletarClick) {
         }
 
         fragment.appendChild(li);
+    });
+
+    contenedor.replaceChildren(fragment);
+}
+
+// ── Shape de cada tipo en la vista de Catálogos (Fase 13.6b) ────────
+//   semillas:     { id, nombre, tipo, dias_siembra_a_cosecha, ... } (real, ver upload.js)
+//   quimicos:     { id, nombre, notas_uso }
+//   herramientas: { id, nombre, cantidad, categoria } (sin precedente, propuesto en 13.6b)
+//
+// No sabe de dónde vienen los items (Firestore, filtro por categoria,
+// búsqueda) — main.js ya le entrega la lista filtrada/buscada exacta a
+// pintar. `puedeEditar`/`puedeEliminar` son booleanos ya resueltos por
+// main.js según tipo + rol — este módulo no conoce RBAC, solo obedece.
+export function renderListaCatalogos(tipo, items, contenedor, { puedeEditar, puedeEliminar, onEditar, onEliminar }) {
+    const fragment = document.createDocumentFragment();
+
+    items.forEach((item) => {
+        const li = document.createElement('li');
+        li.className = 'catalogo-item';
+        li.dataset.itemId = item.id;
+
+        const info = document.createElement('div');
+        info.className = 'catalogo-item-info';
+
+        const nombre = document.createElement('span');
+        nombre.className = 'catalogo-item-nombre';
+        nombre.textContent = item.nombre || 'Sin nombre';
+        info.appendChild(nombre);
+
+        const meta = document.createElement('span');
+        meta.className = 'catalogo-item-meta';
+        if (tipo === 'semillas') {
+            meta.textContent = `${item.tipo || '—'} · ${item.dias_siembra_a_cosecha ?? '—'} días`;
+        } else if (tipo === 'quimicos') {
+            meta.textContent = item.notas_uso || 'Sin notas';
+        } else {
+            meta.textContent = `Cantidad: ${item.cantidad ?? '—'}`;
+        }
+        info.appendChild(meta);
+
+        li.appendChild(info);
+
+        if (puedeEditar) {
+            const editarBtn = document.createElement('button');
+            editarBtn.className = 'chore-complete-btn';
+            editarBtn.textContent = '✏ Editar';
+            editarBtn.addEventListener('click', () => onEditar(tipo, item.id));
+            li.appendChild(editarBtn);
+        }
+
+        if (puedeEliminar) {
+            const eliminarBtn = document.createElement('button');
+            eliminarBtn.className = 'chore-complete-btn catalogo-eliminar-btn';
+            eliminarBtn.textContent = '🗑 Eliminar';
+            eliminarBtn.addEventListener('click', () => onEliminar(tipo, item.id));
+            li.appendChild(eliminarBtn);
+        }
+
+        fragment.appendChild(li);
+    });
+
+    contenedor.replaceChildren(fragment);
+}
+
+// ── Vista de Admin (Fase 13.8) ───────────────────────────────────────
+// registro_actividad ya guarda `usuario: usuario.email` en cada entrada
+// (ver _logActividad en db.js/chores.js/usuarios.js) — no hace falta
+// resolver uid contra ningún directorio, el nombre ya viene incluido.
+export function renderRegistroActividad(entradas, contenedor) {
+    const fragment = document.createDocumentFragment();
+
+    entradas.forEach((entrada) => {
+        const tr = document.createElement('tr');
+
+        const fecha = document.createElement('td');
+        fecha.textContent = entrada.fecha?.toDate
+            ? entrada.fecha.toDate().toLocaleString('es-MX')
+            : '—';
+        tr.appendChild(fecha);
+
+        const tipo = document.createElement('td');
+        tipo.textContent = entrada.tipo || '—';
+        tr.appendChild(tipo);
+
+        const entidad = document.createElement('td');
+        entidad.textContent = entrada.entidad || '—';
+        tr.appendChild(entidad);
+
+        const detalle = document.createElement('td');
+        detalle.textContent = entrada.detalle || '—';
+        tr.appendChild(detalle);
+
+        const quien = document.createElement('td');
+        quien.textContent = entrada.usuario || entrada.uid || '—';
+        tr.appendChild(quien);
+
+        fragment.appendChild(tr);
+    });
+
+    contenedor.replaceChildren(fragment);
+}
+
+// `estudiantes` viene de obtenerDirectorioEstudiantes() — ya trae
+// horasTotales, ver diagnóstico de Fase 13.8. Orden descendente aplicado
+// aquí, sin mutar el array recibido.
+export function renderResumenHoras(estudiantes, contenedor) {
+    const fragment = document.createDocumentFragment();
+    const ordenados = [...estudiantes].sort((a, b) => (b.horasTotales ?? 0) - (a.horasTotales ?? 0));
+
+    ordenados.forEach((estudiante) => {
+        const tr = document.createElement('tr');
+
+        const nombre = document.createElement('td');
+        nombre.textContent = estudiante.email || estudiante.id;
+        tr.appendChild(nombre);
+
+        const horas = document.createElement('td');
+        horas.textContent = estudiante.horasTotales ?? 0;
+        tr.appendChild(horas);
+
+        fragment.appendChild(tr);
     });
 
     contenedor.replaceChildren(fragment);

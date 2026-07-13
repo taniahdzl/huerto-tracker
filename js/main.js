@@ -2,10 +2,12 @@
 // Orquestador de arranque + bridge de UI + router SPA (Fase 13). Escucha
 // 'auth:resuelto' (emitido por auth.js — ver contrato documentado ahí) en
 // vez de recibir un callback; decide desde ahí si muestra #login-overlay
-// o navega a una vista. #appRoot y sus modales (bed/config/chores/admin)
-// siguen existiendo intactos mientras Mapa/Tareas/Admin se migran al
+// o navega a una vista. #appRoot y sus modales de mesa/config (bed/config)
+// siguen existiendo intactos mientras Mapa/Catálogos/Admin se migran al
 // sistema de vistas uno por uno — por ahora #appRoot queda oculto de
-// forma permanente, no lo muestra nada.
+// forma permanente, no lo muestra nada. Tareas (Fase 13.5) ya se migró
+// por completo: choresModal no existe más, es view-tareas + un modal
+// pequeño (crearTareaModal) solo para crear.
 //
 // auth.js, db.js, usuarios.js, render.js y ai.js se mantienen puros (sin
 // conocerse entre sí ni conocer el DOM) — auth.js SÍ importa usuarios.js
@@ -18,18 +20,39 @@
 // Asistente IA usa generarRespuestaHuerto() de ai.js, que hoy es un mock.
 
 import { AuthService } from './auth.js';
-import { obtenerCatalogo, obtenerCamas, crearCama, actualizarCama, eliminarCama } from './db.js';
-import { renderCatalogo, renderMapaHuerto, renderListaTareas } from './render.js';
+import {
+    obtenerCatalogo, obtenerCamas, crearCama, actualizarCama, eliminarCama,
+    crearCatalogo, actualizarCatalogo, eliminarCatalogo,
+    obtenerQuimicos, crearQuimico, actualizarQuimico, eliminarQuimico,
+    obtenerInventario, crearInventario, actualizarInventario, eliminarInventario,
+    obtenerRegistroActividad,
+    marcarParaSemilla
+} from './db.js';
+import {
+    renderCatalogo, renderMapaHuerto, renderListaTareas, renderListaCatalogos,
+    renderRegistroActividad, renderResumenHoras, emojiDePlanta
+} from './render.js';
+import { renderEspiralSVG, calcularEstadoFicha } from './render-spiral-2d.js';
 import { generarRespuestaHuerto } from './ai.js';
 import { setUsuarioActual } from './session.js';
 import { obtenerTareas, crearTarea, completarTarea, obtenerProximaTarea } from './chores.js';
-import { registrarUsuario, obtenerDirectorioEstudiantes, ajustarHoras } from './usuarios.js';
+import { obtenerUsuario, registrarUsuario, obtenerDirectorioEstudiantes, ajustarHoras, actualizarRolPropio } from './usuarios.js';
 
 const statusDot   = document.getElementById('statusDot');
 const statusText  = document.getElementById('statusText');
 const toast       = document.getElementById('toast');
 const plantListEl  = document.getElementById('plantList');
 const gardenGridEl = document.getElementById('gardenGrid');
+const gemeloMapaContainer = document.getElementById('gemeloMapaContainer');
+
+const detallePlantaModalClose = document.getElementById('detallePlantaModalClose');
+const detallePlantaTitulo    = document.getElementById('detallePlantaTitulo');
+const detallePlantaEstado    = document.getElementById('detallePlantaEstado');
+const detallePlantaFecha     = document.getElementById('detallePlantaFecha');
+const detallePlantaProgreso  = document.getElementById('detallePlantaProgreso');
+const detallePlantaPlagas    = document.getElementById('detallePlantaPlagas');
+const detallePlantaSemillaBtn    = document.getElementById('detallePlantaSemillaBtn');
+const detallePlantaCompletarBtn  = document.getElementById('detallePlantaCompletarBtn');
 
 const loginOverlay = document.getElementById('login-overlay');
 const googleLoginBtn    = document.getElementById('googleLoginBtn');
@@ -43,6 +66,40 @@ const dashboardUserEmail  = document.getElementById('dashboardUserEmail');
 const dashboardAdminLink  = document.getElementById('dashboardAdminLink');
 const dashboardQuicklinks = document.querySelector('.dashboard-quicklinks');
 const dashboardProximaTareaTexto = document.getElementById('dashboardProximaTareaTexto');
+
+// ── Vista de Catálogos (Fase 13.6b) ─────────────────────────────────
+const catalogosLista      = document.getElementById('catalogosLista');
+const catalogosBusqueda   = document.getElementById('catalogosBusqueda');
+const agregarCatalogoBtn  = document.getElementById('agregarCatalogoBtn');
+const catalogosTabs       = document.querySelectorAll('#view-catalogos .filter-tab');
+
+// ── Vista de Perfil (Fase 13.7) ──────────────────────────────────────
+const perfilEmail             = document.getElementById('perfilEmail');
+const perfilRolTexto          = document.getElementById('perfilRolTexto');
+const perfilHoras             = document.getElementById('perfilHoras');
+const perfilRolSelectorGroup  = document.getElementById('perfilRolSelectorGroup');
+const perfilRolSelect         = document.getElementById('perfilRolSelect');
+const perfilGuardarRolBtn     = document.getElementById('perfilGuardarRolBtn');
+const perfilLogoutBtn         = document.getElementById('perfilLogoutBtn');
+
+const semillaModalClose  = document.getElementById('semillaModalClose');
+const semillaModalTitle  = document.getElementById('semillaModalTitle');
+const semillaNombreInput = document.getElementById('semillaNombreInput');
+const semillaTipoInput   = document.getElementById('semillaTipoInput');
+const semillaDiasInput   = document.getElementById('semillaDiasInput');
+const semillaSaveBtn     = document.getElementById('semillaSaveBtn');
+
+const quimicoModalClose  = document.getElementById('quimicoModalClose');
+const quimicoModalTitle  = document.getElementById('quimicoModalTitle');
+const quimicoNombreInput = document.getElementById('quimicoNombreInput');
+const quimicoNotasInput  = document.getElementById('quimicoNotasInput');
+const quimicoSaveBtn     = document.getElementById('quimicoSaveBtn');
+
+const herramientaModalClose    = document.getElementById('herramientaModalClose');
+const herramientaModalTitle    = document.getElementById('herramientaModalTitle');
+const herramientaNombreInput   = document.getElementById('herramientaNombreInput');
+const herramientaCantidadInput = document.getElementById('herramientaCantidadInput');
+const herramientaSaveBtn       = document.getElementById('herramientaSaveBtn');
 
 // ── Modal de mesa (cama) ──────────────────────────────────────────
 const addBedBtn        = document.getElementById('addBedBtn');
@@ -78,14 +135,17 @@ const aiInput        = document.getElementById('aiInput');
 const aiSendBtn       = document.querySelector('.ai-send');
 const aiOverviewBtn  = document.querySelector('.btn-ai');
 
-// ── Modal de Tareas ────────────────────────────────────────────────
-const openChoresBtn    = document.getElementById('openChoresBtn');
-const choresModalClose = document.getElementById('choresModalClose');
-const newChoreInput     = document.getElementById('newChoreInput');
-const addChoreBtn       = document.getElementById('addChoreBtn');
-const choresListEl       = document.getElementById('choresList');
-const choreAssigneesEl   = document.getElementById('choreAssignees');
-const choreFormEl        = document.querySelector('.chore-form');
+// ── Vista de Tareas (Fase 13.5 — ya no es modal) ────────────────────
+const openChoresBtn      = document.getElementById('openChoresBtn');
+const tareasListaVista    = document.getElementById('tareasListaVista');
+const crearTareaBtn       = document.getElementById('crearTareaBtn');
+const tareasFilterTabs    = document.querySelectorAll('#view-tareas .filter-tab');
+
+// Modal pequeño "Crear Tarea" (solo admin) — Tareas en sí es una vista.
+const crearTareaModalClose = document.getElementById('crearTareaModalClose');
+const crearTareaTitulo      = document.getElementById('crearTareaTitulo');
+const crearTareaAssignees   = document.getElementById('crearTareaAssignees');
+const crearTareaSaveBtn     = document.getElementById('crearTareaSaveBtn');
 
 // ── Panel de Admin ─────────────────────────────────────────────────
 const adminBtn          = document.getElementById('adminBtn');
@@ -94,6 +154,11 @@ const adminStudentSelect = document.getElementById('adminStudentSelect');
 const adminHoursInput    = document.getElementById('adminHoursInput');
 const adminHoursMotivo   = document.getElementById('adminHoursMotivo');
 const adminSaveBtn       = document.getElementById('adminSaveBtn');
+
+// ── Vista de Admin (Fase 13.8) ───────────────────────────────────────
+const abrirAjusteHorasBtn = document.getElementById('abrirAjusteHorasBtn');
+const resumenHorasBody     = document.getElementById('resumenHorasBody');
+const registroActividadBody = document.getElementById('registroActividadBody');
 
 let catalogoActual    = [];
 let camasActuales     = [];
@@ -104,6 +169,11 @@ let editingCamaId     = null;
 // Firebase Auth que guarda session.js — se cachea aquí porque openEditBed()
 // necesita saberlo y no tiene acceso al `perfil` local del portero.
 let esAdminActual     = false;
+
+let quimicosActuales    = [];
+let inventarioActual    = [];
+let tabCatalogosActual  = 'semillas'; // 'semillas' | 'quimicos' | 'herramientas'
+let editandoCatalogoId  = null;
 
 function mostrarToast(mensaje, tipo = '') {
     if (!toast) return;
@@ -189,7 +259,7 @@ function mostrarDashboard(user, esAdmin) {
     loginOverlay.classList.add('hidden');
     esAdminActual = esAdmin;
     adminBtn.style.display = esAdmin ? '' : 'none';
-    choreFormEl.style.display = esAdmin ? '' : 'none';
+    crearTareaBtn.style.display = esAdmin ? '' : 'none';
     dashboardUserEmail.textContent = ` — ${user.email}`;
     dashboardAdminLink.style.display = esAdmin ? '' : 'none';
 
@@ -275,6 +345,18 @@ async function iniciarHuerto() {
         // renderer de espiral.
         const camasRectangulares = camas.filter((c) => (c.tipo || 'rectangular') === 'rectangular');
         renderMapaHuerto(camasRectangulares, gardenGridEl);
+
+        // renderEspiralSVG filtra internamente a arco/circular — se le pasa
+        // `camas` completo, mismo dato ya cargado arriba (sin una segunda
+        // ida a Firestore).
+        renderEspiralSVG(gemeloMapaContainer, camas, catalogo, {
+            onClickCama: (cama) => {
+                // mostrarDetalleCama no existe todavía (ver PASO A) — la
+                // vista de detalle de CAMA completa queda pendiente.
+                mostrarToast(`Detalle de "${cama.nombre || cama.id}" — pendiente de construir`, '');
+            },
+            onClickPlanta: (cama, plantaEntry) => abrirDetallePlanta(cama, plantaEntry)
+        });
     } catch (e) {
         console.error('[main] Error cargando datos del huerto:', e);
         statusDot.classList.add('error');
@@ -425,11 +507,7 @@ bedPlantSelect.addEventListener('change', () => {
     plantDateFields.style.display = bedPlantSelect.value ? 'block' : 'none';
 });
 
-openChoresBtn.addEventListener('click', () => {
-    openModal('choresModal');
-    cargarYRenderizarTareas();
-});
-choresModalClose.addEventListener('click', () => closeModal('choresModal'));
+openChoresBtn.addEventListener('click', irAVistaTareas);
 
 soilNInput.addEventListener('input', () => { soilNVal.textContent = Number(soilNInput.value).toFixed(1); });
 soilPInput.addEventListener('input', () => { soilPVal.textContent = Number(soilPInput.value).toFixed(1); });
@@ -445,14 +523,86 @@ gardenGridEl.addEventListener('click', (e) => {
     openEditBed(bed.dataset.bedId);
 });
 
-// ── Tareas ─────────────────────────────────────────────────────────
+// ── Vista de Tareas (Fase 13.5) ─────────────────────────────────────
+// Ya no es modal — es destino de navegación recurrente. "Crear" sigue
+// siendo un modal puntual (crearTareaModal), solo visible para admin.
 
-// NOTA: esta función pinta DOM y por convención del proyecto debería vivir
-// en render.js (así viven renderCatalogo/renderMapaHuerto/renderListaTareas).
-// Se deja aquí porque fue instrucción explícita; si más adelante se quiere
-// alinear con el resto, es un mover-y-exportar sin lógica que cambiar.
-function renderizarSelectorEstudiantes() {
-    choreAssigneesEl.replaceChildren();
+let filtroTareasActual = 'mias';
+
+function irAVistaTareas() {
+    navegarA('view-tareas');
+    cargarYRenderizarVistaTareas();
+}
+
+async function cargarYRenderizarVistaTareas() {
+    try {
+        const [tareas, estudiantes] = await Promise.all([obtenerTareas(), obtenerDirectorioEstudiantes()]);
+        tareasActuales = tareas;
+        estudiantesActuales = estudiantes;
+        renderizarVistaTareas();
+    } catch (e) {
+        console.error('[main] Error cargando tareas:', e);
+        mostrarToast('No se pudieron cargar las tareas', 'red');
+    }
+}
+
+// Re-filtra/re-pinta con lo ya cacheado — no vuelve a pedir a Firestore
+// (lo usan las pestañas de filtro, que solo cambian qué se muestra, no
+// qué existe).
+function renderizarVistaTareas() {
+    const uid = AuthService.getCurrentUser()?.uid;
+    const tareasFiltradas = filtroTareasActual === 'mias'
+        ? tareasActuales.filter((t) => (t.asignados || []).includes(uid))
+        : tareasActuales;
+
+    // Denormalización de nombres para pintar (mismo patrón que
+    // plantaNombre/plantaTipo en camas) — render.js no conoce el
+    // directorio de usuarios, solo recibe los nombres ya resueltos.
+    const estudiantesPorUid = new Map(estudiantesActuales.map((e) => [e.id, e.email]));
+    const tareasEnriquecidas = tareasFiltradas.map((t) => ({
+        ...t,
+        asignadosNombres: (t.asignados || []).map((uid2) => estudiantesPorUid.get(uid2) || uid2)
+    }));
+
+    renderListaTareas(tareasEnriquecidas, tareasListaVista, handleCompletarTareaVista, { esAdmin: esAdminActual });
+}
+
+tareasFilterTabs.forEach((tab) => {
+    tab.addEventListener('click', () => {
+        filtroTareasActual = tab.dataset.filtro;
+        tareasFilterTabs.forEach((t) => t.classList.toggle('active', t === tab));
+        renderizarVistaTareas();
+    });
+});
+
+async function handleCompletarTareaVista(tareaId) {
+    const tarea = tareasActuales.find((t) => t.id === tareaId);
+    if (!tarea) return;
+
+    // Deshabilita el botón específico (no un estado global) mientras la
+    // escritura está en vuelo, para que un doble clic no dispare la
+    // Regla del Sábado dos veces sobre la misma tarea.
+    const li = tareasListaVista.querySelector(`[data-tarea-id="${tareaId}"]`);
+    const boton = li?.querySelector('.chore-complete-btn');
+    if (boton) boton.disabled = true;
+
+    try {
+        await completarTarea(tareaId, tarea.asignados || []);
+        mostrarToast('Tarea completada', 'green');
+        await cargarYRenderizarVistaTareas();
+    } catch (e) {
+        console.error('[main] Error completando tarea:', e);
+        mostrarToast('No se pudo completar la tarea', 'red');
+        if (boton) boton.disabled = false;
+    }
+}
+
+// ── Modal "Crear Tarea" (admin) ─────────────────────────────────────
+// Reutiliza el mismo patrón de chips que ya existía para el selector de
+// estudiantes (checkbox + email, ver Fase 11).
+
+function poblarAssigneesCrearTarea() {
+    crearTareaAssignees.replaceChildren();
     estudiantesActuales.forEach((estudiante) => {
         const label = document.createElement('label');
         label.className = 'chore-assignee-chip';
@@ -464,61 +614,50 @@ function renderizarSelectorEstudiantes() {
         label.appendChild(checkbox);
         label.appendChild(document.createTextNode(estudiante.email));
 
-        choreAssigneesEl.appendChild(label);
+        crearTareaAssignees.appendChild(label);
     });
 }
 
-async function cargarYRenderizarTareas() {
-    try {
-        const [tareas, estudiantes] = await Promise.all([obtenerTareas(), obtenerDirectorioEstudiantes()]);
-        tareasActuales = tareas;
-        estudiantesActuales = estudiantes;
-        renderListaTareas(tareas, choresListEl, handleCompletarTarea);
-        renderizarSelectorEstudiantes();
-    } catch (e) {
-        console.error('[main] Error cargando tareas:', e);
-        mostrarToast('No se pudieron cargar las tareas', 'red');
-    }
+function abrirCrearTareaModal() {
+    // estudiantesActuales ya está fresco: este botón solo es visible
+    // dentro de view-tareas, que siempre se recarga al entrar.
+    crearTareaTitulo.value = '';
+    poblarAssigneesCrearTarea();
+    openModal('crearTareaModal');
 }
 
-async function handleAddChore() {
-    const titulo = newChoreInput.value.trim();
-    if (!titulo) return;
+async function handleCrearTareaGuardar() {
+    const titulo = crearTareaTitulo.value.trim();
+    if (!titulo) {
+        mostrarToast('La tarea necesita un título', 'red');
+        return;
+    }
 
-    const asignados = Array.from(choreAssigneesEl.querySelectorAll('input[type="checkbox"]:checked'))
+    const asignados = Array.from(crearTareaAssignees.querySelectorAll('input[type="checkbox"]:checked'))
         .map((checkbox) => checkbox.value);
 
-    addChoreBtn.disabled = true;
+    if (asignados.length === 0) {
+        mostrarToast('Selecciona al menos un estudiante', 'red');
+        return;
+    }
+
+    crearTareaSaveBtn.disabled = true;
     try {
         await crearTarea({ titulo, asignados });
-        newChoreInput.value = '';
-        await cargarYRenderizarTareas(); // también re-renderiza el selector, ya sin marcar
+        closeModal('crearTareaModal');
+        mostrarToast('Tarea creada', 'green');
+        await cargarYRenderizarVistaTareas();
     } catch (e) {
         console.error('[main] Error creando tarea:', e);
         mostrarToast('No se pudo crear la tarea', 'red');
     } finally {
-        addChoreBtn.disabled = false;
+        crearTareaSaveBtn.disabled = false;
     }
 }
 
-async function handleCompletarTarea(tareaId) {
-    const tarea = tareasActuales.find((t) => t.id === tareaId);
-    if (!tarea) return;
-
-    try {
-        await completarTarea(tareaId, tarea.asignados || []);
-        mostrarToast('Tarea completada', 'green');
-        await cargarYRenderizarTareas();
-    } catch (e) {
-        console.error('[main] Error completando tarea:', e);
-        mostrarToast('No se pudo completar la tarea', 'red');
-    }
-}
-
-addChoreBtn.addEventListener('click', handleAddChore);
-newChoreInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') handleAddChore();
-});
+crearTareaBtn.addEventListener('click', abrirCrearTareaModal);
+crearTareaModalClose.addEventListener('click', () => closeModal('crearTareaModal'));
+crearTareaSaveBtn.addEventListener('click', handleCrearTareaGuardar);
 
 // ── Panel de Admin ─────────────────────────────────────────────────
 
@@ -580,9 +719,362 @@ async function handleAdminSave() {
     }
 }
 
-adminBtn.addEventListener('click', abrirAdminModal);
+adminBtn.addEventListener('click', irAVistaAdmin);
 adminModalClose.addEventListener('click', () => closeModal('adminModal'));
 adminSaveBtn.addEventListener('click', handleAdminSave);
+
+// ── Vista de Catálogos (Fase 13.6b) ─────────────────────────────────
+//
+// Asimetría real de permisos (matriz de RBAC del equipo, no una
+// simplificación): Semillas y Químicos → cualquier autenticado
+// edita/crea, solo admin elimina. Herramientas (inventario_general) →
+// solo admin en los tres verbos, sin excepción — un no-admin ahí es de
+// solo lectura completa.
+//
+// "Herramientas" filtra inventario_general por categoria==='herramienta'
+// EN EL CLIENTE, sobre el resultado completo de obtenerInventario() — no
+// hay query separada. Razonable hoy (colección vacía, sin volumen); si
+// inventario_general crece mucho, esto debería moverse a un
+// where('categoria','==','herramienta') en la query.
+//
+// Búsqueda por nombre: client-side sobre lo ya cargado en memoria, sin
+// query nueva por tecleo.
+
+function irAVistaCatalogos() {
+    navegarA('view-catalogos');
+    cargarYRenderizarVistaCatalogos();
+}
+
+async function cargarYRenderizarVistaCatalogos() {
+    try {
+        const [semillas, quimicos, inventario] = await Promise.all([
+            obtenerCatalogo(), obtenerQuimicos(), obtenerInventario()
+        ]);
+        catalogoActual   = semillas;
+        quimicosActuales = quimicos;
+        inventarioActual = inventario;
+        renderizarVistaCatalogos();
+    } catch (e) {
+        console.error('[main] Error cargando catálogos:', e);
+        mostrarToast('No se pudieron cargar los catálogos', 'red');
+    }
+}
+
+function renderizarVistaCatalogos() {
+    const termino = catalogosBusqueda.value.trim().toLowerCase();
+
+    let items, puedeEditar, puedeCrear, puedeEliminar;
+
+    if (tabCatalogosActual === 'semillas') {
+        items = catalogoActual;
+        puedeEditar = true;
+        puedeCrear = true;
+        puedeEliminar = esAdminActual;
+    } else if (tabCatalogosActual === 'quimicos') {
+        items = quimicosActuales;
+        puedeEditar = true;
+        puedeCrear = true;
+        puedeEliminar = esAdminActual;
+    } else {
+        // Herramientas: solo-admin en los tres verbos, sin excepción.
+        items = inventarioActual.filter((i) => i.categoria === 'herramienta');
+        puedeEditar = esAdminActual;
+        puedeCrear = esAdminActual;
+        puedeEliminar = esAdminActual;
+    }
+
+    const filtrados = termino
+        ? items.filter((i) => (i.nombre || '').toLowerCase().includes(termino))
+        : items;
+
+    agregarCatalogoBtn.style.display = puedeCrear ? '' : 'none';
+
+    renderListaCatalogos(tabCatalogosActual, filtrados, catalogosLista, {
+        puedeEditar,
+        puedeEliminar,
+        onEditar: abrirEditarCatalogoModal,
+        onEliminar: handleEliminarCatalogoItem
+    });
+}
+
+catalogosTabs.forEach((tab) => {
+    tab.addEventListener('click', () => {
+        tabCatalogosActual = tab.dataset.tabCatalogo;
+        catalogosTabs.forEach((t) => t.classList.toggle('active', t === tab));
+        renderizarVistaCatalogos();
+    });
+});
+
+catalogosBusqueda.addEventListener('input', renderizarVistaCatalogos);
+
+agregarCatalogoBtn.addEventListener('click', () => {
+    editandoCatalogoId = null;
+    if (tabCatalogosActual === 'semillas') {
+        semillaModalTitle.textContent = 'Agregar Semilla';
+        semillaNombreInput.value = '';
+        semillaTipoInput.value = '';
+        semillaDiasInput.value = '';
+        openModal('semillaModal');
+    } else if (tabCatalogosActual === 'quimicos') {
+        quimicoModalTitle.textContent = 'Agregar Químico';
+        quimicoNombreInput.value = '';
+        quimicoNotasInput.value = '';
+        openModal('quimicoModal');
+    } else {
+        herramientaModalTitle.textContent = 'Agregar Herramienta';
+        herramientaNombreInput.value = '';
+        herramientaCantidadInput.value = '';
+        openModal('herramientaModal');
+    }
+});
+
+function abrirEditarCatalogoModal(tipo, itemId) {
+    editandoCatalogoId = itemId;
+
+    if (tipo === 'semillas') {
+        const item = catalogoActual.find((i) => i.id === itemId);
+        if (!item) return;
+        semillaModalTitle.textContent = 'Editar Semilla';
+        semillaNombreInput.value = item.nombre || '';
+        semillaTipoInput.value = item.tipo || '';
+        semillaDiasInput.value = item.dias_siembra_a_cosecha ?? '';
+        openModal('semillaModal');
+    } else if (tipo === 'quimicos') {
+        const item = quimicosActuales.find((i) => i.id === itemId);
+        if (!item) return;
+        quimicoModalTitle.textContent = 'Editar Químico';
+        quimicoNombreInput.value = item.nombre || '';
+        quimicoNotasInput.value = item.notas_uso || '';
+        openModal('quimicoModal');
+    } else {
+        const item = inventarioActual.find((i) => i.id === itemId);
+        if (!item) return;
+        herramientaModalTitle.textContent = 'Editar Herramienta';
+        herramientaNombreInput.value = item.nombre || '';
+        herramientaCantidadInput.value = item.cantidad ?? '';
+        openModal('herramientaModal');
+    }
+}
+
+async function handleEliminarCatalogoItem(tipo, itemId) {
+    if (!window.confirm('¿Seguro que deseas eliminar este elemento?')) return;
+
+    try {
+        if (tipo === 'semillas') {
+            await eliminarCatalogo(itemId);
+            catalogoActual = await obtenerCatalogo();
+        } else if (tipo === 'quimicos') {
+            await eliminarQuimico(itemId);
+            quimicosActuales = await obtenerQuimicos();
+        } else {
+            await eliminarInventario(itemId);
+            inventarioActual = await obtenerInventario();
+        }
+        mostrarToast('Eliminado', 'green');
+        renderizarVistaCatalogos();
+    } catch (e) {
+        console.error('[main] Error eliminando del catálogo:', e);
+        mostrarToast('No se pudo eliminar', 'red');
+    }
+}
+
+async function handleGuardarSemilla() {
+    const nombre = semillaNombreInput.value.trim();
+    if (!nombre) {
+        mostrarToast('El nombre es obligatorio', 'red');
+        return;
+    }
+
+    // Solo estos 3 campos top-level — nunca se toca requerimientos ni
+    // condiciones_optimas desde aquí. updateDoc es merge parcial: al no
+    // incluir esas claves, quedan intactas. Si algún día se agregan al
+    // formulario, hay que mandar el objeto anidado COMPLETO (Firestore
+    // reemplaza el valor entero de una clave anidada, no hace deep-merge),
+    // o se repetiría el mismo bug que ya evitamos con `categoria`.
+    const datos = {
+        nombre,
+        tipo: semillaTipoInput.value.trim(),
+        dias_siembra_a_cosecha: semillaDiasInput.value ? Number(semillaDiasInput.value) : null
+    };
+
+    semillaSaveBtn.disabled = true;
+    try {
+        if (editandoCatalogoId) {
+            await actualizarCatalogo(editandoCatalogoId, datos);
+        } else {
+            await crearCatalogo(datos);
+        }
+        closeModal('semillaModal');
+        mostrarToast('Semilla guardada', 'green');
+        catalogoActual = await obtenerCatalogo(); // también refresca el <select> de plantas del modal de mesa
+        renderizarVistaCatalogos();
+    } catch (e) {
+        console.error('[main] Error guardando semilla:', e);
+        mostrarToast(e.message || 'No se pudo guardar', 'red');
+    } finally {
+        semillaSaveBtn.disabled = false;
+    }
+}
+
+async function handleGuardarQuimico() {
+    const nombre = quimicoNombreInput.value.trim();
+    if (!nombre) {
+        mostrarToast('El nombre es obligatorio', 'red');
+        return;
+    }
+
+    const datos = { nombre, notas_uso: quimicoNotasInput.value.trim() };
+
+    quimicoSaveBtn.disabled = true;
+    try {
+        if (editandoCatalogoId) {
+            await actualizarQuimico(editandoCatalogoId, datos);
+        } else {
+            await crearQuimico(datos);
+        }
+        closeModal('quimicoModal');
+        mostrarToast('Químico guardado', 'green');
+        quimicosActuales = await obtenerQuimicos();
+        renderizarVistaCatalogos();
+    } catch (e) {
+        console.error('[main] Error guardando químico:', e);
+        mostrarToast(e.message || 'No se pudo guardar', 'red');
+    } finally {
+        quimicoSaveBtn.disabled = false;
+    }
+}
+
+async function handleGuardarHerramienta() {
+    const nombre = herramientaNombreInput.value.trim();
+    if (!nombre) {
+        mostrarToast('El nombre es obligatorio', 'red');
+        return;
+    }
+
+    const cantidad = herramientaCantidadInput.value ? Number(herramientaCantidadInput.value) : null;
+
+    herramientaSaveBtn.disabled = true;
+    try {
+        if (editandoCatalogoId) {
+            // NUNCA se manda `categoria` aquí — este formulario no ofrece
+            // cambiarla, y esta pestaña ya filtra por categoria==='herramienta'.
+            // Omitirla del payload (en vez de reenviar el valor actual)
+            // es la forma más segura: aunque cargar mal el valor actual
+            // fuera un bug, no habría forma de que ese bug pise la
+            // categoría real, porque la clave ni siquiera está presente.
+            await actualizarInventario(editandoCatalogoId, { nombre, cantidad });
+        } else {
+            await crearInventario({ nombre, cantidad, categoria: 'herramienta' });
+        }
+        closeModal('herramientaModal');
+        mostrarToast('Herramienta guardada', 'green');
+        inventarioActual = await obtenerInventario();
+        renderizarVistaCatalogos();
+    } catch (e) {
+        console.error('[main] Error guardando herramienta:', e);
+        mostrarToast(e.message || 'No se pudo guardar', 'red');
+    } finally {
+        herramientaSaveBtn.disabled = false;
+    }
+}
+
+semillaModalClose.addEventListener('click', () => closeModal('semillaModal'));
+semillaSaveBtn.addEventListener('click', handleGuardarSemilla);
+
+quimicoModalClose.addEventListener('click', () => closeModal('quimicoModal'));
+quimicoSaveBtn.addEventListener('click', handleGuardarQuimico);
+
+herramientaModalClose.addEventListener('click', () => closeModal('herramientaModal'));
+herramientaSaveBtn.addEventListener('click', handleGuardarHerramienta);
+
+// ── Vista de Perfil (Fase 13.7) ─────────────────────────────────────
+//
+// A diferencia de Tareas/Catálogos, esta vista SÍ hace una query nueva al
+// entrar (obtenerUsuario) — no había ningún caché de rol/horasTotales en
+// memoria que reutilizar (verificado: ningún widget del Dashboard lee
+// horasTotales hoy). Es una sola lectura de documento, no una query cara.
+
+function irAVistaPerfil() {
+    navegarA('view-perfil');
+    cargarYRenderizarVistaPerfil();
+}
+
+async function cargarYRenderizarVistaPerfil() {
+    const user = AuthService.getCurrentUser();
+    if (!user) return;
+
+    perfilEmail.textContent = user.email;
+
+    try {
+        const perfil = await obtenerUsuario(user.uid);
+        if (!perfil) return; // no debería pasar — si estás en Dashboard, ya tienes perfil.
+
+        perfilRolTexto.textContent = perfil.rol;
+        perfilHoras.textContent = `${perfil.horasTotales ?? 0} horas`;
+
+        // Un admin nunca se auto-degrada desde aquí — ese cambio, si algún
+        // día hace falta, lo hace OTRO admin, no autoservicio.
+        if (perfil.rol === 'admin') {
+            perfilRolSelectorGroup.style.display = 'none';
+        } else {
+            perfilRolSelectorGroup.style.display = '';
+            perfilRolSelect.value = perfil.rol;
+        }
+    } catch (e) {
+        console.error('[main] Error cargando el perfil:', e);
+        mostrarToast('No se pudo cargar tu perfil', 'red');
+    }
+}
+
+async function handleGuardarRolPropio() {
+    const nuevoRol = perfilRolSelect.value;
+    const user = AuthService.getCurrentUser();
+    if (!user) return;
+
+    perfilGuardarRolBtn.disabled = true;
+    try {
+        await actualizarRolPropio(user.uid, nuevoRol);
+        mostrarToast('Rol actualizado', 'green');
+        await cargarYRenderizarVistaPerfil();
+    } catch (e) {
+        console.error('[main] Error actualizando rol:', e);
+        mostrarToast(e.message || 'No se pudo actualizar el rol', 'red');
+    } finally {
+        perfilGuardarRolBtn.disabled = false;
+    }
+}
+
+perfilGuardarRolBtn.addEventListener('click', handleGuardarRolPropio);
+perfilLogoutBtn.addEventListener('click', () => AuthService.logout());
+
+// ── Vista de Admin (Fase 13.8) ──────────────────────────────────────
+//
+// "Quién" en el registro de actividad usa entrada.usuario directo (ya es
+// el email, guardado por cada _logActividad) — no resuelve contra
+// obtenerDirectorioEstudiantes(), que además no tendría a los admins.
+
+function irAVistaAdmin() {
+    navegarA('view-admin');
+    cargarYRenderizarVistaAdmin();
+}
+
+async function cargarYRenderizarVistaAdmin() {
+    try {
+        const [registro, estudiantes] = await Promise.all([
+            obtenerRegistroActividad(50),
+            obtenerDirectorioEstudiantes()
+        ]);
+        renderRegistroActividad(registro, registroActividadBody);
+        renderResumenHoras(estudiantes, resumenHorasBody);
+    } catch (e) {
+        console.error('[main] Error cargando el panel de Admin:', e);
+        mostrarToast('No se pudo cargar el panel de Admin', 'red');
+    }
+}
+
+// Reutiliza el adminModal existente (Fase 13.2) sin tocar su lógica
+// interna — solo cambia de dónde se abre.
+abrirAjusteHorasBtn.addEventListener('click', abrirAdminModal);
 
 // ── Asistente IA ───────────────────────────────────────────────────
 
@@ -640,7 +1132,127 @@ aiOverviewBtn.addEventListener('click', handleAiOverview);
 dashboardQuicklinks.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-vista]');
     if (!btn) return;
+    if (btn.dataset.vista === 'view-tareas') {
+        irAVistaTareas();
+        return;
+    }
+    if (btn.dataset.vista === 'view-catalogos') {
+        irAVistaCatalogos();
+        return;
+    }
+    if (btn.dataset.vista === 'view-perfil') {
+        irAVistaPerfil();
+        return;
+    }
+    if (btn.dataset.vista === 'view-admin') {
+        irAVistaAdmin();
+        return;
+    }
     navegarA(btn.dataset.vista);
+});
+
+// ── Detalle de planta en espiral (PASO D) ───────────────────────────
+// { cama, plantaEntry } de la tarjeta actualmente abierta, o null — los
+// handlers de los botones lo necesitan para saber sobre qué instanciaId
+// actuar sin volver a buscarlo en el DOM.
+let detalleActual = null;
+
+const NOMBRE_ESTADO_PLANTA = {
+    semilla:     'Marcada para semilla',
+    'sin-datos': 'Sin datos de ciclo de cultivo',
+    atrasada:    'Atrasada',
+    creciendo:   'Creciendo'
+};
+
+// NPK (cama.suelo) NO se muestra aquí a propósito — fuera de alcance hasta
+// que exista un sistema real de riesgo nutricional (ver comentario del
+// modal en index.html).
+function abrirDetallePlanta(cama, plantaEntry) {
+    detalleActual = { cama, plantaEntry };
+
+    const infoCatalogo = catalogoActual.find((p) => p.id === plantaEntry.plantaId);
+    // Mismo Map por-llamada que arma renderEspiralSVG internamente — no hay
+    // caché compartida porque catalogoActual puede haber cambiado entre
+    // renders y este Map es barato de reconstruir.
+    const catalogoPorId = new Map(catalogoActual.map((p) => [p.id, p]));
+    const estadoInfo = calcularEstadoFicha(plantaEntry, catalogoPorId);
+
+    detallePlantaTitulo.textContent = `${emojiDePlanta(plantaEntry.plantaTipo)} ${infoCatalogo?.nombre || plantaEntry.plantaId}`;
+    detallePlantaEstado.textContent = NOMBRE_ESTADO_PLANTA[estadoInfo.estado];
+    // estadoInfo.color ya es un valor CSS válido tal cual (hex o var(...)) —
+    // mismo valor que usa el anillo de progreso en render-spiral-2d.js.
+    detallePlantaEstado.style.color = estadoInfo.color;
+
+    detallePlantaFecha.textContent = `Sembrada: ${plantaEntry.fechaSiembra}`;
+
+    if (estadoInfo.estado === 'sin-datos') {
+        // El campo de estado ya dice "Sin datos de ciclo de cultivo" —
+        // mostrar un segundo texto aquí con otras palabras sería el mismo
+        // dato dos veces, no información nueva. Se oculta, mismo criterio
+        // que detallePlantaPlagas.
+        detallePlantaProgreso.style.display = 'none';
+    } else if (estadoInfo.diasTranscurridos != null) {
+        detallePlantaProgreso.textContent = `${estadoInfo.diasTranscurridos} de ${estadoInfo.diasSiembraACosecha} días`;
+        detallePlantaProgreso.style.display = '';
+    } else {
+        // estado 'semilla': calcularEstadoFicha tampoco calcula progreso
+        // aquí (el anillo no lo necesita — "sin importar cuánto haya
+        // pasado"), pero por una razón DISTINTA a 'sin-datos' (sí hay
+        // dias_siembra_a_cosecha en el catálogo, solo no se usó). Se oculta
+        // igual por ahora — no pedido explícitamente, señalado en el chat.
+        detallePlantaProgreso.style.display = 'none';
+    }
+
+    if (cama.plagas) {
+        detallePlantaPlagas.textContent = `🐛 Plagas en esta cama: ${cama.plagas}`;
+        detallePlantaPlagas.style.display = '';
+    } else {
+        detallePlantaPlagas.style.display = 'none';
+    }
+
+    const marcadaParaSemilla = (plantaEntry.finalidad || 'cosecha') === 'semilla';
+    detallePlantaSemillaBtn.textContent = marcadaParaSemilla ? '🔙 Volver a modo cosecha' : '🌰 Marcar para semilla';
+
+    openModal('detallePlantaModal');
+}
+
+detallePlantaModalClose.addEventListener('click', () => closeModal('detallePlantaModal'));
+
+detallePlantaSemillaBtn.addEventListener('click', async () => {
+    if (!detalleActual) return;
+    const { cama, plantaEntry } = detalleActual;
+
+    detallePlantaSemillaBtn.disabled = true;
+    try {
+        await marcarParaSemilla(cama.id, plantaEntry.instanciaId);
+        // Refresca camasActuales/catalogoActual y vuelve a pintar ambos
+        // mapas (rectangular + espiral) — mismo patrón que handleSaveBed.
+        // closeModal va DESPUÉS de este await, no antes: el usuario debe
+        // ver el modal cerrarse ya con la espiral actualizada detrás, no
+        // con la ficha vieja (badge rojo, etc.) todavía visible durante el
+        // round-trip — mismo cuidado que ya aplicamos con el parpadeo
+        // Splash/Dashboard y el disabled de botones en escrituras en vuelo.
+        await iniciarHuerto();
+        closeModal('detallePlantaModal');
+        mostrarToast('Actualizado', 'green');
+    } catch (e) {
+        console.error('[main] Error marcando para semilla:', e);
+        mostrarToast('No se pudo actualizar la planta', 'red');
+    } finally {
+        detallePlantaSemillaBtn.disabled = false;
+    }
+});
+
+// PASO E (formulario de cierre de cultivo) todavía no existe — mismo
+// criterio de "hook, no lo construyas todavía" que onClickCama/onClickPlanta
+// en render-spiral-2d.js.
+detallePlantaCompletarBtn.addEventListener('click', () => {
+    if (!detalleActual) return;
+    console.info(
+        '[main] Formulario de cierre de cultivo pendiente (PASO E):',
+        detalleActual.cama.id, detalleActual.plantaEntry.instanciaId
+    );
+    mostrarToast('Cerrar cultivo: formulario pendiente (próxima fase)', '');
 });
 
 // ── Estado de sesión — escucha 'auth:resuelto' (ver contrato en auth.js) ──
@@ -660,7 +1272,7 @@ document.addEventListener('auth:resuelto', (e) => {
         setUsuarioActual(null);
         esAdminActual = false;
         adminBtn.style.display = 'none';
-        choreFormEl.style.display = '';
+        crearTareaBtn.style.display = 'none';
         googleLoginBtn.style.display = '';
         mostrarErrorLogin('');
         ocultarTodasLasVistas();

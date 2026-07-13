@@ -55,7 +55,9 @@ export const PATHS = {
     asistencias: 'asistencias',
     usuarios:    'usuarios',
     quimicos:    'catalogo_quimicos',
-    inventario:  'inventario_general'
+    inventario:  'inventario_general',
+    historial:   'historial_cultivo',
+    bitacora:    'bitacora_sesiones'
 };
 
 // ── Re-exports de Firestore/Auth ─────────────────────────────────
