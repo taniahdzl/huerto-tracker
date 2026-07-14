@@ -34,9 +34,9 @@ import {
 } from './render.js';
 import { renderEspiralSVG, calcularEstadoFicha } from './render-spiral-2d.js';
 import { generarRespuestaHuerto } from './ai.js';
-import { setUsuarioActual } from './session.js';
-import { obtenerTareas, crearTarea, completarTarea, obtenerProximaTarea } from './chores.js';
-import { obtenerUsuario, registrarUsuario, obtenerDirectorioEstudiantes, ajustarHoras, actualizarRolPropio } from './usuarios.js';
+import { setUsuarioActual, nombreParaMostrar } from './session.js';
+import { obtenerTareas, crearTarea, completarTarea, obtenerTareasAsignadas } from './chores.js';
+import { obtenerUsuario, registrarUsuario, obtenerDirectorioEstudiantes, ajustarHoras, actualizarRolPropio, actualizarNombrePropio } from './usuarios.js';
 
 const statusDot   = document.getElementById('statusDot');
 const statusText  = document.getElementById('statusText');
@@ -54,8 +54,14 @@ const detallePlantaPlagas    = document.getElementById('detallePlantaPlagas');
 const detallePlantaSemillaBtn    = document.getElementById('detallePlantaSemillaBtn');
 const detallePlantaCompletarBtn  = document.getElementById('detallePlantaCompletarBtn');
 
+// ── Detalle de CAMA completa (Fase 14.5) — solo lectura ─────────────
+const detalleCamaModalClose = document.getElementById('detalleCamaModalClose');
+const detalleCamaTitulo     = document.getElementById('detalleCamaTitulo');
+const detalleCamaNotas      = document.getElementById('detalleCamaNotas');
+
 const loginOverlay = document.getElementById('login-overlay');
 const googleLoginBtn    = document.getElementById('googleLoginBtn');
+const newUserNombreInput = document.getElementById('newUserNombre');
 const newUserRoleSelect = document.getElementById('newUserRole');
 const completeRegistroBtn = document.getElementById('completeRegistroBtn');
 const loginError    = document.getElementById('loginError');
@@ -65,7 +71,13 @@ const setupError    = document.getElementById('setupError');
 const dashboardUserEmail  = document.getElementById('dashboardUserEmail');
 const dashboardAdminLink  = document.getElementById('dashboardAdminLink');
 const dashboardQuicklinks = document.querySelector('.dashboard-quicklinks');
-const dashboardProximaTareaTexto = document.getElementById('dashboardProximaTareaTexto');
+
+// ── Tarjetas del Dashboard (Fase 14.3) ──────────────────────────────
+const dashboardResumenCamasCard = document.getElementById('dashboardResumenCamasCard');
+const dashboardResumenCamas     = document.getElementById('dashboardResumenCamas');
+const dashboardTareasCard       = document.getElementById('dashboardTareasCard');
+const dashboardTareasLista      = document.getElementById('dashboardTareasLista');
+const dashboardCatalogosCard    = document.getElementById('dashboardCatalogosCard');
 
 // ── Vista de Catálogos (Fase 13.6b) ─────────────────────────────────
 const catalogosLista      = document.getElementById('catalogosLista');
@@ -74,6 +86,8 @@ const agregarCatalogoBtn  = document.getElementById('agregarCatalogoBtn');
 const catalogosTabs       = document.querySelectorAll('#view-catalogos .filter-tab');
 
 // ── Vista de Perfil (Fase 13.7) ──────────────────────────────────────
+const perfilNombreInput       = document.getElementById('perfilNombreInput');
+const perfilGuardarNombreBtn  = document.getElementById('perfilGuardarNombreBtn');
 const perfilEmail             = document.getElementById('perfilEmail');
 const perfilRolTexto          = document.getElementById('perfilRolTexto');
 const perfilHoras             = document.getElementById('perfilHoras');
@@ -102,7 +116,11 @@ const herramientaCantidadInput = document.getElementById('herramientaCantidadInp
 const herramientaSaveBtn       = document.getElementById('herramientaSaveBtn');
 
 // ── Modal de mesa (cama) ──────────────────────────────────────────
-const addBedBtn        = document.getElementById('addBedBtn');
+// addBedBtn (Fase 14.2): retirado del header — openAddBed/openEditBed/
+// handleSaveBed/handleDeleteBed/bedModal siguen intactos abajo, solo sin
+// ese punto de entrada. El otro punto de entrada (click sobre .bed en
+// #gardenGrid) sigue en el código pero ya era inalcanzable desde antes
+// (#appRoot oculto permanente desde Fase 13) — ver diagnóstico 14.2.
 const bedModalTitle     = document.getElementById('bedModalTitle');
 const bedModalClose     = document.getElementById('bedModalClose');
 const bedModalCancel    = document.getElementById('bedModalCancel');
@@ -207,6 +225,25 @@ function navegarA(vistaId, params = null) {
     }
 }
 
+// Fase 14.1: botón "Volver al Dashboard" — inyectado por JS (no copiado 5
+// veces en index.html) en toda vista interna que no sea Splash/Setup, que
+// tienen su propio flujo de salida (login/registro) y no deben ofrecer un
+// atajo de vuelta a un Dashboard al que todavía no se puede entrar.
+const VISTAS_CON_VOLVER = ['view-gemelo', 'view-tareas', 'view-catalogos', 'view-perfil', 'view-admin'];
+
+function insertarBotonesVolverDashboard() {
+    VISTAS_CON_VOLVER.forEach((vistaId) => {
+        const boton = document.createElement('button');
+        boton.type = 'button';
+        boton.className = 'btn btn-volver-dashboard';
+        boton.textContent = '← Volver al Dashboard';
+        boton.addEventListener('click', () => navegarA('view-dashboard'));
+        document.getElementById(vistaId).prepend(boton);
+    });
+}
+
+insertarBotonesVolverDashboard();
+
 // Para los casos en que lo que debe mostrarse es #login-overlay, no una
 // vista — oculta TODAS las .view (incluida Splash) sin navegar "a" nada,
 // para que Splash (z-index 3000) no tape el overlay (z-index 2000).
@@ -255,59 +292,166 @@ async function handleLoginConGoogle() {
 // 'auth:resuelto' (login normal) como handleCompletarRegistro (justo
 // después de crear el perfil, donde no hay re-disparo del evento porque
 // registrar un documento en Firestore no cambia el estado de Firebase Auth).
-function mostrarDashboard(user, esAdmin) {
+function mostrarDashboard(user, esAdmin, nombre) {
     loginOverlay.classList.add('hidden');
     esAdminActual = esAdmin;
     adminBtn.style.display = esAdmin ? '' : 'none';
     crearTareaBtn.style.display = esAdmin ? '' : 'none';
-    dashboardUserEmail.textContent = ` — ${user.email}`;
+    const nombreMostrado = nombreParaMostrar({ email: user.email, nombre });
+    dashboardUserEmail.textContent = ` — ${nombreMostrado}`;
     dashboardAdminLink.style.display = esAdmin ? '' : 'none';
 
     statusDot.classList.add('online');
     statusDot.classList.remove('error');
-    statusText.textContent = `Conectado · ${user.email}`;
+    statusText.textContent = `Conectado · ${nombreMostrado}`;
 
     navegarA('view-dashboard');
 
-    // catalogoActual/camasActuales alimentan el modal de mesa y el mapa
-    // dentro de #appRoot, que sigue oculto pero cuyos botones de header
-    // (+Mesa, Tareas, Admin) están fuera de #appRoot y son clicables
-    // siempre. Sin esto, esos botones abren modales con datos vacíos.
-    // Fire-and-forget: obtenerCatalogo()/obtenerCamas() son fetches
-    // puntuales (getDocs, no onSnapshot — confirmado), así que no hay
-    // riesgo de acumular listeners si mostrarDashboard() se llama más de
-    // una vez en la misma sesión.
+    // catalogoActual/camasActuales alimentan el modal de mesa (retirado del
+    // header en Fase 14.2, sigue existiendo sin punto de entrada) y el mapa
+    // dentro de #appRoot, que sigue oculto. También alimentan la Tarjeta 1
+    // del Dashboard (renderResumenCamasDashboard, llamada al final de
+    // iniciarHuerto() con los mismos datos ya cargados). Fire-and-forget:
+    // obtenerCatalogo()/obtenerCamas() son fetches puntuales (getDocs, no
+    // onSnapshot — confirmado), así que no hay riesgo de acumular
+    // listeners si mostrarDashboard() se llama más de una vez en la misma
+    // sesión.
     iniciarHuerto();
 
-    cargarProximaTarea(user.uid);
+    cargarTareasDashboard(user.uid);
 }
 
 // Fire-and-forget, con su propio manejo de error — no debe tumbar
-// mostrarDashboard() si obtenerProximaTarea() falla (ej. falta el índice
-// compuesto en Firestore, ver nota en chores.js).
-async function cargarProximaTarea(uid) {
+// mostrarDashboard() si obtenerTareasAsignadas() falla (ej. falta el
+// índice compuesto en Firestore, ver nota en chores.js). Alimenta la
+// Tarjeta 2 (reemplaza a la vieja "Tu próxima tarea" — Fase 14.3).
+async function cargarTareasDashboard(uid) {
+    dashboardTareasLista.replaceChildren();
     try {
-        const tarea = await obtenerProximaTarea(uid);
-        dashboardProximaTareaTexto.textContent = tarea ? tarea.titulo : 'Sin tareas pendientes';
+        const { tareas, total } = await obtenerTareasAsignadas(uid, 3);
+
+        if (tareas.length === 0) {
+            const li = document.createElement('li');
+            li.textContent = 'Sin tareas pendientes';
+            dashboardTareasLista.appendChild(li);
+            return;
+        }
+
+        tareas.forEach((tarea) => {
+            const li = document.createElement('li');
+            li.textContent = tarea.titulo;
+            dashboardTareasLista.appendChild(li);
+        });
+
+        // `total` es el conteo real (getCountFromServer), no una
+        // estimación — si hay más de las `cantidad` traídas, el resto
+        // exacto se anuncia aquí.
+        if (total > tareas.length) {
+            const li = document.createElement('li');
+            li.className = 'dashboard-tareas-mas';
+            li.textContent = `+${total - tareas.length} más`;
+            dashboardTareasLista.appendChild(li);
+        }
     } catch (e) {
-        console.error('[main] Error cargando la próxima tarea:', e);
-        dashboardProximaTareaTexto.textContent = 'No se pudo cargar';
+        console.error('[main] Error cargando tareas del Dashboard:', e);
+        const li = document.createElement('li');
+        li.textContent = 'No se pudieron cargar';
+        dashboardTareasLista.appendChild(li);
     }
 }
+
+// Tarjeta 1 (Fase 14.3): agrupa TODAS las plantas de camas arco/circular
+// por el `estado` que ya calcula calcularEstadoFicha (render-spiral-2d.js,
+// función pura reutilizada tal cual, sin duplicarla) — 'atrasada' primero
+// (son las que necesitan atención/cosecha), 'creciendo'+'sin-datos' juntas
+// como "en proceso" (ninguna de las dos es un estado que requiera acción
+// inmediata), 'semilla' al final. Círculos individuales sin clic — el
+// clic vive en la tarjeta completa (ver listener más abajo), navega a
+// Gemelo sin abrir ningún detalle específico.
+const GRUPOS_RESUMEN_CAMAS = [
+    { titulo: 'Para cosechar', estados: ['atrasada'] },
+    { titulo: 'En proceso', estados: ['creciendo', 'sin-datos'] },
+    { titulo: 'Semilla', estados: ['semilla'] }
+];
+
+function renderResumenCamasDashboard(camas, catalogo) {
+    const catalogoPorId = new Map(catalogo.map((p) => [p.id, p]));
+    const camasEspiral = camas.filter((c) => c.tipo === 'arco' || c.tipo === 'circular');
+
+    const porEstado = { atrasada: [], creciendo: [], 'sin-datos': [], semilla: [] };
+    camasEspiral.forEach((cama) => {
+        (cama.plantas || []).forEach((plantaEntry) => {
+            const info = calcularEstadoFicha(plantaEntry, catalogoPorId);
+            porEstado[info.estado].push({ plantaEntry, info });
+        });
+    });
+
+    dashboardResumenCamas.replaceChildren();
+
+    GRUPOS_RESUMEN_CAMAS.forEach(({ titulo, estados }) => {
+        const items = estados.flatMap((estado) => porEstado[estado]);
+
+        const grupo = document.createElement('div');
+        grupo.className = 'dashboard-resumen-grupo';
+
+        const encabezado = document.createElement('span');
+        encabezado.className = 'dashboard-resumen-grupo-titulo';
+        encabezado.textContent = `${titulo} (${items.length})`;
+        grupo.appendChild(encabezado);
+
+        if (items.length === 0) {
+            const vacio = document.createElement('span');
+            vacio.className = 'dashboard-resumen-vacio';
+            vacio.textContent = '—';
+            grupo.appendChild(vacio);
+        } else {
+            const fichas = document.createElement('div');
+            fichas.className = 'dashboard-resumen-fichas';
+            items.forEach(({ plantaEntry, info }) => {
+                const ficha = document.createElement('span');
+                ficha.className = 'mini-ficha';
+                ficha.style.borderColor = info.color;
+                ficha.textContent = info.badge || emojiDePlanta(plantaEntry.plantaTipo);
+                fichas.appendChild(ficha);
+            });
+            grupo.appendChild(fichas);
+        }
+
+        dashboardResumenCamas.appendChild(grupo);
+    });
+}
+
+dashboardResumenCamasCard.addEventListener('click', () => navegarA('view-gemelo'));
+dashboardTareasCard.addEventListener('click', () => navegarA('view-tareas'));
+dashboardCatalogosCard.addEventListener('click', () => navegarA('view-catalogos'));
+
+// Fase 14.1: el botón arranca disabled en el HTML — solo se habilita
+// cuando el nombre no está vacío (trim). El rol siempre tiene un valor
+// válido por default (el <select> no tiene opción vacía), así que nombre
+// es la única condición real de gating.
+function actualizarGatingSetup() {
+    completeRegistroBtn.disabled = !newUserNombreInput.value.trim();
+}
+
+newUserNombreInput.addEventListener('input', actualizarGatingSetup);
 
 async function handleCompletarRegistro() {
     const user = AuthService.getCurrentUser();
     if (!user) return;
 
+    const nombre = newUserNombreInput.value.trim();
+    if (!nombre) return; // el botón ya debería estar disabled — defensa en profundidad.
+
     completeRegistroBtn.disabled = true;
     mostrarErrorSetup('');
     try {
-        await registrarUsuario(user.uid, user.email, newUserRoleSelect.value);
+        await registrarUsuario(user.uid, user.email, newUserRoleSelect.value, nombre);
         // El select de Setup solo ofrece estudiante/externo (bloqueante de
         // seguridad ya validado) — nunca puede dar 'admin' aquí. No hace
         // falta ocultar #roleSelection/#googleLoginBtn: mostrarDashboard()
         // navega a view-dashboard, y el router ya oculta view-setup.
-        mostrarDashboard(user, false);
+        setUsuarioActual({ uid: user.uid, email: user.email });
+        mostrarDashboard(user, false, nombre);
     } catch (e) {
         console.error('[main] Error registrando usuario:', e);
         mostrarErrorSetup('No se pudo completar el registro. Intenta de nuevo.');
@@ -350,13 +494,15 @@ async function iniciarHuerto() {
         // `camas` completo, mismo dato ya cargado arriba (sin una segunda
         // ida a Firestore).
         renderEspiralSVG(gemeloMapaContainer, camas, catalogo, {
-            onClickCama: (cama) => {
-                // mostrarDetalleCama no existe todavía (ver PASO A) — la
-                // vista de detalle de CAMA completa queda pendiente.
-                mostrarToast(`Detalle de "${cama.nombre || cama.id}" — pendiente de construir`, '');
-            },
+            // Fase 14.5: reemplaza el toast "pendiente de construir" —
+            // abrirDetalleCama() es la vista de solo lectura que faltaba.
+            onClickCama: (cama) => abrirDetalleCama(cama),
             onClickPlanta: (cama, plantaEntry) => abrirDetallePlanta(cama, plantaEntry)
         });
+
+        // Tarjeta 1 del Dashboard (Fase 14.3) — mismo `camas`/`catalogo` ya
+        // cargados arriba, sin una tercera ida a Firestore.
+        renderResumenCamasDashboard(camas, catalogo);
     } catch (e) {
         console.error('[main] Error cargando datos del huerto:', e);
         statusDot.classList.add('error');
@@ -496,8 +642,8 @@ async function handleDeleteBed() {
 }
 
 // ── Eventos del modal ──────────────────────────────────────────────
+// (addBedBtn.addEventListener retirado junto con el botón — Fase 14.2)
 
-addBedBtn.addEventListener('click', openAddBed);
 bedModalClose.addEventListener('click', () => closeModal('bedModal'));
 bedModalCancel.addEventListener('click', () => closeModal('bedModal'));
 saveBedBtn.addEventListener('click', handleSaveBed);
@@ -558,7 +704,7 @@ function renderizarVistaTareas() {
     // Denormalización de nombres para pintar (mismo patrón que
     // plantaNombre/plantaTipo en camas) — render.js no conoce el
     // directorio de usuarios, solo recibe los nombres ya resueltos.
-    const estudiantesPorUid = new Map(estudiantesActuales.map((e) => [e.id, e.email]));
+    const estudiantesPorUid = new Map(estudiantesActuales.map((e) => [e.id, nombreParaMostrar(e)]));
     const tareasEnriquecidas = tareasFiltradas.map((t) => ({
         ...t,
         asignadosNombres: (t.asignados || []).map((uid2) => estudiantesPorUid.get(uid2) || uid2)
@@ -612,7 +758,7 @@ function poblarAssigneesCrearTarea() {
         checkbox.value = estudiante.id;
 
         label.appendChild(checkbox);
-        label.appendChild(document.createTextNode(estudiante.email));
+        label.appendChild(document.createTextNode(nombreParaMostrar(estudiante)));
 
         crearTareaAssignees.appendChild(label);
     });
@@ -666,7 +812,7 @@ function poblarSelectorAdmin() {
     estudiantesActuales.forEach((estudiante) => {
         const opt = document.createElement('option');
         opt.value = estudiante.id;
-        opt.textContent = estudiante.email;
+        opt.textContent = nombreParaMostrar(estudiante);
         adminStudentSelect.appendChild(opt);
     });
 }
@@ -1009,6 +1155,7 @@ async function cargarYRenderizarVistaPerfil() {
         const perfil = await obtenerUsuario(user.uid);
         if (!perfil) return; // no debería pasar — si estás en Dashboard, ya tienes perfil.
 
+        perfilNombreInput.value = perfil.nombre || '';
         perfilRolTexto.textContent = perfil.rol;
         perfilHoras.textContent = `${perfil.horasTotales ?? 0} horas`;
 
@@ -1044,14 +1191,39 @@ async function handleGuardarRolPropio() {
     }
 }
 
+async function handleGuardarNombrePropio() {
+    const nombre = perfilNombreInput.value.trim();
+    const user = AuthService.getCurrentUser();
+    if (!user) return;
+
+    if (!nombre) {
+        mostrarToast('El nombre no puede estar vacío', 'red');
+        return;
+    }
+
+    perfilGuardarNombreBtn.disabled = true;
+    try {
+        await actualizarNombrePropio(user.uid, nombre);
+        mostrarToast('Nombre actualizado', 'green');
+        await cargarYRenderizarVistaPerfil();
+    } catch (e) {
+        console.error('[main] Error actualizando nombre:', e);
+        mostrarToast(e.message || 'No se pudo actualizar el nombre', 'red');
+    } finally {
+        perfilGuardarNombreBtn.disabled = false;
+    }
+}
+
+perfilGuardarNombreBtn.addEventListener('click', handleGuardarNombrePropio);
 perfilGuardarRolBtn.addEventListener('click', handleGuardarRolPropio);
 perfilLogoutBtn.addEventListener('click', () => AuthService.logout());
 
 // ── Vista de Admin (Fase 13.8) ──────────────────────────────────────
 //
 // "Quién" en el registro de actividad usa entrada.usuario directo (ya es
-// el email, guardado por cada _logActividad) — no resuelve contra
-// obtenerDirectorioEstudiantes(), que además no tendría a los admins.
+// el email, guardado por cada _logActividad — Fase 14.1: se mantiene como
+// identificador estable, NO como display name, a propósito) — no resuelve
+// contra obtenerDirectorioEstudiantes(), que además no tendría a los admins.
 
 function irAVistaAdmin() {
     navegarA('view-admin');
@@ -1150,6 +1322,20 @@ dashboardQuicklinks.addEventListener('click', (e) => {
     }
     navegarA(btn.dataset.vista);
 });
+
+// ── Detalle de CAMA completa en espiral (Fase 14.5) ─────────────────
+// Solo lectura — reemplaza el toast "pendiente de construir" que tenía
+// onClickCama desde PASO C. NO agrega edición (eso encaja en el futuro
+// formulario de creación/edición de camas arco/circular, que hoy no
+// existe). Sin estado propio (a diferencia de detalleActual/PASO D): no
+// hay botones de acción aquí que necesiten recordar sobre qué cama actuar.
+function abrirDetalleCama(cama) {
+    detalleCamaTitulo.textContent = cama.nombre || cama.id;
+    detalleCamaNotas.textContent = cama.notas || 'Sin notas';
+    openModal('detalleCamaModal');
+}
+
+detalleCamaModalClose.addEventListener('click', () => closeModal('detalleCamaModal'));
 
 // ── Detalle de planta en espiral (PASO D) ───────────────────────────
 // { cama, plantaEntry } de la tarjeta actualmente abierta, o null — los
@@ -1264,7 +1450,7 @@ detallePlantaCompletarBtn.addEventListener('click', () => {
 // error consultando el perfil.
 
 document.addEventListener('auth:resuelto', (e) => {
-    const { user, rol, error } = e.detail;
+    const { user, rol, nombre, error } = e.detail;
 
     // Caso 1: sin sesión. `rol` viene null pero NO significa "falta
     // Setup" — se distingue del caso 2 únicamente por `user` ser null.
@@ -1283,7 +1469,7 @@ document.addEventListener('auth:resuelto', (e) => {
         return;
     }
 
-    setUsuarioActual(user);
+    setUsuarioActual({ uid: user.uid, email: user.email });
 
     // Caso 4: error consultando el perfil. Se ve igual que el caso 2 en
     // user/rol — por eso `error` se revisa ANTES que `rol`, para no
@@ -1301,13 +1487,15 @@ document.addEventListener('auth:resuelto', (e) => {
     // (Fase 13.4) — ya no reutiliza #login-overlay/#roleSelection.
     if (rol === null) {
         mostrarErrorSetup('');
+        newUserNombreInput.value = '';
+        actualizarGatingSetup();
         loginOverlay.classList.add('hidden');
         navegarA('view-setup');
         return;
     }
 
     // Caso 3: con sesión, con perfil resuelto.
-    mostrarDashboard(user, rol === 'admin');
+    mostrarDashboard(user, rol === 'admin', nombre);
 });
 
 AuthService.init();

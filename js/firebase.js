@@ -11,7 +11,8 @@ import {
     onSnapshot,
     addDoc, updateDoc, deleteDoc, setDoc, getDoc, getDocs,
     query, where, orderBy, limit, serverTimestamp,
-    writeBatch, increment
+    writeBatch, increment,
+    getCountFromServer
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import {
     getAuth,
@@ -69,5 +70,6 @@ export {
     addDoc, updateDoc, deleteDoc, setDoc, getDoc, getDocs,
     query, where, orderBy, limit, serverTimestamp,
     writeBatch, increment,
+    getCountFromServer,
     GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged
 };

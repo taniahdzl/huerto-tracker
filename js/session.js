@@ -15,3 +15,14 @@ export function setUsuarioActual(usuario) {
 export function getUsuarioActual() {
     return _usuario;
 }
+
+// Fase 14.1: fallback único nombre → email — vive aquí (no en usuarios.js)
+// para que db.js/chores.js/usuarios.js puedan usarlo sin crear un import
+// circular (usuarios.js ya importa de chores.js). Acepta tanto el objeto
+// de sesión ({uid,email,nombre}) como un documento usuarios/{uid} crudo
+// ({id,email,nombre,...}) — por eso el último fallback es id O uid.
+export function nombreParaMostrar(usuario) {
+    if (!usuario) return '';
+    if (usuario.nombre && usuario.nombre.trim()) return usuario.nombre;
+    return usuario.email || usuario.id || usuario.uid || '';
+}

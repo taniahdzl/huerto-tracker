@@ -37,7 +37,13 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 const ESCALA = 300;
 const px = (v) => v * ESCALA;
 
-const GROSOR_CONTORNO = 4.5;       // "recorte de papel" entre sectores/círculo
+// Fase 14.7: subido de 4.5 a 6.5 tras comparar 4.5/6.5/8 con capturas
+// reales (Playwright + arnés mock, ver harness-14-7.html) — 6.5 ya separa
+// claramente el caso de MENOR contraste (segmento interior, terracota
+// claro contra --color-fondo) sin comerse demasiado el ancho del segmento
+// interior (el más angosto, anchoCamaInterior=0.30 en geometria-espiral.js);
+// 8 no mejoraba sustancialmente más ese punto crítico.
+const GROSOR_CONTORNO = 6.5;       // "recorte de papel" entre sectores/círculo
 const RADIO_FICHA = 16;
 const GROSOR_ANILLO_PROGRESO = 3.5;
 const RADIO_BADGE = 8;
@@ -53,10 +59,20 @@ function crearElemento(tag, attrs = {}) {
 
 // Sector anular (arco) o círculo completo (centro) — el contenedor visual
 // de la cama, sin plantas todavía.
+//
+// class 'cama-forma' (Fase 14.7): el hover-scale se engancha AQUÍ, no en
+// el `<g class="cama-espiral">` que la envuelve — ese grupo también
+// contiene las fichas de planta como hijos, y CSS `:hover` sube a
+// ancestros. Si el hover-scale viviera en el grupo completo, pasar el
+// mouse sobre UNA ficha dispararía también el hover de la cama entera
+// (doble-escala). `forma` es hermana de cada ficha, no ancestra — mismo
+// elemento que ya recibe el listener de `onClickCama` un poco más abajo,
+// así que el área de hover coincide exactamente con el área de clic.
 function crearFormaCama(cama) {
     if (cama.tipo === 'circular') {
         const { radio } = calcularGeometriaCentro();
         return crearElemento('circle', {
+            class: 'cama-forma',
             cx: 0, cy: 0, r: px(radio),
             fill: 'var(--color-primario)',
             stroke: 'var(--color-fondo)',
@@ -98,6 +114,7 @@ function crearFormaCama(cama) {
     ].join(' ');
 
     return crearElemento('path', {
+        class: 'cama-forma',
         d,
         fill: relleno,
         stroke: 'var(--color-fondo)',
@@ -170,6 +187,17 @@ function crearFichaPlanta(cama, plantaEntry, posicion, catalogoPorId, onClickPla
     grupo.dataset.camaId = cama.id;
     grupo.dataset.instanciaId = plantaEntry.instanciaId ?? '';
 
+    // Fase 14.7: sub-grupo dedicado SOLO al hover-scale. `grupo` (arriba)
+    // ya usa el atributo `transform` de SVG para posicionarse (translate)
+    // — un `transform` puesto por CSS en ese MISMO elemento lo
+    // reemplazaría por completo (en SVG2 no se combinan, CSS gana sobre
+    // el atributo de presentación), y la ficha saltaría al origen del SVG
+    // al hacer hover. `escala` no tiene transform de atributo, así que el
+    // scale por CSS no choca con nada — y su origen local (0,0) ya
+    // coincide con el centro visual de la ficha (el círculo `fondo` está
+    // centrado ahí), sin necesitar transform-box:fill-box.
+    const escala = crearElemento('g', { class: 'ficha-planta-escala' });
+
     const fondo = crearElemento('circle', {
         cx: 0, cy: 0, r: RADIO_FICHA,
         fill: 'var(--color-fondo)',
@@ -199,7 +227,7 @@ function crearFichaPlanta(cama, plantaEntry, posicion, catalogoPorId, onClickPla
     });
     emoji.textContent = emojiDePlanta(plantaEntry.plantaTipo);
 
-    grupo.append(fondo, anillo, emoji);
+    escala.append(fondo, anillo, emoji);
 
     if (badge) {
         const badgeColor = badge === '🌰' ? 'var(--color-acento)' : 'var(--color-error)';
@@ -222,8 +250,10 @@ function crearFichaPlanta(cama, plantaEntry, posicion, catalogoPorId, onClickPla
         });
         badgeTexto.textContent = badge;
 
-        grupo.append(badgeCirculo, badgeTexto);
+        escala.append(badgeCirculo, badgeTexto);
     }
+
+    grupo.append(escala);
 
     // Hook para PASO D (tarjeta de detalle) — no se construye aquí todavía.
     grupo.addEventListener('click', (evento) => {
@@ -252,14 +282,13 @@ function posicionDePlanta(cama, plantaEntry) {
 // igual que ya denormaliza plantaNombre/plantaTipo para camas rectangulares.
 //
 // `opciones.onClickCama`/`onClickPlanta`: mismo patrón de inyección de
-// callbacks que renderListaTareas/renderListaCatalogos (render.js). Si no
-// se pasan, el default solo deja constancia en consola de que el detalle
-// todavía no existe (mostrarDetalleCama no existe — ver PASO A; la tarjeta
-// de planta es PASO D, siguiente instrucción) — nunca lanza ni rompe el
-// render.
+// callbacks que renderListaTareas/renderListaCatalogos (render.js). main.js
+// siempre pasa ambos (abrirDetalleCama — Fase 14.5 — y abrirDetallePlanta
+// — PASO D); estos defaults solo cubren a un caller hipotético que no los
+// pase, dejando constancia en consola sin lanzar ni romper el render.
 export function renderEspiralSVG(container, camas, catalogo, opciones = {}) {
     const onClickCama = opciones.onClickCama || ((cama) => {
-        console.info(`[render-spiral-2d] Detalle de cama pendiente (mostrarDetalleCama no existe todavía): ${cama.id}`);
+        console.info(`[render-spiral-2d] onClickCama no provisto por el caller: ${cama.id}`);
     });
     const onClickPlanta = opciones.onClickPlanta || ((cama, plantaEntry) => {
         console.info(`[render-spiral-2d] Detalle de planta pendiente (PASO D): ${cama.id} / ${plantaEntry.instanciaId}`);

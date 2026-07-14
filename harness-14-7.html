@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Arnés de validación — Fase 14.7 (temporal, borrar al terminar)</title>
+<link rel="stylesheet" href="css/variables.css">
+<style>
+  html, body { margin: 0; background: var(--color-fondo, #F7F4EE); font-family: sans-serif; }
+  #gemeloMapaContainer { width: 900px; height: 900px; margin: 0 auto; }
+
+  /* ── Fase 14.7: hover-scale + fade-in — candidatas a copiar a index.html ── */
+  .cama-forma {
+    transition: transform 0.15s ease-out;
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+  .cama-forma:hover { transform: scale(1.04); }
+
+  .ficha-planta-escala {
+    transition: transform 0.15s ease-out;
+    transform-origin: 0 0;
+  }
+  .ficha-planta:hover .ficha-planta-escala { transform: scale(1.05); }
+
+  @keyframes ficha-fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+  .ficha-planta {
+    animation: ficha-fade-in 0.25s ease-out;
+  }
+</style>
+</head>
+<body>
+
+<div id="gemeloMapaContainer"></div>
+
+<script type="module">
+import { renderEspiralSVG } from './js/render-spiral-2d.js';
+
+// ── Datos mock — MISMO shape que los 9 documentos reales de PASO C ─────
+// 2 anillos (interior/exterior) x 4 segmentos + 1 circular = 9 camas,
+// igual que la estructura real (PARAMS.numSegmentosPorAnillo=4 en
+// geometria-espiral.js). Nombres de campo y tipos calcados del shape
+// documentado en geometria-espiral.js (Fase 14.5) y render.js — contenido
+// (nombres de plantas, fechas) es representativo, no literal de
+// producción (no tengo acceso de lectura a los documentos reales — ver
+// diagnóstico de Fase 14.3/14.5).
+
+function fechaHace(dias) {
+    const d = new Date(Date.now() - dias * 86400000);
+    return d.toISOString().slice(0, 10);
+}
+
+const catalogo = [
+    { id: 'lechuga', nombre: 'Lechuga', tipo: 'hoja', dias_siembra_a_cosecha: 45,
+      requerimientos: { agua_mm_semana: 25, nitrogeno: 'medio', fosforo: 'bajo', potasio: 'medio' },
+      condiciones_optimas: { fotoperiodo: 'dia-corto', temp_optima: 18, cm_entre_plantas: 25, profundidad_raiz_cm: 15 } },
+    { id: 'zanahoria', nombre: 'Zanahoria', tipo: 'raíz', dias_siembra_a_cosecha: 70,
+      requerimientos: { agua_mm_semana: 20, nitrogeno: 'bajo', fosforo: 'medio', potasio: 'medio' },
+      condiciones_optimas: { fotoperiodo: 'neutro', temp_optima: 16, cm_entre_plantas: 8, profundidad_raiz_cm: 30 } },
+    { id: 'tomate', nombre: 'Tomate', tipo: 'fruto', dias_siembra_a_cosecha: 80,
+      requerimientos: { agua_mm_semana: 35, nitrogeno: 'alto', fosforo: 'alto', potasio: 'alto' },
+      condiciones_optimas: { fotoperiodo: 'dia-largo', temp_optima: 24, cm_entre_plantas: 45, profundidad_raiz_cm: 40 } },
+    { id: 'girasol', nombre: 'Girasol', tipo: 'flor', dias_siembra_a_cosecha: 90,
+      requerimientos: { agua_mm_semana: 22, nitrogeno: 'medio', fosforo: 'medio', potasio: 'bajo' },
+      condiciones_optimas: { fotoperiodo: 'dia-largo', temp_optima: 22, cm_entre_plantas: 30, profundidad_raiz_cm: 35 } },
+    { id: 'apio', nombre: 'Apio', tipo: 'tallo', dias_siembra_a_cosecha: 100,
+      requerimientos: { agua_mm_semana: 30, nitrogeno: 'medio', fosforo: 'bajo', potasio: 'medio' },
+      condiciones_optimas: { fotoperiodo: 'neutro', temp_optima: 18, cm_entre_plantas: 20, profundidad_raiz_cm: 25 } }
+    // 'especie-fantasma' NO está aquí a propósito — produce el caso
+    // 'sin-datos' (plantaId sin match en el catálogo).
+];
+
+const plantaId = (i) => catalogo[i % catalogo.length].id;
+const plantaTipo = (i) => catalogo[i % catalogo.length].tipo;
+
+let uid = 0;
+const nuevoId = () => `mock-${++uid}`;
+
+// Anillo interior (4 segmentos) — cubre 'creciendo', 'atrasada', 'semilla',
+// 'sin-datos', y una cama con 2 plantas para probar hover aislado entre
+// fichas vecinas de la MISMA cama.
+const camasInterior = [
+    { id: 'interior-0', tipo: 'arco', anillo: 'interior', indiceSegmento: 0, plantas: [
+        { instanciaId: nuevoId(), plantaId: plantaId(0), plantaTipo: plantaTipo(0), t: 0.5, fechaSiembra: fechaHace(20), fechaTrasplante: null, notas: '', finalidad: 'cosecha' }
+    ]},
+    { id: 'interior-1', tipo: 'arco', anillo: 'interior', indiceSegmento: 1, plantas: [
+        { instanciaId: nuevoId(), plantaId: plantaId(1), plantaTipo: plantaTipo(1), t: 0.5, fechaSiembra: fechaHace(200), fechaTrasplante: null, notas: '', finalidad: 'cosecha' }
+    ]},
+    { id: 'interior-2', tipo: 'arco', anillo: 'interior', indiceSegmento: 2, plantas: [
+        { instanciaId: nuevoId(), plantaId: plantaId(2), plantaTipo: plantaTipo(2), t: 0.5, fechaSiembra: fechaHace(10), fechaTrasplante: null, notas: '', finalidad: 'semilla' }
+    ]},
+    { id: 'interior-3', tipo: 'arco', anillo: 'interior', indiceSegmento: 3, plantas: [
+        { instanciaId: nuevoId(), plantaId: 'especie-fantasma', plantaTipo: 'hoja', t: 0.3, fechaSiembra: fechaHace(15), fechaTrasplante: null, notas: '', finalidad: 'cosecha' },
+        { instanciaId: nuevoId(), plantaId: plantaId(3), plantaTipo: plantaTipo(3), t: 0.7, fechaSiembra: fechaHace(5), fechaTrasplante: null, notas: '', finalidad: 'cosecha' }
+    ]}
+];
+
+// Anillo exterior (4 segmentos) — más densidad (2-3 plantas por cama) para
+// probar que el hover de una ficha no arrastra a sus vecinas ni a la cama.
+const camasExterior = [
+    { id: 'exterior-0', tipo: 'arco', anillo: 'exterior', indiceSegmento: 0, plantas: [
+        { instanciaId: nuevoId(), plantaId: plantaId(0), plantaTipo: plantaTipo(0), t: 0.2, fechaSiembra: fechaHace(30), fechaTrasplante: null, notas: '', finalidad: 'cosecha' },
+        { instanciaId: nuevoId(), plantaId: plantaId(1), plantaTipo: plantaTipo(1), t: 0.5, fechaSiembra: fechaHace(60), fechaTrasplante: null, notas: '', finalidad: 'cosecha' },
+        { instanciaId: nuevoId(), plantaId: plantaId(2), plantaTipo: plantaTipo(2), t: 0.8, fechaSiembra: fechaHace(5), fechaTrasplante: null, notas: '', finalidad: 'cosecha' }
+    ]},
+    { id: 'exterior-1', tipo: 'arco', anillo: 'exterior', indiceSegmento: 1, plantas: [
+        { instanciaId: nuevoId(), plantaId: plantaId(3), plantaTipo: plantaTipo(3), t: 0.5, fechaSiembra: fechaHace(300), fechaTrasplante: null, notas: '', finalidad: 'cosecha' }
+    ]},
+    { id: 'exterior-2', tipo: 'arco', anillo: 'exterior', indiceSegmento: 2, plantas: [
+        { instanciaId: nuevoId(), plantaId: plantaId(4), plantaTipo: plantaTipo(4), t: 0.35, fechaSiembra: fechaHace(40), fechaTrasplante: null, notas: '', finalidad: 'cosecha' },
+        { instanciaId: nuevoId(), plantaId: plantaId(0), plantaTipo: plantaTipo(0), t: 0.65, fechaSiembra: fechaHace(8), fechaTrasplante: null, notas: '', finalidad: 'semilla' }
+    ]},
+    { id: 'exterior-3', tipo: 'arco', anillo: 'exterior', indiceSegmento: 3, plantas: []}
+];
+
+// Circular (centro) — coordenadas polares completas (angle/r), incluye
+// otro caso 'sin-datos' para no depender de uno solo en todo el mock.
+const camaCircular = {
+    id: 'circular-0', tipo: 'circular', plantas: [
+        { instanciaId: nuevoId(), plantaId: plantaId(1), plantaTipo: plantaTipo(1), angle: 40, r: 0.12, fechaSiembra: fechaHace(50), fechaTrasplante: null, notas: '', finalidad: 'cosecha' },
+        { instanciaId: nuevoId(), plantaId: 'especie-fantasma', plantaTipo: 'flor', angle: 160, r: 0.15, fechaSiembra: fechaHace(12), fechaTrasplante: null, notas: '', finalidad: 'cosecha' },
+        { instanciaId: nuevoId(), plantaId: plantaId(2), plantaTipo: plantaTipo(2), angle: 280, r: 0.08, fechaSiembra: fechaHace(200), fechaTrasplante: null, notas: '', finalidad: 'cosecha' }
+    ]
+};
+
+const camas = [...camasInterior, ...camasExterior, camaCircular];
+console.log('[harness] camas mock:', camas.length, '(esperado: 9, igual que PASO C)');
+
+const container = document.getElementById('gemeloMapaContainer');
+renderEspiralSVG(container, camas, catalogo, {
+    onClickCama: (cama) => console.log('[harness] onClickCama:', cama.id),
+    onClickPlanta: (cama, plantaEntry) => console.log('[harness] onClickPlanta:', cama.id, plantaEntry.instanciaId)
+});
+
+window.__harnessListo = true;
+</script>
+
+</body>
+</html>

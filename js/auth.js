@@ -16,7 +16,12 @@
 // "sin DOM", avisar antes de que se construya nada sobre este contrato.
 //
 // event.detail shape:
-//   { user: FirebaseUser | null, rol: string | null, error: Error | null }
+//   { user: FirebaseUser | null, rol: string | null, nombre: string | null, error: Error | null }
+//
+// `nombre` (Fase 14.1) viaja junto a `rol` porque sale de la misma lectura
+// de usuarios/{uid} (obtenerUsuario) — no hay una segunda consulta. Es
+// null en los mismos casos que `rol` es null (sin sesión, sin perfil, o
+// error consultando el perfil).
 //
 // El evento SOLO se dispara cuando el estado ya está resuelto —no existe
 // un estado "cargando" representado en el evento. "Cargando" es la
@@ -82,16 +87,18 @@ export const AuthService = {
             }
 
             let rol = null;
+            let nombre = null;
             let error = null;
             try {
                 const perfil = await obtenerUsuario(user.uid);
                 rol = perfil ? perfil.rol : null;
+                nombre = perfil ? perfil.nombre : null;
             } catch (e) {
                 error = e;
             }
 
             document.dispatchEvent(new CustomEvent('auth:resuelto', {
-                detail: { user, rol, error }
+                detail: { user, rol, nombre, error }
             }));
         });
     },

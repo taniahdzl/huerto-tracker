@@ -510,6 +510,9 @@
      empate/la especificidad y la vista seguiría visible. */
   .hidden { display: none !important; }
   .view { padding: 1.5rem; min-height: calc(100vh - 0px); }
+  /* Fase 14.1: botón "Volver al Dashboard", insertado por JS (main.js) en
+     las vistas internas — ver insertarBotonesVolverDashboard(). */
+  .btn-volver-dashboard { display: block; margin-bottom: 1rem; }
 
   #view-splash {
     position: fixed; inset: 0; z-index: 3000;
@@ -541,6 +544,68 @@
   #view-dashboard .dashboard-quicklinks {
     display: flex; flex-wrap: wrap; gap: 0.6rem;
   }
+
+  /* Fase 14.3: tarjetas del Dashboard (resumen de camas / tareas / catálogos) */
+  .dashboard-card-clickable { cursor: pointer; transition: border-color 0.15s; }
+  .dashboard-card-clickable:hover { border-color: var(--color-primario, #2F5038); }
+
+  .dashboard-resumen-camas { display: flex; flex-direction: column; gap: 0.7rem; }
+  .dashboard-resumen-grupo-titulo {
+    display: block; font-size: 0.75rem; color: #888; margin-bottom: 0.3rem;
+  }
+  .dashboard-resumen-fichas { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+  .mini-ficha {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; border-radius: 50%;
+    border: 3px solid #9e9e9e; /* color real lo fija JS por planta (mismo que calcularEstadoFicha) */
+    background: var(--color-fondo, #F7F4EE);
+    font-size: 0.8rem; line-height: 1;
+  }
+  .dashboard-resumen-vacio { font-size: 0.8rem; color: #888; }
+
+  .dashboard-tareas-lista { list-style: none; display: flex; flex-direction: column; gap: 0.4rem; }
+  .dashboard-tareas-lista li { font-size: 0.9rem; }
+  .dashboard-tareas-mas { color: #888; font-style: italic; }
+
+  /* ── Fase 14.7: hover-scale + fade-in del render en espiral (Gemelo) ──
+     Validado con Playwright contra un arnés mock de mismo shape que los 9
+     documentos de PASO C — ver harness-14-7.html (temporal, se borra al
+     cerrar la fase) y el reporte de la fase para las capturas. */
+
+  /* .cama-forma: el hover-scale va en la FORMA (círculo/path), no en el
+     <g class="cama-espiral"> que la envuelve — ese grupo también contiene
+     las fichas como hijos, y :hover sube a ancestros; escalar el grupo
+     completo duplicaría el efecto al pasar el mouse sobre una ficha. */
+  .cama-forma {
+    transition: transform 0.15s ease-out;
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+  .cama-forma:hover { transform: scale(1.04); }
+
+  /* .ficha-planta-escala: sub-grupo interno SIN transform de atributo —
+     el <g class="ficha-planta"> externo ya usa el atributo `transform`
+     (translate) para posicionarse; un `transform` CSS en el MISMO
+     elemento lo reemplazaría por completo (SVG2: CSS gana sobre el
+     atributo de presentación, no se combinan), haciendo que la ficha
+     salte al origen del SVG al hacer hover. */
+  .ficha-planta-escala {
+    transition: transform 0.15s ease-out;
+    transform-origin: 0 0;
+  }
+  .ficha-planta:hover .ficha-planta-escala { transform: scale(1.05); }
+
+  /* Fade-in al montar cada ficha — vía `animation` (se dispara solo al
+     insertar el nodo), no `transition` (sería inerte: renderEspiralSVG
+     hace container.replaceChildren(svg) en cada cambio de estado, así que
+     no hay un mismo nodo persistente entre el color viejo y el nuevo para
+     interpolar). No es una interpolación literal del color, pero evita el
+     "pop" instantáneo al marcar una planta para semilla, por ejemplo. */
+  @keyframes ficha-fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+  .ficha-planta { animation: ficha-fade-in 0.25s ease-out; }
 </style>
 </head>
 <body>
@@ -563,7 +628,6 @@
   </div>
   <button class="btn" onclick="openConfig()">⚙ Configurar</button>
   <button class="btn" id="openChoresBtn">📋 Tareas</button>
-  <button class="btn btn-primary" id="addBedBtn">+ Mesa</button>
   <button class="btn btn-danger" id="adminBtn" style="display:none">⚙ Admin</button>
 </header>
 
@@ -581,8 +645,10 @@
 
   <!-- Dashboard: contenido mínimo real a propósito. La tarjeta de horas
        acumuladas sigue sin construirse (usuarios.horasTotales — ver
-       Fase 13.2, ya resuelto en el esquema pero falta el widget). "Tu
-       próxima tarea" sí tiene datos reales (Fase 13.3). -->
+       Fase 13.2, ya resuelto en el esquema pero falta el widget).
+       Fase 14.3: "Tu próxima tarea" (Fase 13.3) se retiró — la Tarjeta 2
+       de abajo la reemplaza funcionalmente (2-3 tareas en vez de 1), para
+       no mostrar la misma tarea asignada dos veces en pantalla. -->
   <section class="view hidden" id="view-dashboard">
     <div class="dashboard-welcome">
       <h2>Bienvenido<span id="dashboardUserEmail"></span></h2>
@@ -591,9 +657,28 @@
         bloqueada hasta que exista su widget.
       </p>
     </div>
-    <div class="dashboard-card">
-      <h3>Tu próxima tarea</h3>
-      <p id="dashboardProximaTareaTexto">Cargando…</p>
+
+    <!-- Tarjeta 1: resumen de camas en espiral por estado (Fase 14.3).
+         Círculos individuales NO son clicables — clic en la tarjeta
+         completa navega a Gemelo, el detalle por planta vive solo ahí. -->
+    <div class="dashboard-card dashboard-card-clickable" id="dashboardResumenCamasCard">
+      <h3>Estado de las camas</h3>
+      <div id="dashboardResumenCamas" class="dashboard-resumen-camas"></div>
+    </div>
+
+    <!-- Tarjeta 2: reemplaza a "Tu próxima tarea" — hasta 3 títulos +
+         "+N más". Sin autoservicio (no hay botón "anotarme" — pospuesto a
+         14.4): son tareas YA asignadas por un admin, no un catálogo para
+         auto-asignarse. -->
+    <div class="dashboard-card dashboard-card-clickable" id="dashboardTareasCard">
+      <h3>Tus tareas asignadas</h3>
+      <ul id="dashboardTareasLista" class="dashboard-tareas-lista"></ul>
+    </div>
+
+    <!-- Tarjeta 3: acceso directo a Catálogos. -->
+    <div class="dashboard-card dashboard-card-clickable" id="dashboardCatalogosCard">
+      <h3>📦 Catálogos</h3>
+      <p>Semillas, químicos y herramientas</p>
     </div>
     <nav class="dashboard-quicklinks">
       <button class="btn" data-vista="view-gemelo">🗺 Mapa</button>
@@ -607,6 +692,10 @@
   <!-- Placeholders vacíos — se llenan uno por uno en fases futuras. -->
   <section class="view hidden" id="view-setup">
     <div class="form-group">
+      <label for="newUserNombre">Bienvenido, ¿cómo quieres que te llamemos?</label>
+      <input type="text" id="newUserNombre" placeholder="Tu nombre">
+    </div>
+    <div class="form-group">
       <label for="newUserRole">Primera vez por aquí — ¿cuál es tu rol?</label>
       <select id="newUserRole">
         <option value="estudiante">Estudiante/Miembro</option>
@@ -614,7 +703,7 @@
       </select>
     </div>
     <p id="setupError" class="login-error" style="display:none"></p>
-    <button id="completeRegistroBtn" class="btn btn-primary">Completar Registro</button>
+    <button id="completeRegistroBtn" class="btn btn-primary" disabled>Completar Registro</button>
   </section>
   <section class="view hidden" id="view-gemelo">
     <div id="gemeloMapaContainer" style="width:min(90vh,900px); height:min(90vh,900px); margin:0 auto;"></div>
@@ -642,6 +731,11 @@
     <ul class="chore-list" id="catalogosLista"></ul>
   </section>
   <section class="view hidden" id="view-perfil">
+    <div class="form-group" style="max-width:320px">
+      <label for="perfilNombreInput">Nombre</label>
+      <input type="text" id="perfilNombreInput">
+      <button class="btn btn-primary" id="perfilGuardarNombreBtn" style="margin-top:0.5rem">Guardar Nombre</button>
+    </div>
     <div class="dashboard-card">
       <h3>Correo</h3>
       <p id="perfilEmail"></p>
@@ -1029,6 +1123,21 @@
       <p id="detallePlantaPlagas" style="display:none"></p>
       <button class="btn" id="detallePlantaSemillaBtn"></button>
       <button class="btn btn-primary" id="detallePlantaCompletarBtn">✅ Marcar como completado</button>
+    </div>
+  </div>
+</div>
+
+<!-- Fase 14.5: detalle de CAMA completa (arco/circular) — solo lectura,
+     reemplaza al toast "pendiente" que tenía onClickCama. No confundir con
+     detallePlantaModal (arriba), que es detalle de una PLANTA. -->
+<div class="modal-overlay" id="detalleCamaModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="detalleCamaTitulo">—</h3>
+      <button class="modal-close" id="detalleCamaModalClose">×</button>
+    </div>
+    <div class="modal-body">
+      <p id="detalleCamaNotas"></p>
     </div>
   </div>
 </div>

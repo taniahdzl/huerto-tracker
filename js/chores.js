@@ -9,7 +9,8 @@ import {
     collection, doc,
     getDocs, addDoc, updateDoc, serverTimestamp,
     writeBatch, increment,
-    query, where, orderBy, limit
+    query, where, orderBy, limit,
+    getCountFromServer
 } from './firebase.js';
 import { getUsuarioActual } from './session.js';
 
@@ -36,7 +37,7 @@ export async function crearTarea(datos) {
         titulo: datos.titulo,
         estado: 'pendiente',
         asignados: datos.asignados || [],
-        // Exclusivamente para ordenar por antigüedad (obtenerProximaTarea).
+        // Exclusivamente para ordenar por antigüedad (obtenerTareasAsignadas).
         // NO es fecha límite/vencimiento — el huerto no maneja eso, es un
         // backlog que se va completando, ya descartado explícitamente.
         fechaCreacion: serverTimestamp()
@@ -45,26 +46,40 @@ export async function crearTarea(datos) {
     return ref.id;
 }
 
-// La tarea pendiente más antigua asignada a `uid`. Devuelve null si no hay
-// ninguna — es un estado válido (nadie tiene pendientes), no una falla.
+// Fase 14.3: reemplaza a obtenerProximaTarea (limit(1), devolvía un solo
+// doc o null). Su único caller era la tarjeta "Tu próxima tarea" del
+// Dashboard, retirada en esta misma fase a favor de la Tarjeta 2 (lista de
+// hasta `cantidad`) — no quedó ningún consumidor con la firma vieja, así
+// que se reemplaza en vez de mantener dos queries casi idénticas
+// (array-contains + estado pendiente + orden por antigüedad) en paralelo.
 //
-// Requiere un índice compuesto en Firestore (asignados array-contains +
-// estado == + fechaCreacion orderBy) — no existe por defecto. La primera
-// vez que corra esta query sin el índice creado, Firestore va a lanzar un
-// error con un link directo para crearlo en un clic; hazlo antes de dar
-// por probado este widget, o `obtenerProximaTarea` va a fallar siempre.
-export async function obtenerProximaTarea(uid) {
-    const q = query(
-        collection(db, PATHS.tareas),
+// Devuelve `{ tareas, total }`: `tareas` son las `cantidad` más antiguas
+// (para pintar títulos), `total` es el conteo real de TODAS las pendientes
+// asignadas a `uid` (vía getCountFromServer, aggregation query — no se
+// infiere "+N más" a partir de un límite+1, que daría un número
+// inventado/incorrecto en cuanto hubiera más de cantidad+1 pendientes).
+//
+// Requiere el mismo índice compuesto en Firestore que ya usaba
+// obtenerProximaTarea (asignados array-contains + estado == + fechaCreacion
+// orderBy) — no existe por defecto. Si no está creado, Firestore lanza un
+// error con un link directo para crearlo en un clic.
+export async function obtenerTareasAsignadas(uid, cantidad = 3) {
+    const filtros = [
         where('asignados', 'array-contains', uid),
-        where('estado', '==', 'pendiente'),
-        orderBy('fechaCreacion', 'asc'),
-        limit(1)
-    );
-    const snapshot = await getDocs(q);
-    if (snapshot.empty) return null;
-    const doc0 = snapshot.docs[0];
-    return { id: doc0.id, ...doc0.data() };
+        where('estado', '==', 'pendiente')
+    ];
+    const qLista = query(collection(db, PATHS.tareas), ...filtros, orderBy('fechaCreacion', 'asc'), limit(cantidad));
+    const qConteo = query(collection(db, PATHS.tareas), ...filtros);
+
+    const [snapshot, conteoSnap] = await Promise.all([
+        getDocs(qLista),
+        getCountFromServer(qConteo)
+    ]);
+
+    return {
+        tareas: snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })),
+        total: conteoSnap.data().count
+    };
 }
 
 export async function asignarEstudiantes(tareaId, arrayDeIds) {

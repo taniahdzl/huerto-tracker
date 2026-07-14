@@ -6,7 +6,7 @@ import {
     query, where, orderBy, limit,
     writeBatch
 } from './firebase.js';
-import { getUsuarioActual } from './session.js';
+import { getUsuarioActual, nombreParaMostrar } from './session.js';
 // obtenerSesionConDetalle deriva asistentes/tareas de otros módulos en vez
 // de duplicar esos datos dentro de bitacora_sesiones — ver su cabecera.
 import { obtenerTareas, obtenerAsistenciasPorFecha } from './chores.js';
@@ -50,12 +50,12 @@ export async function obtenerSesionConDetalle(fecha) {
 
     const sesiones = bitacoraSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-    // Mismo fallback que renderResumenHoras (render.js) para estudiantes sin
-    // campo `nombre` en el directorio: usuarios solo guarda email/rol/horasTotales.
+    // Mismo fallback que renderResumenHoras (render.js): nombre → email →
+    // id, vía nombreParaMostrar (Fase 14.1).
     const asistentes = [...new Set(asistenciasDelDia.map(a => a.estudianteId))]
         .map((uid) => {
             const estudiante = estudiantes.find((e) => e.id === uid);
-            return estudiante ? (estudiante.email || estudiante.id) : uid;
+            return estudiante ? nombreParaMostrar(estudiante) : uid;
         });
 
     // tareaId es null en ajustes manuales de horas (_registrarHoras) — se

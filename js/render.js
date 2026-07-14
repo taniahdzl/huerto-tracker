@@ -4,6 +4,12 @@
 // ni de db.js — solo recibe arrays de datos ya resueltos y un contenedor
 // del DOM, y escupe HTML. Toda la carga de datos vive en main.js.
 //
+// session.js es la única excepción a "sin imports": es un módulo de
+// identidad puro (sin firebase.js/db.js detrás), aporta nombreParaMostrar
+// (Fase 14.1) para no duplicar el fallback nombre→email→id aquí.
+
+import { nombreParaMostrar } from './session.js';
+
 // ── Shape de `plantas` (catalogo_semillas) ─────────────────────────
 // Verificado contra scripts/upload.js (única fuente real de estos datos):
 //   { id, nombre, tipo, dias_siembra_a_cosecha,
@@ -284,8 +290,13 @@ export function renderListaCatalogos(tipo, items, contenedor, { puedeEditar, pue
 
 // ── Vista de Admin (Fase 13.8) ───────────────────────────────────────
 // registro_actividad ya guarda `usuario: usuario.email` en cada entrada
-// (ver _logActividad en db.js/chores.js/usuarios.js) — no hace falta
-// resolver uid contra ningún directorio, el nombre ya viene incluido.
+// (ver _logActividad en db.js/chores.js/usuarios.js) — es un identificador
+// estable, no un display name (Fase 14.1: a propósito no se usa nombre
+// aquí, el nombre es editable por el propio usuario). Si algún día se
+// quiere mostrar el nombre en esta tabla, se resuelve en tiempo de
+// lectura (join contra el directorio por email/uid), igual que ya hace
+// obtenerSesionConDetalle con `asistentes` — nunca se congela dentro del
+// documento de log.
 export function renderRegistroActividad(entradas, contenedor) {
     const fragment = document.createDocumentFragment();
 
@@ -331,7 +342,7 @@ export function renderResumenHoras(estudiantes, contenedor) {
         const tr = document.createElement('tr');
 
         const nombre = document.createElement('td');
-        nombre.textContent = estudiante.email || estudiante.id;
+        nombre.textContent = nombreParaMostrar(estudiante);
         tr.appendChild(nombre);
 
         const horas = document.createElement('td');

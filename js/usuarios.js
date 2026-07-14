@@ -42,10 +42,14 @@ export async function obtenerDirectorioEstudiantes() {
     return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 }
 
-export async function registrarUsuario(uid, email, rol) {
+export async function registrarUsuario(uid, email, rol, nombre) {
+    if (!nombre || !nombre.trim()) {
+        throw new Error('El nombre es obligatorio para completar el registro.');
+    }
     await setDoc(doc(db, PATHS.usuarios, uid), {
         email,
         rol,
+        nombre: nombre.trim(),
         horasTotales: 0
     });
     // Aplica la regla del proyecto (Fase 8): toda escritura pasa por
@@ -70,6 +74,20 @@ export async function actualizarRolPropio(uid, nuevoRol) {
     }
     await updateDoc(doc(db, PATHS.usuarios, uid), { rol: nuevoRol });
     _logActividad('ACTUALIZAR_ROL_PROPIO', uid, nuevoRol);
+}
+
+// Fase 14.1: mismo espíritu que actualizarRolPropio — el usuario edita
+// SOLO su propio `nombre`. El payload contiene ÚNICAMENTE { nombre }, así
+// que en un updateDoc (fusión parcial) rol/horasTotales quedan intactos en
+// el documento resultante — la regla de 'update' de Firestore (que exige
+// rol en la whitelist y horasTotales sin cambio) se sigue cumpliendo sin
+// tocar firestore.rules, igual que ya ocurre con actualizarRolPropio.
+export async function actualizarNombrePropio(uid, nombre) {
+    if (!nombre || !nombre.trim()) {
+        throw new Error('El nombre no puede estar vacío.');
+    }
+    await updateDoc(doc(db, PATHS.usuarios, uid), { nombre: nombre.trim() });
+    _logActividad('ACTUALIZAR_NOMBRE_PROPIO', uid, nombre.trim());
 }
 
 // Fase 13.2: ya no existe forma de "poner" horasTotales a un valor

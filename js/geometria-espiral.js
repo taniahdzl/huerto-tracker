@@ -7,6 +7,25 @@
 // su cama a una coordenada cartesiana final. Tanto el renderer 2D como el
 // 3D consumen este módulo para no divergir nunca entre sí.
 //
+// ── Shape a nivel de CAMA (no de planta) para tipo:'arco'|'circular' ────
+// Campos compartidos por ambos tipos, fuera de `plantas[]`:
+//   { id, tipo: 'arco'|'circular', plantas: [...], notas? }
+//   (+ anillo/indiceSegmento solo si tipo:'arco' — ver calcularGeometriaArco)
+// - notas: string opcional (Fase 14.5) — nota de texto libre SOBRE LA CAMA
+//   completa (ej. plan de rotación, observación general), NO sobre una
+//   planta individual — no confundir con plantaEntry.notas (documentado
+//   abajo, dentro de plantas[]), que es un campo distinto y sigue sin
+//   implementarse en ningún flujo real. Puede estar ausente — los 9
+//   documentos de prueba de PASO C no lo tenían hasta esta fase, y no hubo
+//   backfill retroactivo del resto; se trata como cualquier otro campo
+//   opcional (mismo criterio que dias_siembra_a_cosecha en el catálogo:
+//   nunca se sustituye por un default inventado, el fallback vive en la UI).
+//   No existe `nombre` como campo estándar tampoco (a diferencia de las
+//   camas rectangulares) — quien consuma esto usa `cama.nombre || cama.id`.
+//   No se agregan aquí `suelo`/`composta`/`plagas` (existen en camas
+//   rectangulares, render.js:24) — fuera de alcance de esta fase, nadie
+//   los pidió para arco/circular.
+//
 // ── plantas[] tiene DOS formas distintas según el `tipo` de la cama padre.
 // NO es un shape único con campos opcionales — angle/r y t no son
 // intercambiables ni coexisten en el mismo documento. Modelarlo como una
