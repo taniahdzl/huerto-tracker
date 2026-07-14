@@ -1,0 +1,5 @@
+{
+  "framework": null,
+  "buildCommand": "node scripts/generate-config.js",
+  "outputDirectory": "."
+}
