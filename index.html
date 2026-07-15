@@ -127,6 +127,10 @@
     background: var(--parchment);
     display: flex; align-items: center; gap: 0.6rem;
     user-select: none;
+    /* Fase 14.6b: sin esto, un pointerdown+move táctil sobre la tarjeta
+       hace scroll de la página en vez de arrastrar — Pointer Events no
+       cancela el gesto de scroll nativo del navegador por sí solo. */
+    touch-action: none;
   }
   .plant-card:hover { border-color: var(--leaf); background: white; transform: translateX(2px); }
   .plant-card.dragging { opacity: 0.4; }
@@ -510,6 +514,58 @@
      empate/la especificidad y la vista seguiría visible. */
   .hidden { display: none !important; }
   .view { padding: 1.5rem; min-height: calc(100vh - 0px); }
+
+  /* ── GEMELO: panel lateral arrastrable (Fase 14.6b) ──────────────
+     Mobile-first (regla de Fase 13): por defecto columna apilada, panel
+     como tira horizontal con scroll arriba del mapa. A partir de 720px
+     pasa a fila con el panel como sidebar angosto — mismo quiebre que el
+     resto de la SPA usa implícitamente vía max-width en tarjetas/formularios.
+     NO reutiliza el grid fijo `.app { 280px 1fr 320px }` (layout pre-SPA,
+     sin colapso para móvil, dejado atrás en Fase 13) — sí reutiliza
+     .plant-card/.plant-icon/.plant-info/.plant-name (mismas tarjetas que
+     renderCatalogo ya pinta en el catálogo, .dragging incluido, ver
+     abajo) para no duplicar estilos de tarjeta. */
+  .gemelo-layout { display: flex; flex-direction: column; gap: 1rem; }
+  .gemelo-panel {
+    border: 1px solid var(--border); border-radius: 10px;
+    background: var(--parchment-dark);
+  }
+  .gemelo-panel-titulo {
+    font-family: 'Playfair Display', serif; font-size: 0.85rem;
+    margin: 0; padding: 0.6rem 0.8rem 0.3rem;
+  }
+  .gemelo-panel-lista {
+    display: flex; gap: 0.5rem; overflow-x: auto; padding: 0.5rem 0.8rem 0.8rem;
+  }
+  .gemelo-panel-lista .plant-card { flex: 0 0 auto; margin-bottom: 0; }
+  @media (min-width: 720px) {
+    .gemelo-layout { flex-direction: row; align-items: flex-start; }
+    .gemelo-panel { flex: 0 0 220px; }
+    .gemelo-panel-lista {
+      flex-direction: column; overflow-x: hidden; overflow-y: auto;
+      max-height: calc(min(90vh, 900px) - 2.5rem);
+    }
+    .gemelo-panel-lista .plant-card { flex: none; }
+  }
+
+  /* Ficha flotante que sigue al puntero durante el arrastre (Pointer
+     Events, no la API de drag&drop nativa — no funciona en touch, y el
+     proyecto es mobile-first desde Fase 13). pointer-events:none es lo
+     que hace que document.elementFromPoint() ignore este elemento y
+     "vea a través" de él hasta la cama que está debajo. */
+  .gemelo-drag-ghost {
+    position: fixed; top: 0; left: 0; z-index: 10000; pointer-events: none;
+    transform: translate(-50%, -50%);
+    padding: 0.5rem 0.8rem; border-radius: 8px;
+    background: var(--parchment); border: 1px solid var(--leaf);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.25);
+    font-size: 0.8rem; display: flex; align-items: center; gap: 0.4rem;
+    opacity: 0.95;
+  }
+  /* Highlight de la cama bajo el puntero durante el arrastre — mismo
+     namespace de variables (--color-*) que ya usa render-spiral-2d.js
+     para el SVG, no las --harvest-glow/etc. del resto de la UI. */
+  .cama-espiral.drop-target { filter: drop-shadow(0 0 8px var(--color-acento, #E8A838)); }
   /* Fase 14.1: botón "Volver al Dashboard", insertado por JS (main.js) en
      las vistas internas — ver insertarBotonesVolverDashboard(). */
   .btn-volver-dashboard { display: block; margin-bottom: 1rem; }
@@ -706,7 +762,13 @@
     <button id="completeRegistroBtn" class="btn btn-primary" disabled>Completar Registro</button>
   </section>
   <section class="view hidden" id="view-gemelo">
-    <div id="gemeloMapaContainer" style="width:min(90vh,900px); height:min(90vh,900px); margin:0 auto;"></div>
+    <div class="gemelo-layout">
+      <aside class="gemelo-panel">
+        <h4 class="gemelo-panel-titulo">🌱 Arrastra una planta a una cama</h4>
+        <div class="gemelo-panel-lista" id="gemeloPanelLista"></div>
+      </aside>
+      <div id="gemeloMapaContainer" style="width:min(90vh,900px); height:min(90vh,900px); margin:0 auto;"></div>
+    </div>
   </section>
   <section class="view hidden" id="view-tareas">
     <div class="view-tareas-toolbar">

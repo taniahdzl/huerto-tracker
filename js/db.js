@@ -7,6 +7,7 @@ import {
     writeBatch
 } from './firebase.js';
 import { getUsuarioActual, nombreParaMostrar } from './session.js';
+import { proximaPosicionDisponible } from './geometria-espiral.js';
 // obtenerSesionConDetalle deriva asistentes/tareas de otros módulos en vez
 // de duplicar esos datos dentro de bitacora_sesiones — ver su cabecera.
 import { obtenerTareas, obtenerAsistenciasPorFecha } from './chores.js';
@@ -310,4 +311,53 @@ export async function marcarParaSemilla(camaId, instanciaId) {
 
     await updateDoc(camaRef, { plantas: plantasActualizadas });
     _logActividad('MARCAR_PARA_SEMILLA', camaId, `${plantas[idx].plantaId}: ${nuevaFinalidad}`);
+}
+
+// Agrega una entrada nueva a plantas[] de una cama arco/circular (Fase
+// 14.6a) — sin panel lateral ni drag todavía (14.6b), solo la escritura.
+// La posición (t/r o angle/r) la calcula proximaPosicionDisponible
+// (geometria-espiral.js) sobre las plantas que ya están en la cama, así
+// que nunca se recibe a mano — mismo espíritu que instanciaId/
+// fechaSiembra, que esta función también genera, no el llamador.
+//
+// finalidad nace siempre en 'cosecha' — cambiarla a 'semilla' sigue siendo
+// responsabilidad exclusiva de marcarParaSemilla, después de sembrada.
+// plantaTipo se denormaliza desde catalogo_semillas (mismo criterio que
+// handleSaveBed en main.js para camas rectangulares) para que render-
+// spiral-2d.js no necesite el catálogo completo solo para pintar color/
+// emoji — mismo motivo que ya vale para camas rectangulares.
+//
+// Regla de Firestore (camas_cosecha): create/update permitido a cualquier
+// usuario autenticado, sin restricción de rol — igual que crearCama/
+// actualizarCama/marcarParaSemilla, esta función no valida rol aquí porque
+// la regla ya lo cubre.
+export async function agregarPlantaACama(camaId, plantaId) {
+    const camaRef = doc(db, PATHS.camas, camaId);
+    const camaSnap = await getDoc(camaRef);
+    if (!camaSnap.exists()) {
+        throw new Error('La mesa no existe.');
+    }
+    const cama = camaSnap.data();
+    if (cama.tipo !== 'arco' && cama.tipo !== 'circular') {
+        throw new Error('agregarPlantaACama solo aplica a camas arco/circular.');
+    }
+
+    const plantaSnap = await getDoc(doc(db, PATHS.catalogo, plantaId));
+    const plantaTipo = plantaSnap.exists() ? (plantaSnap.data().tipo || null) : null;
+
+    const plantasActuales = cama.plantas || [];
+    const posicion = proximaPosicionDisponible(cama, plantasActuales);
+
+    const nuevaPlanta = {
+        instanciaId: crypto.randomUUID(),
+        plantaId,
+        plantaTipo,
+        fechaSiembra: new Date().toISOString().slice(0, 10),
+        finalidad: 'cosecha',
+        ...posicion
+    };
+
+    await updateDoc(camaRef, { plantas: [...plantasActuales, nuevaPlanta] });
+    _logActividad('AGREGAR_PLANTA', camaId, plantaId);
+    return nuevaPlanta;
 }

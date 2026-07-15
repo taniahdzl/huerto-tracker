@@ -26,7 +26,7 @@ import {
     obtenerQuimicos, crearQuimico, actualizarQuimico, eliminarQuimico,
     obtenerInventario, crearInventario, actualizarInventario, eliminarInventario,
     obtenerRegistroActividad,
-    marcarParaSemilla
+    marcarParaSemilla, agregarPlantaACama
 } from './db.js';
 import {
     renderCatalogo, renderMapaHuerto, renderListaTareas, renderListaCatalogos,
@@ -44,6 +44,7 @@ const toast       = document.getElementById('toast');
 const plantListEl  = document.getElementById('plantList');
 const gardenGridEl = document.getElementById('gardenGrid');
 const gemeloMapaContainer = document.getElementById('gemeloMapaContainer');
+const gemeloPanelLista     = document.getElementById('gemeloPanelLista');
 
 const detallePlantaModalClose = document.getElementById('detallePlantaModalClose');
 const detallePlantaTitulo    = document.getElementById('detallePlantaTitulo');
@@ -500,6 +501,13 @@ async function iniciarHuerto() {
             onClickPlanta: (cama, plantaEntry) => abrirDetallePlanta(cama, plantaEntry)
         });
 
+        // Panel lateral arrastrable (Fase 14.6b) — mismo `catalogo` ya
+        // cargado arriba, sin query nueva. Se repinta en cada iniciarHuerto()
+        // como el resto: tras un drop exitoso hay que volver a llamar esto
+        // de todas formas para que el SVG refleje la planta nueva, así que
+        // no vale la pena mantener el panel fuera de ese ciclo.
+        renderPanelCatalogoArrastrable(catalogo);
+
         // Tarjeta 1 del Dashboard (Fase 14.3) — mismo `camas`/`catalogo` ya
         // cargados arriba, sin una tercera ida a Firestore.
         renderResumenCamasDashboard(camas, catalogo);
@@ -510,6 +518,118 @@ async function iniciarHuerto() {
         statusText.textContent = 'Error de conexión';
         mostrarToast('No se pudo cargar el huerto', 'red');
     }
+}
+
+// ── Panel lateral arrastrable + drag & drop sobre la espiral (Fase 14.6b) ──
+//
+// Reutiliza .plant-card/.plant-icon/.plant-info/.plant-name (mismas
+// tarjetas que renderCatalogo pinta en el catálogo — ver render.js) en vez
+// de inventar un componente nuevo; esas clases ya traían cursor:grab y
+// .dragging preparados desde el layout pre-SPA (#appRoot, hoy oculto) que
+// nunca llegó a conectarse a una interacción real.
+function renderPanelCatalogoArrastrable(catalogo) {
+    if (!gemeloPanelLista) return;
+    const fragment = document.createDocumentFragment();
+
+    catalogo.forEach((planta) => {
+        const tipo = (planta.tipo || 'desconocido').trim().toLowerCase();
+
+        const card = document.createElement('div');
+        card.className = 'plant-card';
+        card.dataset.plantId = planta.id;
+
+        const icon = document.createElement('div');
+        icon.className = 'plant-icon';
+        icon.textContent = emojiDePlanta(tipo);
+
+        const info = document.createElement('div');
+        info.className = 'plant-info';
+        const name = document.createElement('div');
+        name.className = 'plant-name';
+        name.textContent = planta.nombre || 'Sin nombre';
+        info.appendChild(name);
+
+        card.append(icon, info);
+        card.addEventListener('pointerdown', (e) => iniciarArrastrePlanta(e, planta.id, card));
+        fragment.appendChild(card);
+    });
+
+    gemeloPanelLista.replaceChildren(fragment);
+}
+
+// Pointer Events (pointerdown/pointermove/pointerup), NUNCA la API de
+// drag&drop nativa del navegador (draggable/dragstart/drop) — esa API no
+// dispara en touch, y el proyecto es mobile-first desde Fase 13. Un solo
+// listener de pointerdown por tarjeta arranca el arrastre; pointermove/up
+// se escuchan en window mientras dura, y se desmontan al soltar — no hay
+// listeners globales vivos fuera de un arrastre en curso.
+function iniciarArrastrePlanta(evento, plantaId, elementoOrigen) {
+    evento.preventDefault();
+
+    const ghost = document.createElement('div');
+    ghost.className = 'gemelo-drag-ghost';
+    ghost.textContent = elementoOrigen.textContent;
+    document.body.appendChild(ghost);
+
+    const moverGhost = (x, y) => {
+        ghost.style.left = `${x}px`;
+        ghost.style.top = `${y}px`;
+    };
+    moverGhost(evento.clientX, evento.clientY);
+    elementoOrigen.classList.add('dragging');
+
+    // Cama (.cama-espiral) resaltada bajo el puntero en este momento del
+    // arrastre — se recalcula en cada pointermove vía elementFromPoint;
+    // .gemelo-drag-ghost tiene pointer-events:none así que nunca se
+    // interpone a sí mismo en ese hit-test.
+    let camaResaltada = null;
+
+    function onPointerMove(ev) {
+        moverGhost(ev.clientX, ev.clientY);
+
+        const elBajoPuntero = document.elementFromPoint(ev.clientX, ev.clientY);
+        const camaGrupo = elBajoPuntero ? elBajoPuntero.closest('.cama-espiral') : null;
+
+        if (camaGrupo !== camaResaltada) {
+            if (camaResaltada) camaResaltada.classList.remove('drop-target');
+            camaResaltada = camaGrupo;
+            if (camaResaltada) camaResaltada.classList.add('drop-target');
+        }
+    }
+
+    async function onPointerUp() {
+        window.removeEventListener('pointermove', onPointerMove);
+        window.removeEventListener('pointerup', onPointerUp);
+        window.removeEventListener('pointercancel', onPointerUp);
+        ghost.remove();
+        elementoOrigen.classList.remove('dragging');
+
+        const camaDestino = camaResaltada;
+        if (camaDestino) camaDestino.classList.remove('drop-target');
+        if (!camaDestino) return; // soltado fuera de cualquier cama — no-op
+
+        const camaId = camaDestino.dataset.camaId;
+        try {
+            await agregarPlantaACama(camaId, plantaId);
+            // Mismo patrón que detallePlantaSemillaBtn tras marcarParaSemilla:
+            // await iniciarHuerto() ANTES del toast, para no dejar ver un
+            // instante la espiral vieja sin la ficha nueva (el parpadeo que
+            // ya se corrigió en PASO D).
+            await iniciarHuerto();
+            mostrarToast('Planta agregada', 'green');
+        } catch (e) {
+            console.error('[main] Error agregando planta a la cama:', e);
+            // Mensaje real del error (ej. cama saturada, sin espacio sin
+            // traslape) — no uno genérico, a diferencia de otros handlers
+            // que sí generalizan; aquí el mensaje de proximaPosicionDisponible
+            // es información accionable para quien está sembrando.
+            mostrarToast(e.message || 'No se pudo agregar la planta', 'red');
+        }
+    }
+
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerUp);
 }
 
 // ── Modal de mesa: abrir / poblar ─────────────────────────────────

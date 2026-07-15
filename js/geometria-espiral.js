@@ -35,7 +35,7 @@
 //
 //   tipo: 'arco' → cada planta usa POSICIÓN ANGULAR NORMALIZADA dentro del
 //   segmento de esa cama, no una coordenada polar completa:
-//     { instanciaId, plantaId, plantaTipo, t, fechaSiembra, fechaTrasplante, notas, finalidad }
+//     { instanciaId, plantaId, plantaTipo, t, r, fechaSiembra, fechaTrasplante, notas, finalidad }
 //     - instanciaId: string único (crypto.randomUUID()) generado por quien
 //       siembra la planta. Es el único campo que identifica esta entrada de
 //       forma estable — plantaId se repite si hay dos plantas de la misma
@@ -45,9 +45,17 @@
 //     - t: number entre 0 y 1. t=0 → anguloInicio del segmento (calculado
 //       a partir de {anillo, indiceSegmento} + parámetros aprobados),
 //       t=1 → anguloFin del mismo segmento.
-//     - El radio NO se guarda por planta — se asume fijo al punto medio
-//       del ancho de la cama: (radioInterior + radioExterior) / 2. Así lo
-//       calculaba el editor 2D ya validado; no hay campo de radio aquí.
+//     - r: number entre radioInterno y radioExterno del segmento (mismas
+//       unidades nativas que radioCentro/anchoCamaInterior — ver PARAMS),
+//       calculado por radiosAnillo(anillo). OPCIONAL — agregado en Fase
+//       14.6a junto con proximaPosicionDisponible, que es quien lo genera
+//       para plantas nuevas. Los 9 documentos de prueba de PASO C (y
+//       cualquier entrada anterior a esta fase) NO lo tienen — sin
+//       backfill retroactivo, mismo criterio que `finalidad` (Fase 13.6b)
+//       y `notas` de cama (Fase 14.5): posicionPlantaEnArco usa el radio
+//       real si `r` existe, y cae al punto medio histórico
+//       (radioInterno+radioExterno)/2 si no — nunca inventa un valor ni
+//       rompe con documentos viejos.
 //     - finalidad: 'cosecha' | 'semilla', default 'cosecha' si el campo no
 //       existe (agregado en Fase 13.6b, entradas más viejas pueden no
 //       tenerlo todavía).
@@ -72,6 +80,28 @@ const PARAMS = {
     anchoCamaExterior:          0.40,
     alturaPared:                0.38
 };
+
+// Tamaño real de "ficha" (marcador de planta) en unidades nativas de este
+// módulo — Fase 14.6a. Fuente de verdad para proximaPosicionDisponible
+// (colocación automática, más abajo): esa función necesita el diámetro de
+// una ficha en las MISMAS unidades que radioInterno/radioExterno/t, no en
+// píxeles de un viewBox SVG que este módulo ni conoce ni debe conocer.
+//
+// RADIO_FICHA_PX=16 es el valor ya validado del renderer 2D (sin cambio en
+// esta fase, solo se centraliza). ESCALA=300 es la conversión unidad-nativa
+// → píxeles que render-spiral-2d.js eligió al construir el SVG (Paso 3):
+// con radioExternoExterior=1.26 (ver PARAMS arriba), el sector más externo
+// llega a ~378px de radio dentro de un viewBox dimensionado para ese
+// tamaño — es una decisión de layout del renderer, no algo derivable de
+// PARAMS, así que se duplica aquí de forma literal y documentada en vez de
+// importarla desde render-spiral-2d.js: la dirección de dependencia entre
+// los dos módulos es geometria-espiral.js → render-spiral-2d.js, nunca al
+// revés, así que este archivo no puede importar nada de allá. Si ESCALA
+// cambia en render-spiral-2d.js, debe cambiar aquí también (ambas
+// declaraciones quedan comentadas apuntando una a la otra).
+const RADIO_FICHA_PX = 16;
+const ESCALA = 300; // debe coincidir siempre con ESCALA en render-spiral-2d.js
+export const RADIO_FICHA_UNIDADES = RADIO_FICHA_PX / ESCALA;
 
 function radiosAnillo(anillo) {
     const radioInternoInterior = PARAMS.radioCentro + PARAMS.separacionCentroInterior;
@@ -133,15 +163,30 @@ export function calcularGeometriaCentro() {
     return { radio: PARAMS.radioCentro, alturaPared: PARAMS.alturaPared };
 }
 
-// tipo:'arco' → t normalizado [0,1] dentro del segmento de esa cama.
-// Radio fijo al punto medio del ancho de cama (ver cabecera del módulo).
-export function posicionPlantaEnArco(anillo, indiceSegmento, t) {
+// tipo:'arco' → t normalizado [0,1] dentro del segmento de esa cama, más
+// `r` opcional (Fase 14.6a — ver cabecera del módulo). Si `r` es
+// undefined/null (documentos anteriores a esta fase, incluyendo los 9 de
+// PASO C), cae al punto medio histórico (radioInterno+radioExterno)/2 —
+// el mismo valor que esta función siempre devolvía antes de 14.6a, así que
+// ningún documento viejo cambia de posición. Si `r` viene explícito, se
+// valida contra el rango real del segmento (mismo criterio que
+// posicionPlantaEnCentro valida su `r` contra `limite`).
+export function posicionPlantaEnArco(anillo, indiceSegmento, t, r) {
     if (t < 0 || t > 1) throw new Error(`t fuera de rango [0,1]: ${t}`);
 
     const { anguloInicio, anguloFin, radioInterno, radioExterno } = calcularGeometriaArco(anillo, indiceSegmento);
-    const angulo = anguloInicio + t * (anguloFin - anguloInicio);
-    const radio  = (radioInterno + radioExterno) / 2;
 
+    let radio;
+    if (r === undefined || r === null) {
+        radio = (radioInterno + radioExterno) / 2;
+    } else {
+        if (r < radioInterno || r > radioExterno) {
+            throw new Error(`r fuera de rango [${radioInterno}, ${radioExterno}]: ${r}`);
+        }
+        radio = r;
+    }
+
+    const angulo = anguloInicio + t * (anguloFin - anguloInicio);
     return polarACartesiano(angulo, radio);
 }
 
@@ -152,4 +197,137 @@ export function posicionPlantaEnCentro(angle, r) {
     if (r < 0 || r > limite) throw new Error(`r fuera de rango [0, ${limite}]: ${r}`);
 
     return polarACartesiano(angle, r);
+}
+
+// ── Colocación automática (Fase 14.6a) ──────────────────────────────
+//
+// proximaPosicionDisponible(cama, plantasExistentes) devuelve la posición
+// de la PRÓXIMA ficha — {t, r} si cama.tipo==='arco', {angle, r} si
+// cama.tipo==='circular' — calculada para no traslapar ninguna de las
+// plantasExistentes ya colocadas. Las posiciones existentes se recalculan
+// con posicionPlantaEnArco/posicionPlantaEnCentro (mismo fallback que usa
+// el renderer), así que una planta vieja sin `r` se trata como el punto
+// donde YA se está dibujando hoy, no como un punto distinto — de lo
+// contrario esta función podría "liberar" espacio que en pantalla sigue
+// ocupado.
+//
+// Estrategia: candidatos organizados en niveles radiales (arco) o anillos
+// concéntricos (circular), evaluados del nivel más interior hacia afuera
+// y, dentro de cada nivel, de un extremo angular al otro. La separación
+// angular dentro de un nivel se calcula para que la distancia en línea
+// recta (cuerda) entre centros a ese radio sea exactamente diametroFicha
+// (2 * RADIO_FICHA_UNIDADES) — el nivel nunca se traslapa consigo mismo.
+// La separación radial entre niveles contiguos es también diametroFicha,
+// así que dos fichas en niveles vecinos alineadas en ángulo quedan justo a
+// un diámetro de distancia (el mínimo aceptable, nunca menos). El primer
+// candidato que no traslapa con NINGUNA planta existente (de cualquier
+// nivel, no solo el propio) gana.
+//
+// Caso extremo (cama llena, ningún candidato libre): se DENIEGA (throw) en
+// vez de apilar con superposición mínima o asumir que nunca ocurre.
+// Apilar rompería la garantía de no-traslape que esta función existe para
+// dar, y el resto del proyecto ya usa throw ante colisión/agotamiento
+// (crearCatalogo, crearHistorialCultivo, marcarParaSemilla) en vez de
+// degradar en silencio — mismo criterio aquí, no uno nuevo.
+const EPS = 1e-9;
+
+function diametroFicha() {
+    return RADIO_FICHA_UNIDADES * 2;
+}
+
+// Distancia angular mínima (grados) para que la cuerda entre dos puntos al
+// mismo radio `r` mida exactamente `diametro`. Si `r` es tan chico que ni
+// separando 180° alcanza (diametro/(2r) > 1), no hay ángulo válido en ese
+// nivel — se devuelve null y el llamador lo trata como "un solo candidato".
+function anguloMinimoEnNivel(r, diametro) {
+    const ratio = diametro / (2 * r);
+    if (ratio > 1) return null;
+    return 2 * Math.asin(ratio) * (180 / Math.PI);
+}
+
+function distancia(a, b) {
+    return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function libreDeTraslape(candidato, posicionesExistentes, diametro) {
+    return posicionesExistentes.every((p) => distancia(candidato, p) >= diametro - EPS);
+}
+
+function proximaPosicionArco(anillo, indiceSegmento, posicionesExistentes, diametro) {
+    const { anguloInicio, anguloFin, radioInterno, radioExterno } = calcularGeometriaArco(anillo, indiceSegmento);
+    const span = anguloFin - anguloInicio;
+
+    // Niveles radiales: primero centrado a radioInterno + diametro/2, cada
+    // siguiente diametro más afuera. Si la banda es más angosta que un
+    // diámetro completo, un único nivel al punto medio — mismo valor que
+    // el fallback histórico de posicionPlantaEnArco, para no inventar un
+    // radio que ese fallback no reconocería.
+    const niveles = [];
+    if (radioExterno - radioInterno < diametro) {
+        niveles.push((radioInterno + radioExterno) / 2);
+    } else {
+        for (let r = radioInterno + diametro / 2; r <= radioExterno - diametro / 2; r += diametro) {
+            niveles.push(r);
+        }
+    }
+
+    for (const r of niveles) {
+        const dThetaMin = anguloMinimoEnNivel(r, diametro);
+        const numSlots = (dThetaMin === null || dThetaMin >= span) ? 1 : Math.floor(span / dThetaMin) + 1;
+
+        for (let k = 0; k < numSlots; k++) {
+            const t = numSlots === 1 ? 0.5 : k / (numSlots - 1);
+            const candidato = posicionPlantaEnArco(anillo, indiceSegmento, t, r);
+            if (libreDeTraslape(candidato, posicionesExistentes, diametro)) {
+                return { t, r };
+            }
+        }
+    }
+
+    throw new Error('No hay espacio disponible en este segmento para una planta más sin traslape.');
+}
+
+function proximaPosicionCentro(posicionesExistentes, diametro) {
+    const limite = PARAMS.radioCentro * 0.75;
+
+    // Nivel 0: un único slot en el centro exacto (r=0 — el ángulo no
+    // importa, polarACartesiano(cualquier ángulo, 0) siempre da (0,0)).
+    const niveles = [0];
+    for (let r = diametro; r <= limite; r += diametro) {
+        niveles.push(r);
+    }
+
+    for (const r of niveles) {
+        if (r === 0) {
+            const candidato = posicionPlantaEnCentro(0, 0);
+            if (libreDeTraslape(candidato, posicionesExistentes, diametro)) {
+                return { angle: 0, r: 0 };
+            }
+            continue;
+        }
+        const dThetaMin = anguloMinimoEnNivel(r, diametro);
+        const numSlots = dThetaMin === null ? 1 : Math.max(1, Math.floor(360 / dThetaMin));
+        for (let k = 0; k < numSlots; k++) {
+            const angle = k * (360 / numSlots);
+            const candidato = posicionPlantaEnCentro(angle, r);
+            if (libreDeTraslape(candidato, posicionesExistentes, diametro)) {
+                return { angle, r };
+            }
+        }
+    }
+
+    throw new Error('No hay espacio disponible en la cama circular para una planta más sin traslape.');
+}
+
+export function proximaPosicionDisponible(cama, plantasExistentes) {
+    const diametro = diametroFicha();
+    const posicionesExistentes = (plantasExistentes || []).map((p) =>
+        cama.tipo === 'circular'
+            ? posicionPlantaEnCentro(p.angle, p.r)
+            : posicionPlantaEnArco(cama.anillo, cama.indiceSegmento, p.t, p.r)
+    );
+
+    return cama.tipo === 'circular'
+        ? proximaPosicionCentro(posicionesExistentes, diametro)
+        : proximaPosicionArco(cama.anillo, cama.indiceSegmento, posicionesExistentes, diametro);
 }

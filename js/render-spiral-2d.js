@@ -23,7 +23,8 @@ import {
     calcularGeometriaArco,
     calcularGeometriaCentro,
     posicionPlantaEnArco,
-    posicionPlantaEnCentro
+    posicionPlantaEnCentro,
+    RADIO_FICHA_UNIDADES
 } from './geometria-espiral.js';
 import { emojiDePlanta, colorDePlanta } from './render.js';
 
@@ -31,9 +32,14 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 
 // 1 unidad de geometria-espiral.js → 300px de espacio SVG. Con
 // radioExternoExterior = 1.26 (ver PARAMS ahí), el sector más externo llega
-// a ~378px de radio; el resto de las constantes de esta sección (grosor de
-// contorno, radio de ficha) ya están expresadas directamente en ese mismo
-// espacio "px" del viewBox, no en unidades de geometria-espiral.js.
+// a ~378px de radio; GROSOR_CONTORNO/GROSOR_ANILLO_PROGRESO/RADIO_BADGE de
+// esta sección están expresados directamente en ese mismo espacio "px" del
+// viewBox, no en unidades de geometria-espiral.js. RADIO_FICHA es la
+// excepción desde Fase 14.6a: geometria-espiral.js es la fuente de verdad
+// (RADIO_FICHA_UNIDADES) porque proximaPosicionDisponible necesita el
+// tamaño real de ficha en unidades nativas para calcular colocación sin
+// traslape — aquí solo se deriva la versión en píxeles multiplicando por
+// ESCALA, nunca al revés.
 const ESCALA = 300;
 const px = (v) => v * ESCALA;
 
@@ -44,7 +50,7 @@ const px = (v) => v * ESCALA;
 // interior (el más angosto, anchoCamaInterior=0.30 en geometria-espiral.js);
 // 8 no mejoraba sustancialmente más ese punto crítico.
 const GROSOR_CONTORNO = 6.5;       // "recorte de papel" entre sectores/círculo
-const RADIO_FICHA = 16;
+const RADIO_FICHA = px(RADIO_FICHA_UNIDADES); // Fase 14.6a: fuente de verdad en geometria-espiral.js
 const GROSOR_ANILLO_PROGRESO = 3.5;
 const RADIO_BADGE = 8;
 
@@ -267,7 +273,7 @@ function crearFichaPlanta(cama, plantaEntry, posicion, catalogoPorId, onClickPla
 function posicionDePlanta(cama, plantaEntry) {
     return cama.tipo === 'circular'
         ? posicionPlantaEnCentro(plantaEntry.angle, plantaEntry.r)
-        : posicionPlantaEnArco(cama.anillo, cama.indiceSegmento, plantaEntry.t);
+        : posicionPlantaEnArco(cama.anillo, cama.indiceSegmento, plantaEntry.t, plantaEntry.r);
 }
 
 // renderEspiralSVG(container, camas, catalogo, opciones)
