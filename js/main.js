@@ -83,8 +83,10 @@ const setupError    = document.getElementById('setupError');
 
 // ── Dashboard (Fase 13) ─────────────────────────────────────────────
 const dashboardUserEmail  = document.getElementById('dashboardUserEmail');
-const dashboardAdminLink  = document.getElementById('dashboardAdminLink');
-const dashboardQuicklinks = document.querySelector('.dashboard-quicklinks');
+
+// ── Barra de navegación persistente del header (Fase 16) ────────────
+const headerLogo = document.getElementById('headerLogo');
+const headerNav  = document.getElementById('headerNav');
 
 // ── Tarjetas del Dashboard (Fase 14.3) ──────────────────────────────
 const dashboardResumenCamasCard = document.getElementById('dashboardResumenCamasCard');
@@ -163,7 +165,6 @@ const herramientaSaveBtn       = document.getElementById('herramientaSaveBtn');
 // const aiOverviewBtn  = document.querySelector('.btn-ai');
 
 // ── Vista de Tareas (Fase 13.5 — ya no es modal) ────────────────────
-const openChoresBtn      = document.getElementById('openChoresBtn');
 const tareasListaVista    = document.getElementById('tareasListaVista');
 const crearTareaBtn       = document.getElementById('crearTareaBtn');
 const tareasFilterTabs    = document.querySelectorAll('#view-tareas .filter-tab');
@@ -230,32 +231,23 @@ function navegarA(vistaId, params = null) {
     }
     document.querySelectorAll('.view').forEach((v) => v.classList.add('hidden'));
     document.getElementById(vistaId).classList.remove('hidden');
+    // Fase 16: resalta en headerNav el botón cuyo data-vista coincide con la
+    // vista activa. Ningún botón coincide con 'view-dashboard' (no es uno de
+    // los 6 destinos de la barra) — eso es correcto, no un bug: volver al
+    // Dashboard es rol del logo clicable (ver headerLogo más abajo), no de
+    // un ítem de esta barra.
+    headerNav.querySelectorAll('[data-vista]').forEach((btn) => {
+        btn.classList.toggle('active', btn.dataset.vista === vistaId);
+    });
     if (params) {
         document.dispatchEvent(new CustomEvent('vista:params', { detail: { vistaId, params } }));
     }
 }
 
-// Fase 14.1: botón "Volver al Dashboard" — inyectado por JS (no copiado 5
-// veces en index.html) en toda vista interna que no sea Splash/Setup, que
-// tienen su propio flujo de salida (login/registro) y no deben ofrecer un
-// atajo de vuelta a un Dashboard al que todavía no se puede entrar.
-// PASO F: view-bitacora SÍ va en VISTAS_CON_VOLVER (mismo patrón que las
-// demás vistas internas) pero NO en VISTAS_ADMIN de arriba — accesible a
-// cualquier rol autenticado, decisión explícita (ver diagnóstico).
-const VISTAS_CON_VOLVER = ['view-gemelo', 'view-tareas', 'view-catalogos', 'view-perfil', 'view-admin', 'view-bitacora'];
-
-function insertarBotonesVolverDashboard() {
-    VISTAS_CON_VOLVER.forEach((vistaId) => {
-        const boton = document.createElement('button');
-        boton.type = 'button';
-        boton.className = 'btn btn-volver-dashboard';
-        boton.textContent = '← Volver al Dashboard';
-        boton.addEventListener('click', () => navegarA('view-dashboard'));
-        document.getElementById(vistaId).prepend(boton);
-    });
-}
-
-insertarBotonesVolverDashboard();
+// Fase 16: el logo del header hace de "home" — única forma de volver al
+// Dashboard ahora que headerNav (abajo) no incluye ese destino y el botón
+// "Volver al Dashboard" por vista se retiró junto con .dashboard-quicklinks.
+headerLogo.addEventListener('click', () => navegarA('view-dashboard'));
 
 // Para los casos en que lo que debe mostrarse es #login-overlay, no una
 // vista — oculta TODAS las .view (incluida Splash) sin navegar "a" nada,
@@ -312,7 +304,6 @@ function mostrarDashboard(user, esAdmin, nombre) {
     crearTareaBtn.style.display = esAdmin ? '' : 'none';
     const nombreMostrado = nombreParaMostrar({ email: user.email, nombre });
     dashboardUserEmail.textContent = ` — ${nombreMostrado}`;
-    dashboardAdminLink.style.display = esAdmin ? '' : 'none';
 
     statusDot.classList.add('online');
     statusDot.classList.remove('error');
@@ -641,8 +632,6 @@ function iniciarArrastrePlanta(evento, plantaId, elementoOrigen) {
 // creación/edición en el cliente. editingCamaId (usado solo por esas
 // funciones) también se retiró.
 
-openChoresBtn.addEventListener('click', irAVistaTareas);
-
 // ── Vista de Tareas (Fase 13.5) ─────────────────────────────────────
 // Ya no es modal — es destino de navegación recurrente. "Crear" sigue
 // siendo un modal puntual (crearTareaModal), solo visible para admin.
@@ -839,7 +828,10 @@ async function handleAdminSave() {
     }
 }
 
-adminBtn.addEventListener('click', irAVistaAdmin);
+// adminBtn ya no tiene listener propio — vive dentro de headerNav (Fase 16)
+// y su clic se resuelve por delegación en el handler de headerNav más abajo,
+// igual que los demás data-vista. Un listener directo aquí duplicaría la
+// llamada a irAVistaAdmin() (bubbling + delegación).
 adminModalClose.addEventListener('click', () => closeModal('adminModal'));
 adminSaveBtn.addEventListener('click', handleAdminSave);
 
@@ -1403,9 +1395,9 @@ function handleAiOverview() {
 // });
 // aiOverviewBtn.addEventListener('click', handleAiOverview);
 
-// ── Accesos rápidos del Dashboard ─────────────────────────────────
+// ── Barra de navegación persistente del header (Fase 16) ────────────
 
-dashboardQuicklinks.addEventListener('click', (e) => {
+headerNav.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-vista]');
     if (!btn) return;
     if (btn.dataset.vista === 'view-tareas') {

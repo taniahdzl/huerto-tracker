@@ -44,9 +44,10 @@
   header {
     background: var(--soil);
     color: var(--parchment);
-    padding: 0 2rem;
-    display: flex; align-items: center; gap: 1.5rem;
-    height: 64px;
+    padding: 0.6rem 2rem;
+    display: flex; align-items: center; gap: 0.8rem 1.5rem;
+    flex-wrap: wrap;
+    min-height: 64px;
     box-shadow: 0 2px 12px var(--shadow);
     position: sticky; top: 0; z-index: 100;
   }
@@ -55,8 +56,21 @@
     font-size: 1.4rem;
     letter-spacing: 0.03em;
     flex: 1;
+    cursor: pointer;
   }
   header h1 span { color: var(--harvest-glow); }
+  /* Fase 16: barra de navegación persistente — mismos destinos que la
+     antigua .dashboard-quicklinks (retirada), visible en TODAS las vistas,
+     no solo Dashboard. flex-basis:100% la manda a su propia fila dentro
+     del header (que ya es flex-wrap), tanto en móvil como en desktop, para
+     no competir por espacio horizontal con h1/status/Configurar. */
+  .header-nav {
+    display: flex; flex-wrap: wrap; gap: 0.4rem;
+    flex-basis: 100%;
+  }
+  .header-nav .btn.active {
+    background: var(--leaf); border-color: var(--leaf); color: white;
+  }
   .header-status {
     font-family: 'DM Mono', monospace;
     font-size: 0.7rem;
@@ -439,10 +453,6 @@
      namespace de variables (--color-*) que ya usa render-spiral-2d.js
      para el SVG, no las --harvest-glow/etc. del resto de la UI. */
   .cama-espiral.drop-target { filter: drop-shadow(0 0 8px var(--color-acento, #E8A838)); }
-  /* Fase 14.1: botón "Volver al Dashboard", insertado por JS (main.js) en
-     las vistas internas — ver insertarBotonesVolverDashboard(). */
-  .btn-volver-dashboard { display: block; margin-bottom: 1rem; }
-
   #view-splash {
     position: fixed; inset: 0; z-index: 3000;
     display: flex; align-items: center; justify-content: center;
@@ -470,9 +480,6 @@
     letter-spacing: 0.05em; color: #888; margin-bottom: 0.4rem;
   }
   .dashboard-card p { font-size: 0.9rem; }
-  #view-dashboard .dashboard-quicklinks {
-    display: flex; flex-wrap: wrap; gap: 0.6rem;
-  }
 
   /* Fase 14.3: tarjetas del Dashboard (resumen de camas / tareas / catálogos) */
   .dashboard-card-clickable { cursor: pointer; transition: border-color 0.15s; }
@@ -561,14 +568,27 @@
 </div>
 
 <header>
-  <h1>🌿 Huerto <span>Universitario</span></h1>
+  <h1 id="headerLogo">🌿 Huerto <span>Universitario</span></h1>
   <div class="header-status">
     <div class="status-dot" id="statusDot"></div>
     <span id="statusText">Conectando…</span>
   </div>
   <button class="btn" onclick="openConfig()">⚙ Configurar</button>
-  <button class="btn" id="openChoresBtn">📋 Tareas</button>
-  <button class="btn btn-danger" id="adminBtn" style="display:none">⚙ Admin</button>
+  <!-- Fase 16: barra de navegación persistente — reemplaza los botones
+       sueltos por vista (openChoresBtn/adminBtn independientes) y el
+       "Volver al Dashboard" inyectado por JS en cada vista interna. Mismos
+       destinos que la antigua .dashboard-quicklinks del Dashboard, ahora
+       visibles desde CUALQUIER vista. Admin conserva su id `adminBtn` y su
+       display:none inicial — main.js sigue mostrándolo/ocultándolo con el
+       mismo criterio RBAC de siempre (ver mostrarDashboard). -->
+  <nav class="header-nav" id="headerNav">
+    <button class="btn" data-vista="view-gemelo">🗺 Mapa</button>
+    <button class="btn" data-vista="view-tareas">📋 Tareas</button>
+    <button class="btn" data-vista="view-catalogos">📦 Catálogos</button>
+    <button class="btn" data-vista="view-perfil">👤 Perfil</button>
+    <button class="btn" data-vista="view-bitacora">📓 Bitácora</button>
+    <button class="btn btn-danger" id="adminBtn" data-vista="view-admin" style="display:none">⚙ Admin</button>
+  </nav>
 </header>
 
 <!-- Fase 13: sistema de vistas SPA. #appRoot (el layout pre-SPA con camas
@@ -629,17 +649,6 @@
       <h3>📦 Catálogos</h3>
       <p>Semillas, químicos y herramientas</p>
     </div>
-    <nav class="dashboard-quicklinks">
-      <button class="btn" data-vista="view-gemelo">🗺 Mapa</button>
-      <button class="btn" data-vista="view-tareas">📋 Tareas</button>
-      <button class="btn" data-vista="view-catalogos">📦 Catálogos</button>
-      <button class="btn" data-vista="view-perfil">👤 Perfil</button>
-      <!-- PASO F: sin style="display:none" a propósito, a diferencia de
-           dashboardAdminLink — accesible a cualquier rol autenticado, no
-           solo admin (VISTAS_ADMIN no incluye view-bitacora). -->
-      <button class="btn" data-vista="view-bitacora">📓 Bitácora</button>
-      <button class="btn btn-danger" id="dashboardAdminLink" data-vista="view-admin" style="display:none">⚙ Admin</button>
-    </nav>
   </section>
 
   <!-- Placeholders vacíos — se llenan uno por uno en fases futuras. -->

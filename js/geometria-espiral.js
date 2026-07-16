@@ -212,10 +212,14 @@ export function posicionPlantaEnCentro(angle, r) {
 // ocupado.
 //
 // Estrategia: candidatos organizados en niveles radiales (arco) o anillos
-// concéntricos (circular), evaluados del nivel más interior hacia afuera
-// y, dentro de cada nivel, de un extremo angular al otro. La separación
-// angular dentro de un nivel se calcula para que la distancia en línea
-// recta (cuerda) entre centros a ese radio sea exactamente diametroFicha
+// concéntricos (circular), evaluados del nivel más interior hacia afuera y,
+// dentro de cada nivel, centro-hacia-afuera (Fase 16 — ver
+// ordenCentroHaciaAfuera): el slot angular central del nivel primero, luego
+// alternando hacia ambos lados, en vez de recorrer de un extremo al otro.
+// Cuando el nivel tiene espacio de sobra esto agrupa las fichas nuevas
+// alrededor del centro del arco/anillo disponible en vez de pegarlas a un
+// borde. La separación angular dentro de un nivel se calcula para que la
+// distancia en línea recta (cuerda) entre centros a ese radio sea exactamente diametroFicha
 // (2 * RADIO_FICHA_UNIDADES) — el nivel nunca se traslapa consigo mismo.
 // La separación radial entre niveles contiguos es también diametroFicha,
 // así que dos fichas en niveles vecinos alineadas en ángulo quedan justo a
@@ -253,6 +257,25 @@ function libreDeTraslape(candidato, posicionesExistentes, diametro) {
     return posicionesExistentes.every((p) => distancia(candidato, p) >= diametro - EPS);
 }
 
+// Orden de llenado centro-hacia-afuera dentro de un nivel, en vez de
+// extremo-a-extremo — mismos slots de siempre (misma separación angular,
+// mismo no-traslape ya probado en Fase 14.6a: cada candidato se sigue
+// validando con libreDeTraslape antes de aceptarse), solo cambia en qué
+// ORDEN se prueban cuando el nivel tiene espacio de sobra: el índice
+// central primero, alternando hacia ambos lados, en vez de 0,1,2,…,n-1 en
+// línea recta. Con numSlots par no hay un índice central único — se toma
+// el de la izquierda (Math.floor) y se alterna derecha/izquierda desde ahí;
+// sigue siendo determinista, solo un criterio de desempate arbitrario.
+function ordenCentroHaciaAfuera(numSlots) {
+    const centro = Math.floor((numSlots - 1) / 2);
+    const orden = [centro];
+    for (let d = 1; orden.length < numSlots; d++) {
+        if (centro + d <= numSlots - 1) orden.push(centro + d);
+        if (orden.length < numSlots && centro - d >= 0) orden.push(centro - d);
+    }
+    return orden;
+}
+
 function proximaPosicionArco(anillo, indiceSegmento, posicionesExistentes, diametro) {
     const { anguloInicio, anguloFin, radioInterno, radioExterno } = calcularGeometriaArco(anillo, indiceSegmento);
     const span = anguloFin - anguloInicio;
@@ -275,7 +298,7 @@ function proximaPosicionArco(anillo, indiceSegmento, posicionesExistentes, diame
         const dThetaMin = anguloMinimoEnNivel(r, diametro);
         const numSlots = (dThetaMin === null || dThetaMin >= span) ? 1 : Math.floor(span / dThetaMin) + 1;
 
-        for (let k = 0; k < numSlots; k++) {
+        for (const k of ordenCentroHaciaAfuera(numSlots)) {
             const t = numSlots === 1 ? 0.5 : k / (numSlots - 1);
             const candidato = posicionPlantaEnArco(anillo, indiceSegmento, t, r);
             if (libreDeTraslape(candidato, posicionesExistentes, diametro)) {
@@ -307,7 +330,7 @@ function proximaPosicionCentro(posicionesExistentes, diametro) {
         }
         const dThetaMin = anguloMinimoEnNivel(r, diametro);
         const numSlots = dThetaMin === null ? 1 : Math.max(1, Math.floor(360 / dThetaMin));
-        for (let k = 0; k < numSlots; k++) {
+        for (const k of ordenCentroHaciaAfuera(numSlots)) {
             const angle = k * (360 / numSlots);
             const candidato = posicionPlantaEnCentro(angle, r);
             if (libreDeTraslape(candidato, posicionesExistentes, diametro)) {
