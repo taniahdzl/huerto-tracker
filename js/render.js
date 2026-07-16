@@ -17,17 +17,19 @@ import { nombreParaMostrar } from './session.js';
 //     condiciones_optimas: { fotoperiodo, temp_optima, cm_entre_plantas, profundidad_raiz_cm } }
 // No existe campo `emoji` en los documentos reales — se deriva de `tipo`.
 //
-// ── Shape de `camas` (camas_cosecha) ────────────────────────────────
-// Confirmado por el esquema oficial (Fase 5) + plantaNombre/plantaTipo
-// denormalizados en main.js para que este módulo no necesite el catálogo:
-//   { id, nombre, col, fila, plantaId, plantaNombre, plantaTipo,
-//     fechaSiembra, fechaTrasplante, suelo:{N,P,K}, composta, notas, plagas }
+// ── Shape de `camas` (camas_cosecha), tipo:'arco'|'circular' ────────
+// Ver diagnóstico de espiral (geometria-espiral.js) para el shape completo
+// — este módulo ya no pinta camas, solo aporta emojiDePlanta/colorDePlanta
+// como fuente de verdad visual compartida (ver abajo).
 //
-// Desde la Fase de camas en espiral, `camas_cosecha` también contiene
-// documentos con tipo:'arco'|'circular' (geometría polar, array `plantas[]`
-// — ver diagnóstico de espiral). renderMapaHuerto asume grid cartesiano y
-// NUNCA debe recibirlos: main.js filtra a tipo:'rectangular' (o sin `tipo`,
-// documentos anteriores a este cambio) antes de llamar esta función.
+// tipo:'rectangular' (col/fila/plantaId planos, sin `plantas[]`) fue el
+// esquema original de camas_cosecha — su renderer (renderMapaHuerto) y todo
+// el flujo de creación/edición (#appRoot, bedModal) se retiraron en Fase 15
+// por no tener ya ningún documento real de ese tipo (confirmado en fases
+// previas) ni punto de entrada en la SPA. La colección y el esquema en
+// Firestore NO cambiaron — si algún día existiera un documento tipo:
+// 'rectangular' real, obtenerCamas() lo sigue trayendo igual, simplemente
+// ya no hay UI que lo pinte.
 
 // Exportados: son la fuente de verdad visual del tipo de planta para toda
 // la app, incluida la vista en espiral (render-spiral-2d.js) — no debe
@@ -47,10 +49,12 @@ export function emojiDePlanta(tipo) {
 
 // Mismo criterio que EMOJI_POR_TIPO — única fuente de verdad, reutilizada
 // por render-spiral-2d.js para el anillo de progreso de cada ficha en
-// estado normal. Los valores son EXACTAMENTE el `color` (no el `background`)
-// de las clases .type-* declaradas en el <style> de index.html:144-149 —
-// no existe una variable CSS compartida entre ambos, así que si esas reglas
-// cambian, este mapa se actualiza a mano.
+// estado normal. Históricamente estos valores eran una copia manual del
+// `color` de las clases .type-* que pintaba el viejo renderCatalogo (index.
+// html) — esas reglas CSS se retiraron en Fase 15 junto con renderCatalogo
+// (su único consumidor), pero este mapa es independiente en tiempo de
+// ejecución (nunca leyó la CSS, solo se sincronizaba a mano) y sigue siendo
+// válido tal cual sin ellas.
 export const COLOR_POR_TIPO = {
     hoja:    '#2e7d32',
     'raíz':  '#e65100',
@@ -64,118 +68,11 @@ export function colorDePlanta(tipo) {
     return COLOR_POR_TIPO[tipo] || '#757575';
 }
 
-export function renderCatalogo(plantas, contenedor) {
-    const fragment = document.createDocumentFragment();
-
-    plantas.forEach((planta) => {
-        const tipo = (planta.tipo || 'desconocido').trim().toLowerCase();
-
-        const card = document.createElement('div');
-        card.className = 'plant-card';
-        card.dataset.plantId = planta.id;
-        card.dataset.tipo = tipo;
-
-        const icon = document.createElement('div');
-        icon.className = 'plant-icon';
-        icon.textContent = emojiDePlanta(tipo);
-
-        const info = document.createElement('div');
-        info.className = 'plant-info';
-
-        const name = document.createElement('div');
-        name.className = 'plant-name';
-        name.textContent = planta.nombre || 'Sin nombre';
-
-        const meta = document.createElement('div');
-        meta.className = 'plant-meta';
-        meta.textContent = planta.dias_siembra_a_cosecha
-            ? `${planta.dias_siembra_a_cosecha} días`
-            : 'Días sin definir';
-
-        info.append(name, meta);
-
-        const badge = document.createElement('span');
-        badge.className = `type-badge type-${tipo}`;
-        badge.textContent = tipo;
-
-        card.append(icon, info, badge);
-        fragment.appendChild(card);
-    });
-
-    contenedor.replaceChildren(fragment);
-}
-
-export function renderMapaHuerto(camas, contenedor) {
-    const fragment = document.createDocumentFragment();
-    let maxCol = 1;
-
-    camas.forEach((cama) => {
-        maxCol = Math.max(maxCol, Number(cama.col) || 1);
-
-        const bedClasses = ['bed'];
-        if (cama.plantaId) bedClasses.push('has-plant');
-        if (cama.plagas) bedClasses.push('alert-plaga');
-
-        const bed = document.createElement('div');
-        bed.className = bedClasses.join(' ');
-        bed.dataset.bedId = cama.id;
-        bed.style.gridColumn = String(cama.col || 1);
-        bed.style.gridRow = String(cama.fila || 1);
-
-        const inner = document.createElement('div');
-        inner.className = 'bed-inner';
-
-        const label = document.createElement('div');
-        label.className = 'bed-label';
-        label.textContent = cama.nombre || cama.id;
-        inner.appendChild(label);
-
-        if (cama.plantaId) {
-            const tipo = (cama.plantaTipo || '').trim().toLowerCase();
-
-            const icon = document.createElement('span');
-            icon.className = 'bed-plant-icon';
-            icon.textContent = emojiDePlanta(tipo);
-            inner.appendChild(icon);
-
-            const name = document.createElement('div');
-            name.className = 'bed-plant-name';
-            name.textContent = cama.plantaNombre || 'Planta sin nombre';
-            inner.appendChild(name);
-
-            if (cama.fechaSiembra) {
-                const dias = document.createElement('div');
-                dias.className = 'bed-days';
-                dias.textContent = `Sembrado: ${cama.fechaSiembra}`;
-                inner.appendChild(dias);
-            }
-        } else {
-            const hint = document.createElement('div');
-            hint.className = 'bed-empty-hint';
-            hint.textContent = 'Vacía';
-            inner.appendChild(hint);
-        }
-
-        if (cama.plagas) {
-            const alerts = document.createElement('div');
-            alerts.className = 'bed-alerts';
-
-            const plagaIcon = document.createElement('span');
-            plagaIcon.className = 'alert-dot ad-plaga';
-            plagaIcon.title = cama.plagas;
-            plagaIcon.textContent = '🐛';
-            alerts.appendChild(plagaIcon);
-
-            inner.appendChild(alerts);
-        }
-
-        bed.appendChild(inner);
-        fragment.appendChild(bed);
-    });
-
-    contenedor.style.gridTemplateColumns = `repeat(${maxCol}, 1fr)`;
-    contenedor.replaceChildren(fragment);
-}
+// renderCatalogo/renderMapaHuerto (camas tipo 'rectangular') retiradas en
+// Fase 15 junto con #appRoot/bedModal, sus únicos consumidores — ver
+// diagnóstico. `.plant-card`/`.plant-icon`/`.plant-info`/`.plant-name`
+// (CSS) NO se tocaron: renderPanelCatalogoArrastrable (main.js, Fase
+// 14.6b) las reutiliza para el panel de arrastre de view-gemelo.
 
 // ── Shape de `tareas` ────────────────────────────────────────────
 //   { id, titulo, estado: "pendiente"|"completada", asignados: [uid,...],
@@ -326,6 +223,61 @@ export function renderRegistroActividad(entradas, contenedor) {
         tr.appendChild(quien);
 
         fragment.appendChild(tr);
+    });
+
+    contenedor.replaceChildren(fragment);
+}
+
+// ── Bitácora de sesiones (PASO F) ────────────────────────────────────
+// `sesiones` viene de obtenerBitacoraSesiones() (db.js), ya ordenada
+// descendente por fecha — este módulo no reordena. Asistentes/tareas
+// completadas de cada sesión NO se resuelven acá (este módulo no importa
+// db.js) — onExpandirClick(sesion, contenedorDetalle) es responsabilidad
+// de main.js, que sí puede llamar obtenerSesionConDetalle(fecha) al
+// expandir, sin duplicar esa lógica aquí ni pedir un shape distinto.
+export function renderListaBitacora(sesiones, contenedor, onExpandirClick) {
+    const fragment = document.createDocumentFragment();
+
+    sesiones.forEach((sesion) => {
+        const li = document.createElement('li');
+        li.className = 'chore-item';
+        li.dataset.sesionId = sesion.id;
+
+        const info = document.createElement('div');
+        info.className = 'chore-item-info';
+
+        const fecha = document.createElement('span');
+        fecha.className = 'chore-item-titulo';
+        fecha.textContent = sesion.fecha;
+        info.appendChild(fecha);
+
+        const resumen = document.createElement('span');
+        resumen.className = 'chore-item-asignados';
+        resumen.textContent = sesion.resumen || 'Sin resumen';
+        info.appendChild(resumen);
+
+        if (sesion.pendientes) {
+            const pendientes = document.createElement('span');
+            pendientes.className = 'chore-item-asignados';
+            pendientes.textContent = `📌 ${sesion.pendientes}`;
+            info.appendChild(pendientes);
+        }
+
+        li.appendChild(info);
+
+        const detalleContenedor = document.createElement('div');
+        detalleContenedor.className = 'bitacora-detalle';
+        detalleContenedor.style.display = 'none';
+
+        const detalleBtn = document.createElement('button');
+        detalleBtn.className = 'chore-complete-btn';
+        detalleBtn.textContent = '👥 Ver asistentes/tareas';
+        detalleBtn.addEventListener('click', () => onExpandirClick(sesion, detalleContenedor));
+        li.appendChild(detalleBtn);
+
+        li.appendChild(detalleContenedor);
+
+        fragment.appendChild(li);
     });
 
     contenedor.replaceChildren(fragment);

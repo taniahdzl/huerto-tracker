@@ -2,35 +2,42 @@
 // Orquestador de arranque + bridge de UI + router SPA (Fase 13). Escucha
 // 'auth:resuelto' (emitido por auth.js — ver contrato documentado ahí) en
 // vez de recibir un callback; decide desde ahí si muestra #login-overlay
-// o navega a una vista. #appRoot y sus modales de mesa/config (bed/config)
-// siguen existiendo intactos mientras Mapa/Catálogos/Admin se migran al
-// sistema de vistas uno por uno — por ahora #appRoot queda oculto de
-// forma permanente, no lo muestra nada. Tareas (Fase 13.5) ya se migró
-// por completo: choresModal no existe más, es view-tareas + un modal
-// pequeño (crearTareaModal) solo para crear.
+// o navega a una vista. Tareas (Fase 13.5) ya se migró por completo:
+// choresModal no existe más, es view-tareas + un modal pequeño
+// (crearTareaModal) solo para crear.
+//
+// #appRoot (layout pre-SPA con camas tipo 'rectangular': grid cartesiano,
+// bedModal) y todo su código de soporte se retiraron por completo en Fase
+// 15 — ver diagnóstico. camas_cosecha sigue aceptando ese tipo en el
+// esquema de Firestore (sin datos reales, confirmado en fases previas),
+// solo ya no hay UI que lo cree/edite/pinte.
 //
 // auth.js, db.js, usuarios.js, render.js y ai.js se mantienen puros (sin
 // conocerse entre sí ni conocer el DOM) — auth.js SÍ importa usuarios.js
 // ahora (nuevo, Fase 13) porque el contrato del evento exige `rol`
 // resuelto en el payload; sigue sin tocar el DOM salvo dispatchEvent.
 //
-// TODO (fuera de alcance): drag&drop, cálculo de alertas de cosecha/riego,
-// y el modal de Configuración (openConfig / configModal) — sigue sin
-// implementar, y NO es una vista (VISTAS_ADMIN no lo incluye). El
-// Asistente IA usa generarRespuestaHuerto() de ai.js, que hoy es un mock.
+// TODO (fuera de alcance): cálculo de alertas de cosecha/riego, y el modal
+// de Configuración (openConfig / configModal) — sigue sin implementar, y
+// NO es una vista (VISTAS_ADMIN no lo incluye). El Asistente IA (botón +
+// panel) tiene su HTML retirado y sus listeners comentados desde Fase 15
+// (vivían dentro de #appRoot) — generarRespuestaHuerto() (ai.js) sigue
+// siendo un mock a propósito hasta que exista la Cloud Function que
+// documenta su propio TODO; reconectar cuando ese backend exista.
 
 import { AuthService } from './auth.js';
 import {
-    obtenerCatalogo, obtenerCamas, crearCama, actualizarCama, eliminarCama,
+    obtenerCatalogo, obtenerCamas,
     crearCatalogo, actualizarCatalogo, eliminarCatalogo,
     obtenerQuimicos, crearQuimico, actualizarQuimico, eliminarQuimico,
     obtenerInventario, crearInventario, actualizarInventario, eliminarInventario,
     obtenerRegistroActividad,
-    marcarParaSemilla, agregarPlantaACama
+    marcarParaSemilla, agregarPlantaACama, crearHistorialCultivo,
+    obtenerBitacoraSesiones, crearBitacoraSesion, obtenerSesionConDetalle
 } from './db.js';
 import {
-    renderCatalogo, renderMapaHuerto, renderListaTareas, renderListaCatalogos,
-    renderRegistroActividad, renderResumenHoras, emojiDePlanta
+    renderListaTareas, renderListaCatalogos,
+    renderRegistroActividad, renderResumenHoras, renderListaBitacora, emojiDePlanta
 } from './render.js';
 import { renderEspiralSVG, calcularEstadoFicha } from './render-spiral-2d.js';
 import { generarRespuestaHuerto } from './ai.js';
@@ -41,8 +48,6 @@ import { obtenerUsuario, registrarUsuario, obtenerDirectorioEstudiantes, ajustar
 const statusDot   = document.getElementById('statusDot');
 const statusText  = document.getElementById('statusText');
 const toast       = document.getElementById('toast');
-const plantListEl  = document.getElementById('plantList');
-const gardenGridEl = document.getElementById('gardenGrid');
 const gemeloMapaContainer = document.getElementById('gemeloMapaContainer');
 const gemeloPanelLista     = document.getElementById('gemeloPanelLista');
 
@@ -54,6 +59,14 @@ const detallePlantaProgreso  = document.getElementById('detallePlantaProgreso');
 const detallePlantaPlagas    = document.getElementById('detallePlantaPlagas');
 const detallePlantaSemillaBtn    = document.getElementById('detallePlantaSemillaBtn');
 const detallePlantaCompletarBtn  = document.getElementById('detallePlantaCompletarBtn');
+
+// PASO E: formulario de cierre de cultivo
+const detallePlantaCierreForm       = document.getElementById('detallePlantaCierreForm');
+const cierreRendimientoTabs         = document.getElementById('cierreRendimientoTabs');
+const cierreCantidadInput           = document.getElementById('cierreCantidadInput');
+const cierreNotaInput               = document.getElementById('cierreNotaInput');
+const detallePlantaCierreCancelarBtn  = document.getElementById('detallePlantaCierreCancelarBtn');
+const detallePlantaCierreConfirmarBtn = document.getElementById('detallePlantaCierreConfirmarBtn');
 
 // ── Detalle de CAMA completa (Fase 14.5) — solo lectura ─────────────
 const detalleCamaModalClose = document.getElementById('detalleCamaModalClose');
@@ -79,6 +92,15 @@ const dashboardResumenCamas     = document.getElementById('dashboardResumenCamas
 const dashboardTareasCard       = document.getElementById('dashboardTareasCard');
 const dashboardTareasLista      = document.getElementById('dashboardTareasLista');
 const dashboardCatalogosCard    = document.getElementById('dashboardCatalogosCard');
+
+// PASO F: banner de pendientes (Dashboard) + vista de bitácora
+const dashboardBannerPendientes      = document.getElementById('dashboardBannerPendientes');
+const dashboardBannerPendientesTexto = document.getElementById('dashboardBannerPendientesTexto');
+const bitacoraFechaInput      = document.getElementById('bitacoraFechaInput');
+const bitacoraResumenInput    = document.getElementById('bitacoraResumenInput');
+const bitacoraPendientesInput = document.getElementById('bitacoraPendientesInput');
+const bitacoraCrearBtn        = document.getElementById('bitacoraCrearBtn');
+const bitacoraLista           = document.getElementById('bitacoraLista');
 
 // ── Vista de Catálogos (Fase 13.6b) ─────────────────────────────────
 const catalogosLista      = document.getElementById('catalogosLista');
@@ -116,43 +138,29 @@ const herramientaNombreInput   = document.getElementById('herramientaNombreInput
 const herramientaCantidadInput = document.getElementById('herramientaCantidadInput');
 const herramientaSaveBtn       = document.getElementById('herramientaSaveBtn');
 
-// ── Modal de mesa (cama) ──────────────────────────────────────────
-// addBedBtn (Fase 14.2): retirado del header — openAddBed/openEditBed/
-// handleSaveBed/handleDeleteBed/bedModal siguen intactos abajo, solo sin
-// ese punto de entrada. El otro punto de entrada (click sobre .bed en
-// #gardenGrid) sigue en el código pero ya era inalcanzable desde antes
-// (#appRoot oculto permanente desde Fase 13) — ver diagnóstico 14.2.
-const bedModalTitle     = document.getElementById('bedModalTitle');
-const bedModalClose     = document.getElementById('bedModalClose');
-const bedModalCancel    = document.getElementById('bedModalCancel');
-const saveBedBtn         = document.getElementById('saveBedBtn');
-const deleteBedBtn       = document.getElementById('deleteBedBtn');
-const plantDateFields    = document.getElementById('plantDateFields');
-
-const bedNameInput           = document.getElementById('bedName');
-const bedColInput            = document.getElementById('bedCol');
-const bedRowInput            = document.getElementById('bedRow');
-const bedPlantSelect         = document.getElementById('bedPlant');
-const bedSeedDateInput       = document.getElementById('bedSeedDate');
-const bedTransplantDateInput = document.getElementById('bedTransplantDate');
-const soilNInput = document.getElementById('soilN');
-const soilPInput = document.getElementById('soilP');
-const soilKInput = document.getElementById('soilK');
-const soilNVal   = document.getElementById('soilNVal');
-const soilPVal   = document.getElementById('soilPVal');
-const soilKVal   = document.getElementById('soilKVal');
-const bedNotesInput   = document.getElementById('bedNotes');
-const bedPlagasInput  = document.getElementById('bedPlagas');
-const bedCompostSelect = document.getElementById('bedCompost');
+// Modal de mesa (bedModal, camas tipo 'rectangular') retirado por completo
+// en Fase 15 junto con #appRoot/#gardenGrid — ver diagnóstico. Todos los
+// DOM refs de este bloque (bedModalTitle, bedName/Col/Row/Plant/SeedDate/
+// TransplantDate, soilN/P/K, bedNotes/Plagas/Compost, plantDateFields,
+// saveBedBtn, deleteBedBtn) se retiraron junto con el HTML que apuntaban.
 
 // ── Panel del Asistente IA ─────────────────────────────────────────
-const aiToggleEl    = document.querySelector('.ai-toggle');
-const aiToggleIcon  = document.getElementById('aiToggleIcon');
-const aiBody         = document.getElementById('aiBody');
-const aiMessages     = document.getElementById('aiMessages');
-const aiInput        = document.getElementById('aiInput');
-const aiSendBtn       = document.querySelector('.ai-send');
-const aiOverviewBtn  = document.querySelector('.btn-ai');
+// .btn-ai/#aiBody/#aiMessages/#aiInput/.ai-toggle/.ai-send vivían dentro de
+// #appRoot — se retiraron del HTML junto con él (Fase 15). A diferencia del
+// modal de mesa, el CÓDIGO de soporte (toggleAI/agregarMensajeAI/
+// handleSendAI/handleAiOverview, más abajo) NO se borra: ai.js sigue siendo
+// un mock a propósito (ver su propio TODO — la llamada real requiere una
+// Cloud Function que todavía no existe) y este código se reconecta cuando
+// ese backend exista. Por ahora solo queda desconectado: sin estos DOM
+// refs, los listeners que los usaban también se comentan más abajo.
+//
+// const aiToggleEl    = document.querySelector('.ai-toggle');
+// const aiToggleIcon  = document.getElementById('aiToggleIcon');
+// const aiBody         = document.getElementById('aiBody');
+// const aiMessages     = document.getElementById('aiMessages');
+// const aiInput        = document.getElementById('aiInput');
+// const aiSendBtn       = document.querySelector('.ai-send');
+// const aiOverviewBtn  = document.querySelector('.btn-ai');
 
 // ── Vista de Tareas (Fase 13.5 — ya no es modal) ────────────────────
 const openChoresBtn      = document.getElementById('openChoresBtn');
@@ -183,10 +191,11 @@ let catalogoActual    = [];
 let camasActuales     = [];
 let tareasActuales    = [];
 let estudiantesActuales = [];
-let editingCamaId     = null;
 // perfil.rol vive en Firestore (usuarios/{uid}), no en el usuario de
-// Firebase Auth que guarda session.js — se cachea aquí porque openEditBed()
-// necesita saberlo y no tiene acceso al `perfil` local del portero.
+// Firebase Auth que guarda session.js — se cachea aquí porque varios
+// handlers de la SPA (marcarParaSemilla, cierre de cultivo, RBAC de
+// botones) necesitan saberlo y no tienen acceso al `perfil` local del
+// portero.
 let esAdminActual     = false;
 
 let quimicosActuales    = [];
@@ -230,7 +239,10 @@ function navegarA(vistaId, params = null) {
 // veces en index.html) en toda vista interna que no sea Splash/Setup, que
 // tienen su propio flujo de salida (login/registro) y no deben ofrecer un
 // atajo de vuelta a un Dashboard al que todavía no se puede entrar.
-const VISTAS_CON_VOLVER = ['view-gemelo', 'view-tareas', 'view-catalogos', 'view-perfil', 'view-admin'];
+// PASO F: view-bitacora SÍ va en VISTAS_CON_VOLVER (mismo patrón que las
+// demás vistas internas) pero NO en VISTAS_ADMIN de arriba — accesible a
+// cualquier rol autenticado, decisión explícita (ver diagnóstico).
+const VISTAS_CON_VOLVER = ['view-gemelo', 'view-tareas', 'view-catalogos', 'view-perfil', 'view-admin', 'view-bitacora'];
 
 function insertarBotonesVolverDashboard() {
     VISTAS_CON_VOLVER.forEach((vistaId) => {
@@ -320,6 +332,12 @@ function mostrarDashboard(user, esAdmin, nombre) {
     iniciarHuerto();
 
     cargarTareasDashboard(user.uid);
+
+    // PASO F: banner de pendientes — fire-and-forget igual que
+    // cargarTareasDashboard, con su propio try/catch (definido más abajo
+    // en el archivo, disponible aquí por hoisting de function declarations,
+    // mismo patrón ya usado con cargarTareasDashboard).
+    cargarBannerBitacora();
 }
 
 // Fire-and-forget, con su propio manejo de error — no debe tumbar
@@ -465,31 +483,14 @@ googleLoginBtn.addEventListener('click', handleLoginConGoogle);
 completeRegistroBtn.addEventListener('click', handleCompletarRegistro);
 
 // ── Carga de datos ────────────────────────────────────────────────
-
-function poblarSelectPlantas() {
-    bedPlantSelect.innerHTML = '<option value="">— Sin planta —</option>';
-    catalogoActual.forEach((planta) => {
-        const opt = document.createElement('option');
-        opt.value = planta.id;
-        opt.textContent = planta.nombre;
-        bedPlantSelect.appendChild(opt);
-    });
-}
+// poblarSelectPlantas() (poblaba el <select> de bedModal) se retiró en
+// Fase 15 junto con el resto del modal de mesa — ver diagnóstico.
 
 async function iniciarHuerto() {
     try {
         const [catalogo, camas] = await Promise.all([obtenerCatalogo(), obtenerCamas()]);
         catalogoActual = catalogo;
         camasActuales  = camas;
-        poblarSelectPlantas();
-        renderCatalogo(catalogo, plantListEl);
-        // renderMapaHuerto solo sabe dibujar el grid cartesiano — camas de
-        // tipo 'arco'/'circular' no tienen col/fila y se dibujarían todas
-        // apiladas en la celda 1,1. Se filtran aquí (no en render.js, que
-        // se mantiene agnóstico a qué es un "tipo") hasta que exista el
-        // renderer de espiral.
-        const camasRectangulares = camas.filter((c) => (c.tipo || 'rectangular') === 'rectangular');
-        renderMapaHuerto(camasRectangulares, gardenGridEl);
 
         // renderEspiralSVG filtra internamente a arco/circular — se le pasa
         // `camas` completo, mismo dato ya cargado arriba (sin una segunda
@@ -522,11 +523,12 @@ async function iniciarHuerto() {
 
 // ── Panel lateral arrastrable + drag & drop sobre la espiral (Fase 14.6b) ──
 //
-// Reutiliza .plant-card/.plant-icon/.plant-info/.plant-name (mismas
-// tarjetas que renderCatalogo pinta en el catálogo — ver render.js) en vez
-// de inventar un componente nuevo; esas clases ya traían cursor:grab y
-// .dragging preparados desde el layout pre-SPA (#appRoot, hoy oculto) que
-// nunca llegó a conectarse a una interacción real.
+// Reutiliza .plant-card/.plant-icon/.plant-info/.plant-name (mismas clases
+// que pintaba el viejo renderCatalogo del layout pre-SPA — ver render.js)
+// en vez de inventar un componente nuevo; esas clases ya traían cursor:grab
+// y .dragging preparados desde #appRoot, que nunca llegó a conectarse a una
+// interacción real y se retiró por completo en Fase 15 — el CSS de estas
+// clases sobrevivió esa limpieza precisamente porque este panel las usa.
 function renderPanelCatalogoArrastrable(catalogo) {
     if (!gemeloPanelLista) return;
     const fragment = document.createDocumentFragment();
@@ -632,162 +634,14 @@ function iniciarArrastrePlanta(evento, plantaId, elementoOrigen) {
     window.addEventListener('pointercancel', onPointerUp);
 }
 
-// ── Modal de mesa: abrir / poblar ─────────────────────────────────
-
-function limpiarFormularioBed() {
-    bedNameInput.value = '';
-    bedColInput.value = 1;
-    bedRowInput.value = 1;
-    bedPlantSelect.value = '';
-    plantDateFields.style.display = 'none';
-    bedSeedDateInput.value = '';
-    bedTransplantDateInput.value = '';
-    soilNInput.value = 1.5; soilNVal.textContent = '1.5';
-    soilPInput.value = 1;   soilPVal.textContent = '1.0';
-    soilKInput.value = 1.2; soilKVal.textContent = '1.2';
-    bedNotesInput.value = '';
-    bedPlagasInput.value = '';
-    bedCompostSelect.value = 'no';
-}
-
-function openAddBed() {
-    editingCamaId = null;
-    bedModalTitle.textContent = 'Nueva Mesa de Cultivo';
-    deleteBedBtn.style.display = 'none';
-    limpiarFormularioBed();
-    openModal('bedModal');
-}
-
-function openEditBed(camaId) {
-    const cama = camasActuales.find((c) => c.id === camaId);
-    if (!cama) return;
-
-    editingCamaId = camaId;
-    bedModalTitle.textContent = 'Editar Mesa de Cultivo';
-    // RBAC (Fase 12): camas_cosecha solo permite `delete` a admins.
-    deleteBedBtn.style.display = esAdminActual ? '' : 'none';
-
-    bedNameInput.value = cama.nombre || '';
-    bedColInput.value = cama.col || 1;
-    bedRowInput.value = cama.fila || 1;
-    bedPlantSelect.value = cama.plantaId || '';
-    plantDateFields.style.display = cama.plantaId ? 'block' : 'none';
-    bedSeedDateInput.value = cama.fechaSiembra || '';
-    bedTransplantDateInput.value = cama.fechaTrasplante || '';
-
-    const suelo = cama.suelo || {};
-    soilNInput.value = suelo.N ?? 1.5; soilNVal.textContent = Number(soilNInput.value).toFixed(1);
-    soilPInput.value = suelo.P ?? 1;   soilPVal.textContent = Number(soilPInput.value).toFixed(1);
-    soilKInput.value = suelo.K ?? 1.2; soilKVal.textContent = Number(soilKInput.value).toFixed(1);
-
-    bedNotesInput.value = cama.notas || '';
-    bedPlagasInput.value = cama.plagas || '';
-    bedCompostSelect.value = cama.composta || 'no';
-
-    openModal('bedModal');
-}
-
-// ── Modal de mesa: guardar ────────────────────────────────────────
-
-async function handleSaveBed() {
-    const nombre = bedNameInput.value.trim();
-    if (!nombre) {
-        mostrarToast('La mesa necesita un nombre', 'red');
-        return;
-    }
-
-    const plantaId = bedPlantSelect.value || null;
-    const planta = plantaId ? catalogoActual.find((p) => p.id === plantaId) : null;
-
-    const datos = {
-        nombre,
-        // El modal actual solo sabe crear/editar camas rectangulares.
-        // Arco/circular llegan en una fase futura con su propio flujo.
-        tipo: 'rectangular',
-        col:  Number(bedColInput.value) || 1,
-        fila: Number(bedRowInput.value) || 1,
-        plantaId,
-        // Denormalizado desde el catálogo solo para que render.js pueda
-        // pintar el mapa sin recibir el catálogo completo (ver nota en
-        // render.js). plantaId sigue siendo la referencia real.
-        plantaNombre: planta?.nombre || null,
-        plantaTipo:   planta?.tipo || null,
-        fechaSiembra:    bedSeedDateInput.value || null,
-        fechaTrasplante: bedTransplantDateInput.value || null,
-        suelo: {
-            N: Number(soilNInput.value),
-            P: Number(soilPInput.value),
-            K: Number(soilKInput.value)
-        },
-        composta: bedCompostSelect.value,
-        notas:  bedNotesInput.value,
-        plagas: bedPlagasInput.value
-    };
-
-    saveBedBtn.disabled = true;
-    try {
-        if (editingCamaId) {
-            await actualizarCama(editingCamaId, datos);
-        } else {
-            const camaId = nombre.toLowerCase().replace(/\s+/g, '_');
-            await crearCama(camaId, datos);
-        }
-        closeModal('bedModal');
-        mostrarToast('Mesa guardada', 'green');
-        await iniciarHuerto();
-    } catch (e) {
-        console.error('[main] Error guardando mesa:', e);
-        mostrarToast(e.message || 'No se pudo guardar la mesa', 'red');
-    } finally {
-        saveBedBtn.disabled = false;
-    }
-}
-
-async function handleDeleteBed() {
-    if (!editingCamaId) return;
-    if (!window.confirm('¿Seguro que deseas eliminar esta mesa?')) return;
-
-    deleteBedBtn.disabled = true;
-    try {
-        await eliminarCama(editingCamaId);
-        closeModal('bedModal');
-        mostrarToast('Mesa eliminada', 'green');
-        await iniciarHuerto();
-    } catch (e) {
-        console.error('[main] Error eliminando mesa:', e);
-        mostrarToast('No se pudo eliminar la mesa', 'red');
-    } finally {
-        deleteBedBtn.disabled = false;
-    }
-}
-
-// ── Eventos del modal ──────────────────────────────────────────────
-// (addBedBtn.addEventListener retirado junto con el botón — Fase 14.2)
-
-bedModalClose.addEventListener('click', () => closeModal('bedModal'));
-bedModalCancel.addEventListener('click', () => closeModal('bedModal'));
-saveBedBtn.addEventListener('click', handleSaveBed);
-deleteBedBtn.addEventListener('click', handleDeleteBed);
-
-bedPlantSelect.addEventListener('change', () => {
-    plantDateFields.style.display = bedPlantSelect.value ? 'block' : 'none';
-});
+// Modal de mesa (bedModal) + openAddBed/openEditBed/handleSaveBed/
+// handleDeleteBed/crearCama/actualizarCama/eliminarCama retirados en Fase
+// 15 junto con #appRoot/gardenGrid, sus únicos puntos de entrada (ver
+// diagnóstico) — camas tipo:'rectangular' ya no tienen ningún flujo de
+// creación/edición en el cliente. editingCamaId (usado solo por esas
+// funciones) también se retiró.
 
 openChoresBtn.addEventListener('click', irAVistaTareas);
-
-soilNInput.addEventListener('input', () => { soilNVal.textContent = Number(soilNInput.value).toFixed(1); });
-soilPInput.addEventListener('input', () => { soilPVal.textContent = Number(soilPInput.value).toFixed(1); });
-soilKInput.addEventListener('input', () => { soilKVal.textContent = Number(soilKInput.value).toFixed(1); });
-
-// Delegación de eventos: gardenGridEl se re-crea por completo en cada
-// renderMapaHuerto(), así que un listener por mesa se perdería en cada
-// refresco. Un solo listener en el contenedor (que nunca se reemplaza)
-// sobrevive a los re-renders.
-gardenGridEl.addEventListener('click', (e) => {
-    const bed = e.target.closest('.bed');
-    if (!bed) return;
-    openEditBed(bed.dataset.bedId);
-});
 
 // ── Vista de Tareas (Fase 13.5) ─────────────────────────────────────
 // Ya no es modal — es destino de navegación recurrente. "Crear" sigue
@@ -1368,6 +1222,131 @@ async function cargarYRenderizarVistaAdmin() {
 // interna — solo cambia de dónde se abre.
 abrirAjusteHorasBtn.addEventListener('click', abrirAdminModal);
 
+// ── PASO F: Bitácora de sesiones ────────────────────────────────────
+// Vista independiente de view-admin (ver diagnóstico) — accesible a
+// cualquier rol autenticado, tanto para crear entradas como para ver el
+// historial.
+
+function irAVistaBitacora() {
+    navegarA('view-bitacora');
+    cargarYRenderizarBitacora();
+}
+
+async function cargarYRenderizarBitacora() {
+    try {
+        const sesiones = await obtenerBitacoraSesiones();
+        renderListaBitacora(sesiones, bitacoraLista, onExpandirSesion);
+    } catch (e) {
+        console.error('[main] Error cargando la bitácora:', e);
+        mostrarToast('No se pudo cargar la bitácora', 'red');
+    }
+}
+
+// Carga perezosa: obtenerSesionConDetalle(fecha) (db.js) solo se llama la
+// PRIMERA vez que se expande una sesión — no al renderizar la lista
+// completa, para no disparar N queries (asistencias+tareas+directorio) por
+// cada entrada con solo abrir la vista. contenedor.dataset.cargado evita
+// repetir el fetch en toggles subsecuentes de la misma sesión.
+async function onExpandirSesion(sesion, contenedor) {
+    const visible = contenedor.style.display !== 'none';
+    if (visible) {
+        contenedor.style.display = 'none';
+        return;
+    }
+    contenedor.style.display = '';
+    if (contenedor.dataset.cargado === 'true') return;
+
+    contenedor.textContent = 'Cargando…';
+    try {
+        // Misma función que ya resuelve esto en otro lado del proyecto —
+        // no se reconstruye "asistentes"/"tareasCompletadas" a mano aquí.
+        const { asistentes, tareasCompletadas } = await obtenerSesionConDetalle(sesion.fecha);
+
+        const asistentesP = document.createElement('p');
+        asistentesP.textContent = `Asistentes: ${asistentes.length ? asistentes.join(', ') : 'Ninguno registrado'}`;
+
+        const tareasP = document.createElement('p');
+        tareasP.textContent = `Tareas completadas: ${tareasCompletadas.length ? tareasCompletadas.join(', ') : 'Ninguna'}`;
+
+        contenedor.replaceChildren(asistentesP, tareasP);
+        contenedor.dataset.cargado = 'true';
+    } catch (e) {
+        console.error('[main] Error cargando detalle de sesión:', e);
+        contenedor.textContent = 'No se pudo cargar el detalle.';
+    }
+}
+
+function actualizarEstadoBotonBitacora() {
+    const fecha = bitacoraFechaInput.value;
+    const resumen = bitacoraResumenInput.value.trim();
+    bitacoraCrearBtn.disabled = !(fecha && resumen);
+}
+
+function limpiarFormularioBitacora() {
+    bitacoraFechaInput.value = new Date().toISOString().slice(0, 10);
+    bitacoraResumenInput.value = '';
+    bitacoraPendientesInput.value = '';
+    actualizarEstadoBotonBitacora();
+}
+
+bitacoraFechaInput.addEventListener('input', actualizarEstadoBotonBitacora);
+bitacoraResumenInput.addEventListener('input', actualizarEstadoBotonBitacora);
+
+async function handleCrearBitacora() {
+    const fecha = bitacoraFechaInput.value;
+    const resumen = bitacoraResumenInput.value.trim();
+    if (!fecha || !resumen) return; // defensivo — el botón ya debería estar disabled
+
+    bitacoraCrearBtn.disabled = true;
+    try {
+        await crearBitacoraSesion({
+            fecha,
+            resumen,
+            pendientes: bitacoraPendientesInput.value.trim() || ''
+        });
+        // Refresca lista + banner del Dashboard sin recargar la página —
+        // esta entrada puede ser la nueva "más reciente" que el banner
+        // debe mostrar la próxima vez que alguien vea el Dashboard.
+        await Promise.all([cargarYRenderizarBitacora(), cargarBannerBitacora()]);
+        limpiarFormularioBitacora();
+        mostrarToast('Entrada guardada', 'green');
+    } catch (e) {
+        console.error('[main] Error creando entrada de bitácora:', e);
+        mostrarToast(e.message || 'No se pudo guardar la entrada', 'red');
+    } finally {
+        // No se fuerza a false: si la escritura falló, los campos siguen
+        // llenos (no se limpiaron) y el botón debe re-habilitarse; si
+        // tuvo éxito, limpiarFormularioBitacora() ya dejó fecha/resumen
+        // vacíos y debe seguir disabled. actualizarEstadoBotonBitacora()
+        // decide correctamente en ambos casos.
+        actualizarEstadoBotonBitacora();
+    }
+}
+
+bitacoraCrearBtn.addEventListener('click', handleCrearBitacora);
+limpiarFormularioBitacora(); // fecha por defecto = hoy, botón disabled
+
+// Banner de pendientes del Dashboard (punto 4) — visible a CUALQUIER rol.
+// Reutiliza obtenerBitacoraSesiones() (ya ordenada desc por fecha, ver
+// db.js) — sesiones[0] es la más reciente, sin ordenar nada aquí. Oculto
+// si no hay ninguna entrada o si la más reciente no tiene `pendientes`
+// (string vacío incluido) — nunca un estado vacío forzado.
+async function cargarBannerBitacora() {
+    try {
+        const sesiones = await obtenerBitacoraSesiones();
+        const masReciente = sesiones[0];
+        if (masReciente && masReciente.pendientes) {
+            dashboardBannerPendientesTexto.textContent = masReciente.pendientes;
+            dashboardBannerPendientes.style.display = '';
+        } else {
+            dashboardBannerPendientes.style.display = 'none';
+        }
+    } catch (e) {
+        console.error('[main] Error cargando el banner de pendientes:', e);
+        dashboardBannerPendientes.style.display = 'none';
+    }
+}
+
 // ── Asistente IA ───────────────────────────────────────────────────
 
 function toggleAI() {
@@ -1412,12 +1391,17 @@ function handleAiOverview() {
     handleSendAI();
 }
 
-aiToggleEl.addEventListener('click', toggleAI);
-aiSendBtn.addEventListener('click', handleSendAI);
-aiInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') handleSendAI();
-});
-aiOverviewBtn.addEventListener('click', handleAiOverview);
+// Listeners desconectados junto con el HTML del Asistente IA (Fase 15) —
+// ver comentario junto a los DOM refs comentados más arriba. toggleAI/
+// agregarMensajeAI/handleSendAI/handleAiOverview quedan intactos arriba,
+// solo sin quién los invoque.
+//
+// aiToggleEl.addEventListener('click', toggleAI);
+// aiSendBtn.addEventListener('click', handleSendAI);
+// aiInput.addEventListener('keydown', (e) => {
+//     if (e.key === 'Enter') handleSendAI();
+// });
+// aiOverviewBtn.addEventListener('click', handleAiOverview);
 
 // ── Accesos rápidos del Dashboard ─────────────────────────────────
 
@@ -1438,6 +1422,10 @@ dashboardQuicklinks.addEventListener('click', (e) => {
     }
     if (btn.dataset.vista === 'view-admin') {
         irAVistaAdmin();
+        return;
+    }
+    if (btn.dataset.vista === 'view-bitacora') {
+        irAVistaBitacora();
         return;
     }
     navegarA(btn.dataset.vista);
@@ -1519,6 +1507,12 @@ function abrirDetallePlanta(cama, plantaEntry) {
     const marcadaParaSemilla = (plantaEntry.finalidad || 'cosecha') === 'semilla';
     detallePlantaSemillaBtn.textContent = marcadaParaSemilla ? '🔙 Volver a modo cosecha' : '🌰 Marcar para semilla';
 
+    // Cada apertura arranca con el formulario de cierre colapsado, aunque
+    // el modal se haya dejado abierto a medio llenar en una planta anterior
+    // — sin esto, abrir el detalle de OTRA planta podría heredar el estado
+    // de formulario de la última que se estaba cerrando.
+    ocultarFormularioCierre();
+
     openModal('detallePlantaModal');
 }
 
@@ -1549,16 +1543,81 @@ detallePlantaSemillaBtn.addEventListener('click', async () => {
     }
 });
 
-// PASO E (formulario de cierre de cultivo) todavía no existe — mismo
-// criterio de "hook, no lo construyas todavía" que onClickCama/onClickPlanta
-// en render-spiral-2d.js.
+// ── PASO E: formulario de cierre de cultivo ─────────────────────────
+// Sub-formulario dentro del mismo detallePlantaModal (ver diagnóstico) en
+// vez de un modal separado — oculta los dos botones de acción y muestra el
+// selector de rendimiento + campos opcionales; "Confirmar cierre" nace
+// disabled hasta que se elige un rendimiento (cantidadObtenida/notaCierre
+// pueden quedar vacíos, según el pedido).
+function ocultarFormularioCierre() {
+    detallePlantaCierreForm.style.display = 'none';
+    detallePlantaSemillaBtn.style.display = '';
+    detallePlantaCompletarBtn.style.display = '';
+
+    cierreRendimientoTabs.querySelectorAll('.filter-tab').forEach((b) => b.classList.remove('active'));
+    cierreCantidadInput.value = '';
+    cierreNotaInput.value = '';
+    detallePlantaCierreConfirmarBtn.disabled = true;
+}
+
+function mostrarFormularioCierre() {
+    detallePlantaSemillaBtn.style.display = 'none';
+    detallePlantaCompletarBtn.style.display = 'none';
+    detallePlantaCierreForm.style.display = '';
+}
+
 detallePlantaCompletarBtn.addEventListener('click', () => {
     if (!detalleActual) return;
-    console.info(
-        '[main] Formulario de cierre de cultivo pendiente (PASO E):',
-        detalleActual.cama.id, detalleActual.plantaEntry.instanciaId
-    );
-    mostrarToast('Cerrar cultivo: formulario pendiente (próxima fase)', '');
+    mostrarFormularioCierre();
+});
+
+detallePlantaCierreCancelarBtn.addEventListener('click', () => {
+    ocultarFormularioCierre();
+});
+
+cierreRendimientoTabs.addEventListener('click', (e) => {
+    const btn = e.target.closest('.filter-tab');
+    if (!btn) return;
+    cierreRendimientoTabs.querySelectorAll('.filter-tab').forEach((b) => b.classList.remove('active'));
+    btn.classList.add('active');
+    detallePlantaCierreConfirmarBtn.disabled = false;
+});
+
+detallePlantaCierreConfirmarBtn.addEventListener('click', async () => {
+    if (!detalleActual) return;
+    const { cama, plantaEntry } = detalleActual;
+    const rendimientoBtn = cierreRendimientoTabs.querySelector('.filter-tab.active');
+    if (!rendimientoBtn) return; // el botón está disabled sin selección, esto no debería disparar
+
+    detallePlantaCierreConfirmarBtn.disabled = true;
+    try {
+        // plantaEntry se pasa TAL CUAL (no se reconstruye ningún campo a
+        // mano) — crearHistorialCultivo saca fechaSiembra/plantaId/
+        // plantaTipo/finalidad de ahí mismo (ver diagnóstico), así que
+        // fechaSiembra queda preservada sin que este handler la toque.
+        // fechaFinalizacion la genera crearHistorialCultivo con
+        // serverTimestamp() — tampoco hay que pasarla.
+        await crearHistorialCultivo({
+            camaId: cama.id,
+            plantaEntry,
+            rendimiento: rendimientoBtn.dataset.rendimiento,
+            cantidadObtenida: cierreCantidadInput.value.trim() || null,
+            notaCierre: cierreNotaInput.value.trim() || null
+        });
+        // Mismo orden anti-parpadeo que detallePlantaSemillaBtn: refresca
+        // ANTES de cerrar el modal.
+        await iniciarHuerto();
+        closeModal('detallePlantaModal');
+        mostrarToast('Cultivo cerrado', 'green');
+    } catch (e) {
+        console.error('[main] Error cerrando cultivo:', e);
+        // Mensaje real del error (ej. "Esa planta ya no está en la cama"
+        // si alguien más ya la cerró) — formulario sigue abierto para
+        // reintentar, closeModal NO se llama en este branch.
+        mostrarToast(e.message || 'No se pudo cerrar el cultivo', 'red');
+    } finally {
+        detallePlantaCierreConfirmarBtn.disabled = false;
+    }
 });
 
 // ── Estado de sesión — escucha 'auth:resuelto' (ver contrato en auth.js) ──

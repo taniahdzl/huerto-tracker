@@ -40,6 +40,35 @@ export async function obtenerRegistroActividad(cantidad = 50) {
 // restricción de una-por-fecha) — por eso `sesiones` es un array, nunca un
 // único documento asumido. asistentes/tareasCompletadas se derivan de
 // asistencias en el momento de leer; nunca se guardan en bitacora_sesiones.
+// Todas las entradas de bitacora_sesiones, sin filtro de fecha — a
+// diferencia de obtenerSesionConDetalle (una fecha puntual), esta es para
+// la lista de sesiones pasadas en view-bitacora (PASO F) y para el banner
+// de pendientes del Dashboard (la más reciente = sesiones[0]). Orden
+// descendente resuelto en el query mismo (orderBy), no en el cliente —
+// funciona porque fecha es 'YYYY-MM-DD', que ordena correctamente como
+// string sin parsear a Date.
+export async function obtenerBitacoraSesiones() {
+    const q = query(collection(db, PATHS.bitacora), orderBy('fecha', 'desc'));
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
+
+// bitacora_sesiones es append-only (firestore.rules: create sin
+// isAdmin(), update/delete:false) — mismo criterio que historial_cultivo:
+// corregir una entrada mal escrita es crear una nueva, nunca editar la
+// vieja. Sin campo humano único como `nombre` (varias entradas pueden
+// compartir la misma fecha — ver comentario de obtenerSesionConDetalle) —
+// addDoc con ID autogenerado, mismo patrón que crearTarea/crearQuimico.
+export async function crearBitacoraSesion(datos) {
+    const ref = await addDoc(collection(db, PATHS.bitacora), {
+        fecha: datos.fecha,
+        resumen: datos.resumen,
+        pendientes: datos.pendientes || ''
+    });
+    _logActividad('CREAR_BITACORA', ref.id, datos.fecha);
+    return ref.id;
+}
+
 export async function obtenerSesionConDetalle(fecha) {
     const q = query(collection(db, PATHS.bitacora), where('fecha', '==', fecha));
     const [bitacoraSnap, asistenciasDelDia, tareas, estudiantes] = await Promise.all([
@@ -78,9 +107,7 @@ export async function obtenerCatalogo() {
 // ID derivado de `nombre` con la MISMA lógica exacta de scripts/upload.js
 // (nombre.toLowerCase().replace(/\s+/g, '_')) — sin quitar acentos, para
 // que no convivan dos convenciones de slug distintas en la misma
-// colección. Verificación de colisión igual que crearCama: si el slug ya
-// existe, RECHAZA (throw), no informa/continúa — mismo criterio que
-// mesas, consistente en todo el proyecto.
+// colección. Si el slug ya existe, RECHAZA (throw), no informa/continúa.
 export async function crearCatalogo(datos) {
     const plantaId = datos.nombre.toLowerCase().replace(/\s+/g, '_');
     const plantaRef = doc(db, PATHS.catalogo, plantaId);
@@ -143,10 +170,10 @@ export async function obtenerInventario() {
 }
 
 // inventario_general no tiene un campo humano único como el `nombre` de
-// camas_cosecha (un ítem de inventario puede repetirse: varias
+// catalogo_semillas (un ítem de inventario puede repetirse: varias
 // herramientas del mismo tipo, etc.) — por eso usa addDoc con ID
 // autogenerado, como crearTarea, no setDoc con verificación de colisión
-// como crearCama.
+// como crearCatalogo.
 //
 // `categoria` es de propósito general, NO un enum estricto todavía. El
 // único valor conocido hasta ahora es 'herramienta' (el que va a filtrar
@@ -181,26 +208,12 @@ export async function eliminarInventario(itemId) {
     _logActividad('ELIMINAR_INVENTARIO', itemId);
 }
 
-export async function crearCama(camaId, datos) {
-    const camaRef = doc(db, PATHS.camas, camaId);
-    const existente = await getDoc(camaRef);
-    if (existente.exists()) {
-        throw new Error('Ya existe una mesa con este nombre.');
-    }
-    await setDoc(camaRef, datos);
-    _logActividad('CREAR_CAMA', camaId, datos.nombre || camaId);
-    return camaId;
-}
-
-export async function actualizarCama(camaId, datos) {
-    await updateDoc(doc(db, PATHS.camas, camaId), datos);
-    _logActividad('ACTUALIZAR_CAMA', camaId, datos.nombre || camaId);
-}
-
-export async function eliminarCama(camaId) {
-    await deleteDoc(doc(db, PATHS.camas, camaId));
-    _logActividad('ELIMINAR_CAMA', camaId);
-}
+// crearCama/actualizarCama/eliminarCama (camas tipo 'rectangular') retiradas
+// en Fase 15 junto con #appRoot/bedModal, su único caller — ver diagnóstico.
+// camas_cosecha y la colección en Firestore NO se tocan: si algún día
+// existiera un documento tipo:'rectangular' real, obtenerCamas() lo sigue
+// leyendo igual que a cualquier otro; agregarPlantaACama (abajo) es la
+// función de escritura vigente, y es exclusiva de arco/circular.
 
 // Cierra el ciclo de cultivo de UNA planta específica: escribe su historial
 // (append-only) y libera su espacio en la cama, en un batch atómico — o
@@ -322,15 +335,15 @@ export async function marcarParaSemilla(camaId, instanciaId) {
 //
 // finalidad nace siempre en 'cosecha' — cambiarla a 'semilla' sigue siendo
 // responsabilidad exclusiva de marcarParaSemilla, después de sembrada.
-// plantaTipo se denormaliza desde catalogo_semillas (mismo criterio que
-// handleSaveBed en main.js para camas rectangulares) para que render-
+// plantaTipo se denormaliza desde catalogo_semillas para que render-
 // spiral-2d.js no necesite el catálogo completo solo para pintar color/
-// emoji — mismo motivo que ya vale para camas rectangulares.
+// emoji (mismo criterio que usaba handleSaveBed para camas rectangulares,
+// retirado en Fase 15 — el patrón de denormalización sobrevive aunque ese
+// código ya no exista).
 //
 // Regla de Firestore (camas_cosecha): create/update permitido a cualquier
-// usuario autenticado, sin restricción de rol — igual que crearCama/
-// actualizarCama/marcarParaSemilla, esta función no valida rol aquí porque
-// la regla ya lo cubre.
+// usuario autenticado, sin restricción de rol — igual que marcarParaSemilla,
+// esta función no valida rol aquí porque la regla ya lo cubre.
 export async function agregarPlantaACama(camaId, plantaId) {
     const camaRef = doc(db, PATHS.camas, camaId);
     const camaSnap = await getDoc(camaRef);

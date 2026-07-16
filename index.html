@@ -67,26 +67,9 @@
   .status-dot.online { background: var(--leaf-bright); box-shadow: 0 0 6px var(--leaf-bright); }
   .status-dot.error { background: var(--alert); }
 
-  /* ── LAYOUT ── */
-  .app { display: grid; grid-template-columns: 280px 1fr 320px; height: calc(100vh - 64px); overflow: hidden; }
-
-  /* ── LEFT PANEL: PLANT CATALOGUE ── */
-  .panel-left {
-    background: var(--panel);
-    border-right: 1px solid var(--border);
-    display: flex; flex-direction: column;
-    overflow: hidden;
-  }
-  .panel-header {
-    padding: 1rem 1.2rem 0.8rem;
-    border-bottom: 1px solid var(--border);
-    background: var(--parchment-dark);
-  }
-  .panel-header h2 {
-    font-family: 'Playfair Display', serif;
-    font-size: 1rem;
-    margin-bottom: 0.5rem;
-  }
+  /* .app/.panel-left/.panel-header (layout de #appRoot) retirados en Fase
+     15 junto con el HTML que estilaban — ver diagnóstico. .search-box
+     sobrevive: view-catalogos también la usa (#catalogosBusqueda). */
   .search-box {
     width: 100%; padding: 0.4rem 0.7rem;
     border: 1px solid var(--border);
@@ -116,7 +99,9 @@
     border-color: var(--leaf);
     color: white;
   }
-  .plant-list { flex: 1; overflow-y: auto; padding: 0.5rem; }
+  /* .plant-list (contenedor de #appRoot) retirado en Fase 15 — .plant-card
+     y sus hijos sobreviven, reutilizados por el panel de arrastre de
+     view-gemelo (Fase 14.6b). */
   .plant-card {
     padding: 0.7rem 0.8rem;
     margin-bottom: 0.4rem;
@@ -141,34 +126,9 @@
   }
   .plant-info { min-width: 0; }
   .plant-name { font-size: 0.78rem; font-weight: 500; line-height: 1.2; }
-  .plant-meta { font-size: 0.65rem; color: #888; font-family: 'DM Mono', monospace; }
-  .type-badge {
-    font-size: 0.6rem; padding: 0.1rem 0.4rem; border-radius: 10px; margin-left: auto; flex-shrink: 0;
-    font-family: 'DM Mono', monospace; font-weight: 500;
-  }
-  .type-hoja { background: #e8f5e9; color: #2e7d32; }
-  .type-raíz { background: #fff3e0; color: #e65100; }
-  .type-fruto { background: #fce4ec; color: #c62828; }
-  .type-flor { background: #f3e5f5; color: #6a1b9a; }
-  .type-tallo { background: #e8eaf6; color: #283593; }
-  .type-semilla { background: #f9fbe7; color: #558b2f; }
-
-  /* ── CENTER: GARDEN MAP ── */
-  .panel-center {
-    display: flex; flex-direction: column; overflow: hidden;
-  }
-  .garden-toolbar {
-    padding: 0.7rem 1.2rem;
-    background: var(--parchment-dark);
-    border-bottom: 1px solid var(--border);
-    display: flex; align-items: center; gap: 0.8rem;
-    flex-wrap: wrap;
-  }
-  .garden-toolbar h2 {
-    font-family: 'Playfair Display', serif;
-    font-size: 1rem;
-    flex: 1;
-  }
+  /* .plant-meta/.type-badge/.type-* (badge de días+tipo del viejo
+     renderCatalogo) y .panel-center/.garden-toolbar (layout de #appRoot)
+     retirados en Fase 15 junto con sus únicos consumidores. */
   .btn {
     padding: 0.35rem 0.8rem; border-radius: 6px;
     border: 1px solid var(--border);
@@ -184,56 +144,19 @@
   .btn-primary:hover { background: #3d6b4a; border-color: #3d6b4a; color: white; }
   .btn-danger { border-color: var(--alert); color: var(--alert); }
   .btn-danger:hover { background: var(--alert); color: white; }
-  .btn-ai { background: var(--soil); border-color: var(--soil); color: var(--harvest-glow); }
-  .btn-ai:hover { background: var(--soil-light); }
+  /* .btn-ai/.garden-scroll/.garden-grid (layout+botón IA de #appRoot)
+     retirados en Fase 15. */
 
-  .garden-scroll { flex: 1; overflow: auto; padding: 1.5rem; background: #e8e0d0;
-    background-image: repeating-linear-gradient(0deg, transparent, transparent 39px, rgba(0,0,0,0.04) 39px, rgba(0,0,0,0.04) 40px),
-    repeating-linear-gradient(90deg, transparent, transparent 39px, rgba(0,0,0,0.04) 39px, rgba(0,0,0,0.04) 40px);
-  }
-  .garden-grid {
-    display: grid;
-    gap: 12px;
-    width: fit-content;
-    min-width: 100%;
-  }
-
-  /* ── MESA DE CULTIVO ── */
-  .bed {
-    border: 2px solid var(--soil);
-    border-radius: 10px;
-    background: #c8b080;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4'%3E%3Ccircle cx='2' cy='2' r='0.8' fill='rgba(0,0,0,0.08)'/%3E%3C/svg%3E");
-    position: relative;
-    transition: all 0.2s;
-    min-width: 120px; min-height: 100px;
-    cursor: pointer;
-    display: flex; align-items: center; justify-content: center;
-  }
-  .bed.drag-over { border-color: var(--leaf-bright); background: #b5c98a; box-shadow: 0 0 0 3px rgba(106,176,76,0.3); }
-  .bed.has-plant { background: #8fa867; cursor: pointer; }
-  .bed.urgent { border-color: var(--alert); animation: pulse-red 2s infinite; }
-  .bed.harvest-soon { border-color: var(--harvest); animation: pulse-orange 2.5s infinite; }
-  .bed.needs-transplant { border-color: var(--transplant); }
-  .bed.alert-plaga { border-color: var(--plaga); animation: pulse-purple 2s infinite; }
-  @keyframes pulse-red {
-    0%,100% { box-shadow: 0 0 0 0 rgba(192,57,43,0.3); }
-    50% { box-shadow: 0 0 0 6px rgba(192,57,43,0); }
-  }
-  @keyframes pulse-orange {
-    0%,100% { box-shadow: 0 0 0 0 rgba(232,168,56,0.4); }
-    50% { box-shadow: 0 0 0 6px rgba(232,168,56,0); }
-  }
-  @keyframes pulse-purple {
-    0%,100% { box-shadow: 0 0 0 0 rgba(142,68,173,0.4); }
-    50% { box-shadow: 0 0 0 6px rgba(142,68,173,0); }
-  }
-  .bed-inner { padding: 0.6rem; text-align: center; width: 100%; }
-  .bed-label { font-size: 0.6rem; font-family: 'DM Mono', monospace; color: rgba(255,255,255,0.7); margin-bottom: 0.3rem; }
-  .bed-plant-icon { font-size: 2rem; display: block; line-height: 1; }
-  .bed-plant-name { font-size: 0.7rem; font-weight: 600; color: white; text-shadow: 0 1px 3px rgba(0,0,0,0.5); margin-top: 0.2rem; }
-  .bed-days { font-size: 0.65rem; font-family: 'DM Mono', monospace; color: rgba(255,255,255,0.85); margin-top: 0.1rem; }
-  .bed-alerts { display: flex; gap: 2px; justify-content: center; margin-top: 0.3rem; flex-wrap: wrap; }
+  /* ── MESA DE CULTIVO (camas tipo 'rectangular') ──────────────────
+     .bed y su familia (estados, keyframes pulse-red/orange/purple,
+     bed-inner/label/plant-icon/plant-name/days/alerts/empty-hint)
+     retirados en Fase 15 — eran el output exclusivo de renderMapaHuerto
+     (render.js), que ya no existe. .alert-dot/.ad-* (siguientes 7 líneas)
+     NO se tocan, aunque .ad-plaga pierde su único consumidor en esta misma
+     fase: se deja junto a sus hermanas .ad-harvest/.ad-water/.ad-nitrogen/
+     .ad-potassium/.ad-compost/.ad-transplant, que YA estaban sin usar desde
+     antes (ningún renderer las emitió nunca) — es un sistema de alertas más
+     amplio, nunca terminado, fuera de alcance de este diagnóstico. */
   .alert-dot { width: 8px; height: 8px; border-radius: 50%; cursor: help; }
   .ad-harvest { background: var(--harvest-glow); }
   .ad-water { background: var(--water); }
@@ -242,30 +165,11 @@
   .ad-compost { background: var(--compost); }
   .ad-transplant { background: var(--transplant); }
   .ad-plaga { width: auto; height: auto; background: none; font-size: 0.75rem; line-height: 1; }
-  .bed-empty-hint { font-size: 0.7rem; color: rgba(100,70,40,0.5); font-style: italic; }
 
-  /* ── RIGHT PANEL: DETAIL + AI ── */
-  .panel-right {
-    background: var(--panel);
-    border-left: 1px solid var(--border);
-    display: flex; flex-direction: column;
-    overflow: hidden;
-  }
-  .detail-header {
-    padding: 1rem 1.2rem 0.8rem;
-    background: var(--parchment-dark);
-    border-bottom: 1px solid var(--border);
-  }
-  .detail-header h2 { font-family: 'Playfair Display', serif; font-size: 1rem; }
-  .detail-scroll { flex: 1; overflow-y: auto; padding: 1rem 1.2rem; }
-
-  .detail-empty {
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    height: 200px; color: #aaa; text-align: center; gap: 0.5rem;
-  }
-  .detail-empty span { font-size: 2.5rem; }
-  .detail-empty p { font-size: 0.8rem; }
-
+  /* .panel-right/.detail-header/.detail-scroll/.detail-empty (columna
+     derecha de #appRoot) retirados en Fase 15. .detail-card/.detail-card-
+     header (siguientes líneas) NO se tocan: sin ningún HTML que los use ya
+     desde antes de esta fase (confirmado por grep), fuera de alcance. */
   .detail-card { background: white; border-radius: 10px; border: 1px solid var(--border); overflow: hidden; margin-bottom: 1rem; }
   .detail-card-header {
     padding: 0.8rem 1rem;
@@ -317,39 +221,10 @@
   }
   .form-group input:focus, .form-group select:focus { outline: none; border-color: var(--leaf); }
   .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
-  .slider-group { display: flex; align-items: center; gap: 0.5rem; }
-  .slider-group input[type=range] { flex: 1; }
-  .slider-group .slider-val { font-family: 'DM Mono', monospace; font-size: 0.75rem; min-width: 28px; text-align: right; }
-
-  /* ── AI CHAT ── */
-  .ai-section { border-top: 1px solid var(--border); }
-  .ai-toggle {
-    padding: 0.8rem 1.2rem;
-    background: var(--soil);
-    color: var(--parchment);
-    display: flex; align-items: center; justify-content: space-between;
-    cursor: pointer;
-    font-size: 0.8rem;
-    user-select: none;
-  }
-  .ai-toggle span { color: var(--harvest-glow); font-weight: 600; font-family: 'DM Mono', monospace; }
-  .ai-body { padding: 0.8rem 1.2rem; background: #1a1208; max-height: 300px; overflow: hidden; display: none; flex-direction: column; gap: 0.5rem; }
-  .ai-body.open { display: flex; }
-  .ai-messages { flex: 1; overflow-y: auto; max-height: 180px; display: flex; flex-direction: column; gap: 0.4rem; }
-  .ai-msg { padding: 0.5rem 0.7rem; border-radius: 6px; font-size: 0.75rem; line-height: 1.4; }
-  .ai-msg.user { background: rgba(74,124,89,0.2); color: #a8d8b0; align-self: flex-end; max-width: 85%; }
-  .ai-msg.ai { background: rgba(232,168,56,0.1); color: #d4b060; max-width: 95%; }
-  .ai-msg.loading { color: #888; font-style: italic; }
-  .ai-input-row { display: flex; gap: 0.5rem; }
-  .ai-input-row input {
-    flex: 1; padding: 0.4rem 0.6rem;
-    background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.15);
-    border-radius: 6px; color: var(--parchment);
-    font-family: 'DM Sans', sans-serif; font-size: 0.75rem;
-  }
-  .ai-input-row input:focus { outline: none; border-color: var(--harvest-glow); }
-  .ai-send { padding: 0.4rem 0.8rem; background: var(--harvest); border: none; border-radius: 6px; color: white; cursor: pointer; font-size: 0.8rem; }
-  .ai-send:hover { background: var(--harvest-glow); color: var(--ink); }
+  /* .slider-group/.slider-val (sliders N/P/K de bedModal) y toda la
+     sección AI CHAT (.ai-section/.ai-toggle/.ai-body/.ai-messages/.ai-msg/
+     .ai-input-row/.ai-send — panel del Asistente IA dentro de #appRoot)
+     retiradas en Fase 15. */
 
   /* ── MODAL ── */
   .modal-overlay {
@@ -388,7 +263,7 @@
     z-index: 2000;
   }
   #login-overlay.hidden { display: none; }
-  .app-hidden { display: none; }
+  /* .app-hidden ocultaba #appRoot — retirado en Fase 15 junto con él. */
   .login-box {
     background: var(--parchment);
     border-radius: 12px;
@@ -491,10 +366,8 @@
   #toast.green { background: var(--leaf); }
   #toast.red { background: var(--alert); }
 
-  /* ── LEGEND ── */
-  .legend { display: flex; gap: 0.8rem; flex-wrap: wrap; font-size: 0.65rem; }
-  .legend-item { display: flex; align-items: center; gap: 0.3rem; }
-  .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+  /* .legend/.legend-item/.legend-dot (leyenda de colores del garden-
+     toolbar en #appRoot) retirados en Fase 15. */
 
   /* ── CONFIG MODAL ── */
   .config-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem 1rem; margin-bottom: 1rem; }
@@ -605,6 +478,17 @@
   .dashboard-card-clickable { cursor: pointer; transition: border-color 0.15s; }
   .dashboard-card-clickable:hover { border-color: var(--color-primario, #2F5038); }
 
+  /* PASO F: banner de pendientes — mismo .dashboard-card, borde izquierdo
+     de acento para que se lea como aviso, no como una tarjeta más. */
+  .dashboard-banner-pendientes { border-left: 4px solid var(--harvest); max-width: 480px; }
+  .dashboard-banner-pendientes h3 { color: var(--ink-soft, #3d2b1f); }
+  .dashboard-banner-pendientes p { white-space: pre-wrap; }
+
+  /* PASO F: detalle expandible (asistentes/tareas) de cada sesión de
+     bitácora — mismo .chore-item que ya usa la lista de tareas. */
+  .bitacora-detalle { font-size: 0.78rem; color: var(--ink-soft, #3d2b1f); margin-top: 0.4rem; }
+  .bitacora-detalle p { margin: 0.2rem 0; }
+
   .dashboard-resumen-camas { display: flex; flex-direction: column; gap: 0.7rem; }
   .dashboard-resumen-grupo-titulo {
     display: block; font-size: 0.75rem; color: #888; margin-bottom: 0.3rem;
@@ -687,9 +571,9 @@
   <button class="btn btn-danger" id="adminBtn" style="display:none">⚙ Admin</button>
 </header>
 
-<!-- Fase 13: sistema de vistas SPA. Coexiste con #appRoot (arriba) por
-     ahora — #appRoot se queda oculto permanentemente hasta que Mapa/
-     Tareas/Admin se migren aquí uno por uno. -->
+<!-- Fase 13: sistema de vistas SPA. #appRoot (el layout pre-SPA con camas
+     tipo 'rectangular') se retiró por completo en Fase 15 — ver
+     diagnóstico. Todas las vistas viven aquí. -->
 <div id="app">
 
   <!-- Splash: única vista visible por defecto (sin .hidden). Cubre la
@@ -712,6 +596,15 @@
         Panel en construcción — la tarjeta de horas acumuladas sigue
         bloqueada hasta que exista su widget.
       </p>
+    </div>
+
+    <!-- Banner de pendientes (PASO F) — visible a CUALQUIER rol, no solo
+         admin. Oculto por defecto: sin entradas de bitácora, o si la más
+         reciente no tiene `pendientes`, no debe ocupar espacio (ver
+         cargarBannerBitacora en main.js). -->
+    <div class="dashboard-card dashboard-banner-pendientes" id="dashboardBannerPendientes" style="display:none">
+      <h3>📌 Pendientes de la última sesión</h3>
+      <p id="dashboardBannerPendientesTexto"></p>
     </div>
 
     <!-- Tarjeta 1: resumen de camas en espiral por estado (Fase 14.3).
@@ -741,6 +634,10 @@
       <button class="btn" data-vista="view-tareas">📋 Tareas</button>
       <button class="btn" data-vista="view-catalogos">📦 Catálogos</button>
       <button class="btn" data-vista="view-perfil">👤 Perfil</button>
+      <!-- PASO F: sin style="display:none" a propósito, a diferencia de
+           dashboardAdminLink — accesible a cualquier rol autenticado, no
+           solo admin (VISTAS_ADMIN no incluye view-bitacora). -->
+      <button class="btn" data-vista="view-bitacora">📓 Bitácora</button>
       <button class="btn btn-danger" id="dashboardAdminLink" data-vista="view-admin" style="display:none">⚙ Admin</button>
     </nav>
   </section>
@@ -768,6 +665,31 @@
         <div class="gemelo-panel-lista" id="gemeloPanelLista"></div>
       </aside>
       <div id="gemeloMapaContainer" style="width:min(90vh,900px); height:min(90vh,900px); margin:0 auto;"></div>
+    </div>
+  </section>
+  <!-- PASO F: bitácora de sesiones — vista independiente de view-admin
+       (ver diagnóstico), accesible a cualquier rol autenticado. -->
+  <section class="view hidden" id="view-bitacora">
+    <div class="dashboard-card" style="max-width:none">
+      <h3>📓 Nueva entrada de bitácora</h3>
+      <div class="form-group">
+        <label for="bitacoraFechaInput">Fecha</label>
+        <input type="date" id="bitacoraFechaInput">
+      </div>
+      <div class="form-group">
+        <label for="bitacoraResumenInput">Resumen de la sesión</label>
+        <textarea id="bitacoraResumenInput" rows="3" placeholder="¿Qué se hizo hoy?"></textarea>
+      </div>
+      <div class="form-group">
+        <label for="bitacoraPendientesInput">Pendientes (opcional)</label>
+        <textarea id="bitacoraPendientesInput" rows="2" placeholder="¿Qué queda para la próxima sesión?"></textarea>
+      </div>
+      <button class="btn btn-primary" id="bitacoraCrearBtn" disabled>Guardar entrada</button>
+    </div>
+
+    <div class="dashboard-card" style="max-width:none">
+      <h3>Sesiones pasadas</h3>
+      <ul class="chore-list" id="bitacoraLista"></ul>
     </div>
   </section>
   <section class="view hidden" id="view-tareas">
@@ -845,156 +767,15 @@
 
 </div>
 
-<div class="app app-hidden" id="appRoot">
-  <!-- LEFT: Plant catalogue -->
-  <aside class="panel-left">
-    <div class="panel-header">
-      <h2>📋 Catálogo de Plantas</h2>
-      <input class="search-box" id="plantSearch" placeholder="Buscar planta…" oninput="filterPlants()">
-      <div class="filter-tabs" id="filterTabs">
-        <button class="filter-tab active" onclick="setFilter('all',this)">Todas</button>
-        <button class="filter-tab" onclick="setFilter('hoja',this)">Hoja</button>
-        <button class="filter-tab" onclick="setFilter('raíz',this)">Raíz</button>
-        <button class="filter-tab" onclick="setFilter('fruto',this)">Fruto</button>
-        <button class="filter-tab" onclick="setFilter('flor',this)">Flor</button>
-        <button class="filter-tab" onclick="setFilter('tallo',this)">Tallo</button>
-      </div>
-    </div>
-    <div class="plant-list" id="plantList"></div>
-  </aside>
+<!-- #appRoot (layout pre-SPA: catálogo/mapa cartesiano/detalle+IA) retirado
+     por completo en Fase 15 junto con bedModal — ver diagnóstico. El botón
+     + panel del Asistente IA vivían en la columna derecha de este layout;
+     su HTML se fue con el resto, sus listeners en main.js quedaron
+     comentados (no borrados) a la espera de la Cloud Function pendiente
+     (ver TODO en ai.js). -->
 
-  <!-- CENTER: Garden map -->
-  <main class="panel-center">
-    <div class="garden-toolbar">
-      <h2>🗺 Mapa del Huerto</h2>
-      <div class="legend">
-        <div class="legend-item"><div class="legend-dot" style="background:var(--harvest-glow)"></div> Cosechar pronto</div>
-        <div class="legend-item"><div class="legend-dot" style="background:var(--alert)"></div> Urgente</div>
-        <div class="legend-item"><div class="legend-dot" style="background:var(--transplant)"></div> Transplantar</div>
-        <div class="legend-item"><div class="legend-dot" style="background:var(--water)"></div> Regar</div>
-      </div>
-      <button class="btn btn-ai">🤖 Revisar huerto con IA</button>
-    </div>
-    <div class="garden-scroll">
-      <div class="garden-grid" id="gardenGrid"></div>
-    </div>
-  </main>
-
-  <!-- RIGHT: Detail + AI -->
-  <aside class="panel-right">
-    <div class="detail-header">
-      <h2>🔍 Detalle</h2>
-    </div>
-    <div class="detail-scroll" id="detailPanel">
-      <div class="detail-empty">
-        <span>🌱</span>
-        <p>Selecciona una mesa de cultivo para ver detalles</p>
-      </div>
-    </div>
-    <div class="ai-section">
-      <div class="ai-toggle">
-        <span>🤖 Asistente IA</span>
-        <span id="aiToggleIcon">▲</span>
-      </div>
-      <div class="ai-body" id="aiBody">
-        <div class="ai-messages" id="aiMessages">
-          <div class="ai-msg ai">Hola! Soy tu asistente del huerto. Puedo ayudarte con fechas de cosecha, alertas de nutrientes, rotación de cultivos y más. ¿En qué te ayudo?</div>
-        </div>
-        <div class="ai-input-row">
-          <input id="aiInput" placeholder="Pregunta algo sobre el huerto…">
-          <button class="ai-send">↑</button>
-        </div>
-      </div>
-    </div>
-  </aside>
-</div>
-
-<!-- MODAL: Add/Edit Bed -->
-<div class="modal-overlay" id="bedModal">
-  <div class="modal">
-    <div class="modal-header">
-      <h3 id="bedModalTitle">Nueva Mesa de Cultivo</h3>
-      <button class="modal-close" id="bedModalClose">×</button>
-    </div>
-    <div class="modal-body">
-      <div class="form-group">
-        <label>Nombre / ID de la Mesa</label>
-        <input id="bedName" placeholder="Ej: Mesa A1, Cama Norte…">
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label>Columna (posición X)</label>
-          <input id="bedCol" type="number" min="1" max="10" value="1">
-        </div>
-        <div class="form-group">
-          <label>Fila (posición Y)</label>
-          <input id="bedRow" type="number" min="1" max="10" value="1">
-        </div>
-      </div>
-      <div class="form-group">
-        <label>Planta asignada</label>
-        <select id="bedPlant">
-          <option value="">— Sin planta —</option>
-        </select>
-      </div>
-      <div id="plantDateFields" style="display:none">
-        <div class="form-row">
-          <div class="form-group">
-            <label>Fecha de siembra</label>
-            <input id="bedSeedDate" type="date">
-          </div>
-          <div class="form-group">
-            <label>Fecha de trasplante</label>
-            <input id="bedTransplantDate" type="date">
-          </div>
-        </div>
-        <p class="section-title" style="margin-bottom:0.7rem">Niveles de Nutrientes del Suelo</p>
-        <div class="form-group">
-          <label>Nitrógeno (N) — nivel actual</label>
-          <div class="slider-group">
-            <input type="range" id="soilN" min="0" max="3" step="0.1" value="1.5">
-            <span class="slider-val" id="soilNVal">1.5</span>
-          </div>
-        </div>
-        <div class="form-group">
-          <label>Fósforo (P) — nivel actual</label>
-          <div class="slider-group">
-            <input type="range" id="soilP" min="0" max="2" step="0.1" value="1">
-            <span class="slider-val" id="soilPVal">1.0</span>
-          </div>
-        </div>
-        <div class="form-group">
-          <label>Potasio (K) — nivel actual</label>
-          <div class="slider-group">
-            <input type="range" id="soilK" min="0" max="2.5" step="0.1" value="1.2">
-            <span class="slider-val" id="soilKVal">1.2</span>
-          </div>
-        </div>
-        <div class="form-group">
-          <label>Notas del equipo</label>
-          <textarea id="bedNotes" rows="2" placeholder="Observaciones, tratamientos, etc."></textarea>
-        </div>
-        <div class="form-group">
-          <label>Plagas observadas</label>
-          <textarea id="bedPlagas" rows="2" placeholder="Ej: pulgón en hojas bajas, sin tratar"></textarea>
-        </div>
-        <div class="form-group">
-          <label>¿Necesita composta?</label>
-          <select id="bedCompost">
-            <option value="no">No</option>
-            <option value="pronto">Pronto</option>
-            <option value="urgente">Urgente</option>
-          </select>
-        </div>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-danger" id="deleteBedBtn" style="display:none;margin-right:auto">Eliminar Mesa</button>
-      <button class="btn" id="bedModalCancel">Cancelar</button>
-      <button class="btn btn-primary" id="saveBedBtn">Guardar</button>
-    </div>
-  </div>
-</div>
+<!-- bedModal (Nueva/Editar Mesa de Cultivo, camas tipo 'rectangular')
+     retirado por completo en Fase 15 — ver diagnóstico. -->
 
 <!-- MODAL: Config -->
 <div class="modal-overlay" id="configModal">
@@ -1185,6 +966,33 @@
       <p id="detallePlantaPlagas" style="display:none"></p>
       <button class="btn" id="detallePlantaSemillaBtn"></button>
       <button class="btn btn-primary" id="detallePlantaCompletarBtn">✅ Marcar como completado</button>
+
+      <!-- PASO E: formulario de cierre de cultivo — oculto hasta que se
+           pulsa "Marcar como completado", mismo patrón display:none/'' que
+           detallePlantaProgreso/detallePlantaPlagas arriba, en vez de un
+           modal separado (detalleActual ya trae todo el contexto). -->
+      <div id="detallePlantaCierreForm" style="display:none">
+        <div class="form-group">
+          <label>Rendimiento</label>
+          <div class="filter-tabs" id="cierreRendimientoTabs">
+            <button type="button" class="filter-tab" data-rendimiento="bajo">Bajo</button>
+            <button type="button" class="filter-tab" data-rendimiento="medio">Medio</button>
+            <button type="button" class="filter-tab" data-rendimiento="alto">Alto</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="cierreCantidadInput">Cantidad obtenida (opcional)</label>
+          <input type="text" id="cierreCantidadInput" placeholder="ej. 3 kg, 12 unidades">
+        </div>
+        <div class="form-group">
+          <label for="cierreNotaInput">Notas de cierre (opcional)</label>
+          <textarea id="cierreNotaInput" rows="2"></textarea>
+        </div>
+        <div style="display:flex; gap:0.5rem;">
+          <button class="btn" id="detallePlantaCierreCancelarBtn">Cancelar</button>
+          <button class="btn btn-primary" id="detallePlantaCierreConfirmarBtn" disabled>Confirmar cierre</button>
+        </div>
+      </div>
     </div>
   </div>
 </div>
