@@ -117,6 +117,7 @@ const catalogosTabs       = document.querySelectorAll('#view-catalogos .filter-t
 
 // ── Vista de Perfil (Fase 13.7) ──────────────────────────────────────
 const perfilNombreInput       = document.getElementById('perfilNombreInput');
+const perfilEditarNombreBtn   = document.getElementById('perfilEditarNombreBtn');
 const perfilGuardarNombreBtn  = document.getElementById('perfilGuardarNombreBtn');
 const perfilEmail             = document.getElementById('perfilEmail');
 const perfilRolTexto          = document.getElementById('perfilRolTexto');
@@ -1164,6 +1165,7 @@ async function cargarYRenderizarVistaPerfil() {
         if (!perfil) return; // no debería pasar — si estás en Dashboard, ya tienes perfil.
 
         perfilNombreInput.value = perfil.nombre || '';
+        bloquearEdicionNombre();
         perfilRolTexto.textContent = perfil.rol;
         perfilHoras.textContent = `${perfil.horasTotales ?? 0} horas`;
 
@@ -1199,6 +1201,26 @@ async function handleGuardarRolPropio() {
     }
 }
 
+// Nombre bloqueado (readonly) por defecto — "Editar" lo habilita y muestra
+// "Guardar", "Guardar" (si tiene éxito) vuelve a bloquear vía
+// cargarYRenderizarVistaPerfil(), que ya llama a esta misma función. Si el
+// guardado falla, NO se vuelve a bloquear (el catch de
+// handleGuardarNombrePropio no llama a cargarYRenderizarVistaPerfil) —
+// el usuario puede corregir y reintentar sin tener que volver a pulsar
+// Editar.
+function bloquearEdicionNombre() {
+    perfilNombreInput.readOnly = true;
+    perfilEditarNombreBtn.style.display = '';
+    perfilGuardarNombreBtn.style.display = 'none';
+}
+
+function handleEditarNombre() {
+    perfilNombreInput.readOnly = false;
+    perfilNombreInput.focus();
+    perfilEditarNombreBtn.style.display = 'none';
+    perfilGuardarNombreBtn.style.display = '';
+}
+
 async function handleGuardarNombrePropio() {
     const nombre = perfilNombreInput.value.trim();
     const user = AuthService.getCurrentUser();
@@ -1222,6 +1244,7 @@ async function handleGuardarNombrePropio() {
     }
 }
 
+perfilEditarNombreBtn.addEventListener('click', handleEditarNombre);
 perfilGuardarNombreBtn.addEventListener('click', handleGuardarNombrePropio);
 perfilGuardarRolBtn.addEventListener('click', handleGuardarRolPropio);
 perfilLogoutBtn.addEventListener('click', () => AuthService.logout());
