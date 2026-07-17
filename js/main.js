@@ -89,8 +89,9 @@ const dashboardUserEmail  = document.getElementById('dashboardUserEmail');
 const dashboardHorasTexto = document.getElementById('dashboardHorasTexto');
 
 // ── Barra de navegación persistente del header (Fase 16) ────────────
-const headerLogo = document.getElementById('headerLogo');
-const headerNav  = document.getElementById('headerNav');
+const headerLogo       = document.getElementById('headerLogo');
+const headerNav        = document.getElementById('headerNav');
+const headerNavToggle  = document.getElementById('headerNavToggle');
 
 // ── Tarjetas del Dashboard (Fase 14.3) ──────────────────────────────
 const dashboardResumenCamasCard = document.getElementById('dashboardResumenCamasCard');
@@ -243,6 +244,12 @@ function navegarA(vistaId, params = null) {
     headerNav.querySelectorAll('[data-vista]').forEach((btn) => {
         btn.classList.toggle('active', btn.dataset.vista === vistaId);
     });
+    // Fase 16.3: cualquier navegación cierra el menú hamburguesa si estaba
+    // abierto — sin esto, tras tocar un destino en móvil el panel se queda
+    // desplegado tapando la vista nueva hasta que el usuario lo cierre a
+    // mano. No-op en desktop (headerNav nunca tiene .open ahí, ver CSS).
+    headerNav.classList.remove('open');
+    headerNavToggle.setAttribute('aria-expanded', 'false');
     if (params) {
         document.dispatchEvent(new CustomEvent('vista:params', { detail: { vistaId, params } }));
     }
@@ -252,6 +259,13 @@ function navegarA(vistaId, params = null) {
 // Dashboard ahora que headerNav (abajo) no incluye ese destino y el botón
 // "Volver al Dashboard" por vista se retiró junto con .dashboard-quicklinks.
 headerLogo.addEventListener('click', () => navegarA('view-dashboard'));
+
+// Fase 16.3: toggle del menú hamburguesa (solo visible bajo 720px, ver
+// CSS) — abre/cierra headerNav y mantiene aria-expanded sincronizado.
+headerNavToggle.addEventListener('click', () => {
+    const abierto = headerNav.classList.toggle('open');
+    headerNavToggle.setAttribute('aria-expanded', abierto ? 'true' : 'false');
+});
 
 // Para los casos en que lo que debe mostrarse es #login-overlay, no una
 // vista — oculta TODAS las .view (incluida Splash) sin navegar "a" nada,

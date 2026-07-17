@@ -71,6 +71,37 @@
   .header-nav .btn.active {
     background: var(--leaf); border-color: var(--leaf); color: white;
   }
+  /* Fase 16.3: colapso a hamburguesa en viewport angosto — verificado con
+     Playwright a 375px (iPhone SE): flex-wrap solo daba botones de ~33px
+     de alto (bajo el mínimo táctil de ~44px) y 3 filas completas antes de
+     ver contenido real. Mismo breakpoint que .gemelo-layout (720px) ya usa
+     implícitamente en el resto de la SPA — no se inventa uno nuevo.
+     headerNavToggle oculto por default (desktop no lo necesita, el flex-
+     wrap de arriba ya es cómodo ahí — no se probó explícitamente arriba de
+     720px, pero con una sola fila de 6 botones no hay indicio de que
+     hiciera falta el mismo tratamiento). */
+  .header-nav-toggle { display: none; }
+  @media (max-width: 719px) {
+    .header-nav-toggle {
+      display: flex; align-items: center; justify-content: center;
+      min-height: 44px; padding: 0.5rem 1rem;
+    }
+    .header-nav {
+      display: none;
+      flex-direction: column;
+      flex-basis: auto;
+      position: absolute; top: 100%; left: 0; right: 0;
+      background: var(--soil);
+      padding: 0.6rem 1rem 1rem;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.25);
+      z-index: 99;
+    }
+    .header-nav.open { display: flex; }
+    .header-nav .btn {
+      display: flex; align-items: center; justify-content: flex-start;
+      min-height: 44px; width: 100%;
+    }
+  }
   .header-status {
     font-family: 'DM Mono', monospace;
     font-size: 0.7rem;
@@ -580,7 +611,12 @@
        destinos que la antigua .dashboard-quicklinks del Dashboard, ahora
        visibles desde CUALQUIER vista. Admin conserva su id `adminBtn` y su
        display:none inicial — main.js sigue mostrándolo/ocultándolo con el
-       mismo criterio RBAC de siempre (ver mostrarDashboard). -->
+       mismo criterio RBAC de siempre (ver mostrarDashboard).
+       Fase 16.3: headerNavToggle — solo visible bajo 720px (ver CSS),
+       controla la clase .open de headerNav. aria-expanded/aria-controls
+       para que el estado colapsado/abierto sea perceptible más allá de lo
+       visual. -->
+  <button class="btn header-nav-toggle" id="headerNavToggle" type="button" aria-expanded="false" aria-controls="headerNav">☰ Menú</button>
   <nav class="header-nav" id="headerNav">
     <button class="btn" data-vista="view-gemelo">🗺 Mapa</button>
     <button class="btn" data-vista="view-tareas">📋 Tareas</button>

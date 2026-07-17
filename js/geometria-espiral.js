@@ -213,14 +213,21 @@ export function posicionPlantaEnCentro(angle, r) {
 //
 // Estrategia: candidatos organizados en niveles radiales (arco) o anillos
 // concéntricos (circular), evaluados del nivel más interior hacia afuera y,
-// dentro de cada nivel, centro-hacia-afuera (Fase 16 — ver
-// ordenCentroHaciaAfuera): el slot angular central del nivel primero, luego
-// alternando hacia ambos lados, en vez de recorrer de un extremo al otro.
-// Cuando el nivel tiene espacio de sobra esto agrupa las fichas nuevas
-// alrededor del centro del arco/anillo disponible en vez de pegarlas a un
-// borde. La separación angular dentro de un nivel se calcula para que la
-// distancia en línea recta (cuerda) entre centros a ese radio sea exactamente diametroFicha
-// (2 * RADIO_FICHA_UNIDADES) — el nivel nunca se traslapa consigo mismo.
+// dentro de cada nivel, centro-hacia-afuera (Fase 16, precisado en Fase
+// 16.4 — ver candidatosCentrados): el candidato central EXACTO del rango
+// angular disponible primero, luego offsets simétricos crecientes hacia
+// ambos lados (±paso, ±2·paso, …), en vez de recorrer de un extremo al
+// otro. Con 1 ficha en un nivel vacío, cae en el centro geométrico exacto
+// — no una aproximación —; con 2, quedan simétricas respecto a ese centro.
+// (Fase 16 tenía una versión previa, ordenCentroHaciaAfuera, que reordenaba
+// un grid fijo con ambos extremos incluidos — solo centrado de verdad
+// cuando el número de slots del nivel era impar; con slots pares el
+// "centro" quedaba corrido medio paso del centro real, confirmado con
+// t=0.4 en vez de 0.5 en esa fase. candidatosCentrados lo reemplaza por
+// completo.) La separación angular dentro de un nivel se calcula para que
+// la distancia en línea recta (cuerda) entre centros a ese radio sea
+// exactamente diametroFicha (2 * RADIO_FICHA_UNIDADES) — el nivel nunca se
+// traslapa consigo mismo.
 // La separación radial entre niveles contiguos es también diametroFicha,
 // así que dos fichas en niveles vecinos alineadas en ángulo quedan justo a
 // un diámetro de distancia (el mínimo aceptable, nunca menos). El primer
@@ -257,23 +264,29 @@ function libreDeTraslape(candidato, posicionesExistentes, diametro) {
     return posicionesExistentes.every((p) => distancia(candidato, p) >= diametro - EPS);
 }
 
-// Orden de llenado centro-hacia-afuera dentro de un nivel, en vez de
-// extremo-a-extremo — mismos slots de siempre (misma separación angular,
-// mismo no-traslape ya probado en Fase 14.6a: cada candidato se sigue
-// validando con libreDeTraslape antes de aceptarse), solo cambia en qué
-// ORDEN se prueban cuando el nivel tiene espacio de sobra: el índice
-// central primero, alternando hacia ambos lados, en vez de 0,1,2,…,n-1 en
-// línea recta. Con numSlots par no hay un índice central único — se toma
-// el de la izquierda (Math.floor) y se alterna derecha/izquierda desde ahí;
-// sigue siendo determinista, solo un criterio de desempate arbitrario.
-function ordenCentroHaciaAfuera(numSlots) {
-    const centro = Math.floor((numSlots - 1) / 2);
-    const orden = [centro];
-    for (let d = 1; orden.length < numSlots; d++) {
-        if (centro + d <= numSlots - 1) orden.push(centro + d);
-        if (orden.length < numSlots && centro - d >= 0) orden.push(centro - d);
+// Fase 16.4: candidatos generados como offsets (grados) SIMÉTRICOS
+// alrededor del centro de un rango de `span` grados: 0, +paso, -paso,
+// +2·paso, -2·paso, … hasta que ninguno de los dos lados quepa ya dentro
+// de [-span/2, span/2]. Por construcción, el primer candidato (offset 0)
+// SIEMPRE es el centro geométrico exacto del rango — a diferencia del
+// grid fijo que usaba esta función antes de esta fase (ver comentario de
+// cabecera del módulo), no depende de la paridad de cuántos candidatos
+// quepan en total. `paso`=null (anguloMinimoEnNivel devuelve null cuando
+// el radio es tan chico que ni separando 180° cabe un segundo candidato)
+// -> un único candidato, el centro.
+function candidatosCentrados(span, paso) {
+    const offsets = [0];
+    if (paso === null) return offsets;
+    for (let d = 1; ; d++) {
+        const mas = d * paso;
+        const menos = -mas;
+        const masCabe = mas <= span / 2 + EPS;
+        const menosCabe = menos >= -span / 2 - EPS;
+        if (!masCabe && !menosCabe) break;
+        if (masCabe) offsets.push(mas);
+        if (menosCabe) offsets.push(menos);
     }
-    return orden;
+    return offsets;
 }
 
 function proximaPosicionArco(anillo, indiceSegmento, posicionesExistentes, diametro) {
@@ -296,10 +309,12 @@ function proximaPosicionArco(anillo, indiceSegmento, posicionesExistentes, diame
 
     for (const r of niveles) {
         const dThetaMin = anguloMinimoEnNivel(r, diametro);
-        const numSlots = (dThetaMin === null || dThetaMin >= span) ? 1 : Math.floor(span / dThetaMin) + 1;
-
-        for (const k of ordenCentroHaciaAfuera(numSlots)) {
-            const t = numSlots === 1 ? 0.5 : k / (numSlots - 1);
+        for (const offset of candidatosCentrados(span, dThetaMin)) {
+            // offset=0 -> t=0.5, el centro exacto del segmento. Clamp
+            // defensivo: la tolerancia EPS de candidatosCentrados podría
+            // dejar pasar un offset que empuje t infinitesimalmente fuera
+            // de [0,1], y posicionPlantaEnArco valida ese rango con throw.
+            const t = Math.min(1, Math.max(0, 0.5 + offset / span));
             const candidato = posicionPlantaEnArco(anillo, indiceSegmento, t, r);
             if (libreDeTraslape(candidato, posicionesExistentes, diametro)) {
                 return { t, r };
@@ -329,9 +344,18 @@ function proximaPosicionCentro(posicionesExistentes, diametro) {
             continue;
         }
         const dThetaMin = anguloMinimoEnNivel(r, diametro);
-        const numSlots = dThetaMin === null ? 1 : Math.max(1, Math.floor(360 / dThetaMin));
-        for (const k of ordenCentroHaciaAfuera(numSlots)) {
-            const angle = k * (360 / numSlots);
+        // Un anillo circular (r>0) es una vuelta CERRADA de 360° — a
+        // diferencia de un segmento de arco, no tiene extremos ni un
+        // "centro" geométrico real: por simetría rotacional, cualquier
+        // punto del anillo es equivalente a cualquier otro. angle=0 se usa
+        // aquí como referencia de arranque ARBITRARIA (ya lo era antes de
+        // esta fase, solo que implícito en el código, no explicado) — es
+        // una decisión de desempate determinista para que la función sea
+        // reproducible, NO una afirmación de que ese punto sea especial.
+        // Documentado a propósito para que quien lea esto no asuma lo
+        // contrario.
+        for (const offset of candidatosCentrados(360, dThetaMin)) {
+            const angle = ((offset % 360) + 360) % 360;
             const candidato = posicionPlantaEnCentro(angle, r);
             if (libreDeTraslape(candidato, posicionesExistentes, diametro)) {
                 return { angle, r };
