@@ -83,6 +83,7 @@ const setupError    = document.getElementById('setupError');
 
 // ── Dashboard (Fase 13) ─────────────────────────────────────────────
 const dashboardUserEmail  = document.getElementById('dashboardUserEmail');
+const dashboardHorasTexto = document.getElementById('dashboardHorasTexto');
 
 // ── Barra de navegación persistente del header (Fase 16) ────────────
 const headerLogo = document.getElementById('headerLogo');
@@ -323,12 +324,36 @@ function mostrarDashboard(user, esAdmin, nombre) {
     iniciarHuerto();
 
     cargarTareasDashboard(user.uid);
+    cargarHorasDashboard(user.uid);
 
     // PASO F: banner de pendientes — fire-and-forget igual que
     // cargarTareasDashboard, con su propio try/catch (definido más abajo
     // en el archivo, disponible aquí por hoisting de function declarations,
     // mismo patrón ya usado con cargarTareasDashboard).
     cargarBannerBitacora();
+}
+
+// Fire-and-forget, con su propio manejo de error — mismo criterio que
+// cargarTareasDashboard/cargarBannerBitacora: no debe tumbar el resto del
+// Dashboard si obtenerUsuario() falla. Lectura propia (no extiende el
+// contrato de 'auth:resuelto' en auth.js): ese evento ya lee este mismo
+// documento para resolver rol/nombre, pero descarta horasTotales, y
+// mostrarDashboard() se llama desde dos sitios (el listener de
+// 'auth:resuelto' y handleCompletarRegistro, que NO redispara el evento) —
+// extender el contrato ahí habría dejado una asimetría entre esos dos
+// call-sites. Una lectura propia aquí, mismo patrón que
+// cargarYRenderizarVistaPerfil (más abajo), evita tocar auth.js.
+async function cargarHorasDashboard(uid) {
+    try {
+        const perfil = await obtenerUsuario(uid);
+        // 0 es un valor real (así nace todo usuario nuevo — usuarios.js) y
+        // se muestra tal cual, no como estado de carga o error.
+        const horas = perfil ? (perfil.horasTotales ?? 0) : 0;
+        dashboardHorasTexto.textContent = `Llevas ${horas} horas acumuladas.`;
+    } catch (e) {
+        console.error('[main] Error cargando horas acumuladas del Dashboard:', e);
+        dashboardHorasTexto.textContent = 'No se pudieron cargar tus horas acumuladas.';
+    }
 }
 
 // Fire-and-forget, con su propio manejo de error — no debe tumbar
