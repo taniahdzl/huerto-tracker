@@ -29,10 +29,10 @@
       radial-gradient(ellipse at 90% 100%, rgba(232,168,56,0.06) 0%, transparent 50%);
   }
 
-  /* ── HEADER ── */
+  /* ── HEADER (Fase 17.2: mockup aprobado) ── */
   header {
-    background: var(--color-primario);
-    color: var(--color-fondo);
+    background: var(--bg-header);
+    color: var(--color-primario);
     padding: 0.6rem var(--space-8);
     display: flex; align-items: center; gap: 0.8rem var(--space-6);
     flex-wrap: wrap;
@@ -40,14 +40,18 @@
     box-shadow: 0 2px 12px var(--color-sombra);
     position: sticky; top: 0; z-index: 100;
   }
+  /* Wordmark: "Huerto ITAM" en itálica, sin emoji (la tipografía es el
+     elemento visual, mockup aprobado) — ya no hay <span> de dos tonos, un
+     solo color (var(--color-primario)) para todo el wordmark. */
   header h1 {
     font-family: var(--font-display);
+    font-style: italic;
     font-size: 1.4rem;
     letter-spacing: 0.03em;
+    color: var(--color-primario);
     flex: 1;
     cursor: pointer;
   }
-  header h1 span { color: var(--color-acento); }
   /* Fase 16: barra de navegación persistente — mismos destinos que la
      antigua .dashboard-quicklinks (retirada), visible en TODAS las vistas,
      no solo Dashboard. flex-basis:100% la manda a su propia fila dentro
@@ -56,6 +60,22 @@
   .header-nav {
     display: flex; flex-wrap: wrap; gap: 0.4rem;
     flex-basis: 100%;
+  }
+  /* Fase 17.2: pastilla inactiva = blanco sobre el fondo pastel del header
+     (--bg-header, pastel claro, no aguanta el mismo tratamiento que tenía
+     con --color-primario sólido de fondo — Fase 17.1 lo dejó como parche
+     temporal). Pastilla activa = sin cambios, ya estaba correcta. .btn-danger
+     (adminBtn) necesita su propia regla DESPUÉS de esta para que su borde/
+     texto rojo no se pierda bajo el blanco genérico — misma especificidad
+     (dos clases), gana por orden de aparición. .btn.active tiene MÁS
+     especificidad que .btn-danger (tres clases vs dos) así que sigue
+     ganando sobre rojo cuando adminBtn está activo, mismo comportamiento
+     que ya existía antes de este cambio, sin tocarlo a propósito. */
+  .header-nav .btn {
+    background: white; border-color: white; color: var(--color-primario);
+  }
+  .header-nav .btn-danger {
+    background: white; border-color: var(--color-error); color: var(--color-error);
   }
   .header-nav .btn.active {
     background: var(--color-primario); border-color: var(--color-primario); color: white;
@@ -68,8 +88,15 @@
      headerNavToggle oculto por default (desktop no lo necesita, el flex-
      wrap de arriba ya es cómodo ahí — no se probó explícitamente arriba de
      720px, pero con una sola fila de 6 botones no hay indicio de que
-     hiciera falta el mismo tratamiento). */
-  .header-nav-toggle { display: none; }
+     hiciera falta el mismo tratamiento). Fase 17.2: mismo tratamiento
+     blanco-sobre-pastel que el resto de las pastillas del header — antes
+     heredaba el .btn genérico (crema sobre --color-primario sólido, alto
+     contraste); con --bg-header pastel de fondo necesitaba su propio ajuste
+     para no perder legibilidad. */
+  .header-nav-toggle {
+    display: none;
+    background: white; border-color: white; color: var(--color-primario);
+  }
   @media (max-width: 719px) {
     .header-nav-toggle {
       display: flex; align-items: center; justify-content: center;
@@ -80,7 +107,7 @@
       flex-direction: column;
       flex-basis: auto;
       position: absolute; top: 100%; left: 0; right: 0;
-      background: var(--color-primario);
+      background: var(--bg-header);
       padding: 0.6rem var(--space-4) var(--space-4);
       box-shadow: 0 8px 20px rgba(0,0,0,0.25);
       z-index: 99;
@@ -497,11 +524,16 @@
   #view-splash .splash-logo { font-size: 3rem; }
   #view-splash p { font-family: var(--font-mono); font-size: 0.8rem; opacity: 0.8; }
 
-  #view-dashboard .dashboard-welcome h2 {
+  /* Fase 17.2: <p> en vez de <h2> a propósito — el saludo necesita un
+     color explícito (var(--color-primario)) sin ambigüedad de herencia/
+     especificidad con estilos de encabezado del navegador o de otro
+     selector que pudiera targetear h2 en el futuro. */
+  #view-dashboard .dashboard-welcome .dashboard-saludo {
     font-family: var(--font-display); font-size: 1.4rem; margin-bottom: 0.3rem;
+    color: var(--color-primario);
   }
   #view-dashboard .dashboard-sub {
-    font-size: 0.8rem; color: #888; max-width: 480px; margin-bottom: var(--space-6);
+    font-size: 0.8rem; color: var(--color-texto); opacity: 0.6; max-width: 480px; margin-bottom: var(--space-6);
   }
   /* .dashboard-card: sin delimitar a #view-dashboard a propósito — la
      reutiliza view-perfil (Fase 13.7). */
@@ -511,7 +543,7 @@
   }
   .dashboard-card h3 {
     font-family: var(--font-mono); font-size: 0.7rem; text-transform: uppercase;
-    letter-spacing: 0.05em; color: #888; margin-bottom: 0.4rem;
+    letter-spacing: 0.05em; color: var(--color-texto); opacity: 0.6; margin-bottom: 0.4rem;
   }
   .dashboard-card p { font-size: 0.9rem; }
 
@@ -530,7 +562,27 @@
   .bitacora-detalle { font-size: 0.78rem; color: var(--color-texto, #221D17); margin-top: 0.4rem; }
   .bitacora-detalle p { margin: 0.2rem 0; }
 
+  /* Fase 17.2: encabezado de la tarjeta "Estado de las camas" con "Ver
+     todas →" a la derecha — cosmético, la tarjeta completa YA navega a
+     Gemelo al hacer clic (dashboardResumenCamasCard, ver main.js), así que
+     este texto no necesita su propio listener. */
+  /* margin-bottom acá, no en .dashboard-card h3: dentro de una fila flex el
+     margin del h3 solo separa de sus hermanos EN la fila (el "Ver todas"),
+     no empuja lo que viene después de la fila completa. */
+  .dashboard-card-header-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.4rem; }
+  .dashboard-card-header-row h3 { margin-bottom: 0; }
+  .dashboard-ver-todas { font-family: var(--font-mono); font-size: 0.7rem; color: var(--color-primario); }
+
   .dashboard-resumen-camas { display: flex; flex-direction: column; gap: 0.7rem; }
+  /* Fase 17.2: cada grupo con su propio fondo pastel — mismo orden fijo
+     que GRUPOS_RESUMEN_CAMAS ya usa en main.js (cosecha/proceso/semilla),
+     así que nth-child alcanza sin tocar la lógica de agrupación ni el JS
+     en absoluto. Los círculos .mini-ficha NO cambian — mismo componente,
+     solo el contenedor que los agrupa gana fondo + padding. */
+  .dashboard-resumen-grupo { border-radius: 8px; padding: var(--space-2) var(--space-3); }
+  .dashboard-resumen-grupo:nth-child(1) { background: var(--bg-cosecha); }
+  .dashboard-resumen-grupo:nth-child(2) { background: var(--bg-proceso); }
+  .dashboard-resumen-grupo:nth-child(3) { background: var(--bg-semilla); }
   .dashboard-resumen-grupo-titulo {
     display: block; font-size: 0.75rem; color: #888; margin-bottom: 0.3rem;
   }
@@ -602,7 +654,7 @@
 </div>
 
 <header>
-  <h1 id="headerLogo">🌿 Huerto <span>Universitario</span></h1>
+  <h1 id="headerLogo">Huerto ITAM</h1>
   <div class="header-status">
     <div class="status-dot" id="statusDot"></div>
     <span id="statusText">Conectando…</span>
@@ -621,7 +673,7 @@
        visual. -->
   <button class="btn header-nav-toggle" id="headerNavToggle" type="button" aria-expanded="false" aria-controls="headerNav">☰ Menú</button>
   <nav class="header-nav" id="headerNav">
-    <button class="btn" data-vista="view-gemelo">🗺 Mapa</button>
+    <button class="btn" data-vista="view-gemelo">🌱 Camas</button>
     <button class="btn" data-vista="view-tareas">📋 Tareas</button>
     <button class="btn" data-vista="view-catalogos">📦 Catálogos</button>
     <button class="btn" data-vista="view-perfil">👤 Perfil</button>
@@ -656,7 +708,7 @@
        pero se descarta antes de llegar a mostrarDashboard()). -->
   <section class="view hidden" id="view-dashboard">
     <div class="dashboard-welcome">
-      <h2>Bienvenido<span id="dashboardUserEmail"></span></h2>
+      <p class="dashboard-saludo">Bienvenido<span id="dashboardUserEmail"></span></p>
       <p class="dashboard-sub" id="dashboardHorasTexto"></p>
     </div>
 
@@ -673,7 +725,10 @@
          Círculos individuales NO son clicables — clic en la tarjeta
          completa navega a Gemelo, el detalle por planta vive solo ahí. -->
     <div class="dashboard-card dashboard-card-clickable" id="dashboardResumenCamasCard">
-      <h3>Estado de las camas</h3>
+      <div class="dashboard-card-header-row">
+        <h3>Estado de las camas</h3>
+        <span class="dashboard-ver-todas">Ver todas →</span>
+      </div>
       <div id="dashboardResumenCamas" class="dashboard-resumen-camas"></div>
     </div>
 
