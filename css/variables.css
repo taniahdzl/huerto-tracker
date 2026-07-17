@@ -1,4 +1,5 @@
 :root {
+  /* ── Paleta principal (confirmada, sin cambios) ── */
   --color-primario: #2F5038;      /* verde profundo — marca, botones principales */
   --color-primario-claro: #4F8A63;
   --color-secundario: #B5643D;    /* terracota oscuro — ladrillo, anillo exterior */
@@ -8,4 +9,63 @@
   --color-texto: #221D17;
   --color-exitoso: #3F7A46;
   --color-error: #B23A2C;
+  /* --color-sombra: no estaba en las 9 originales, pero --shadow (viejo,
+     rgba(61,43,31,0.15) — un rgba con alpha, no un color plano) necesitaba
+     un destino para completar la migración de la Fase 17.1. Mismo tono
+     oscuro que --color-texto (#221D17) con alpha reducido, mismo criterio
+     que el resto de la paleta nueva — no una decisión de diseño nueva. */
+  --color-sombra: rgba(34, 29, 23, 0.15);
+
+  /* ── Fase 17.1: cierre del mapeo confirmado ── */
+  --color-borde: #EDE8DB;         /* tono claro, reemplaza --border (#c8b99a, mucho más oscuro/café) */
+  --bg-header: #D9E8CC;           /* verde salvia/oliva pastel — fondo del header */
+  /* --bg-proceso: mismo tono base verde pastel que --bg-header, pero con
+     el matiz corrido hacia menta/azulado en vez de salvia/oliva (más
+     amarillo) — a propósito, no una simple variación de luminosidad, que
+     podría leerse igual bajo compresión de imagen o para alguien con baja
+     sensibilidad al contraste. Header y el badge "en proceso" de Estado
+     de las Camas pueden aparecer visibles a la vez (header siempre fijo
+     arriba) — el cambio de matiz, no solo de brillo, es lo que evita que
+     se confundan. */
+  --bg-proceso: #CEE6DA;          /* verde menta pastel — "en proceso" en Estado de las Camas */
+  --bg-cosecha: #F6DDD6;          /* rosa pastel — "para cosechar" */
+  --bg-semilla: #EDE6D4;          /* arena pastel — "semilla" */
+
+  /* ── Fase 17.1b: cierre de las pendientes de 17.1 ──
+     --transplant y --germinate se retiraron por completo (ver más abajo
+     los selectores muertos que usaban --transplant, también retirados).
+     --parchment-dark se migró a --color-borde (hex casi idéntico,
+     #EDE8DB vs #ede5d0 — preserva el efecto visual de "levemente más
+     oscuro que el fondo" que cumplía, ver .admin-table/.gemelo-panel).
+     --water/--compost/--plaga se conservan tal cual, sin cambio de valor:
+     --water/--compost solo tienen consumidor en CSS ya muerto (.ad-water/
+     .ad-compost, sin HTML ni JS que les asigne esas clases, confirmado
+     por grep) — --compost es además un caso dudoso a propósito: el café
+     podría ser semánticamente correcto ahí (composta = tierra/orgánico),
+     no un vestigio accidental. --plaga no tiene NINGÚN uso (ni siquiera en
+     el bloque muerto) pero se conserva de todos modos, a pedido explícito,
+     no por descuido. */
+  --plaga: #8e44ad;
+  --water: #4a9eba;
+  --compost: #8b6914;
+
+  /* ── Tipografía ── */
+  --font-display: 'Fraunces', serif;
+  --font-body: 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* ── Espaciado — múltiplos de 4px, anclados a los valores reales que ya
+     se usaban en el proyecto (0.25/0.5/1/1.5/2rem = 4/8/16/24/32px,
+     confirmado en la auditoría de Fase 16.1) en vez de una escala nueva
+     desconectada de lo existente. --space-3/5/7 (12/20/28px) rellenan los
+     huecos de la progresión de 4px sin que se usaran literalmente antes,
+     para tener una escala completa y no solo 5 valores sueltos. ── */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 28px;
+  --space-8: 32px;
 }
