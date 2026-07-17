@@ -33,6 +33,7 @@ import {
     obtenerInventario, crearInventario, actualizarInventario, eliminarInventario,
     obtenerRegistroActividad,
     marcarParaSemilla, agregarPlantaACama, crearHistorialCultivo,
+    actualizarDetalleCama,
     obtenerBitacoraSesiones, crearBitacoraSesion, obtenerSesionConDetalle
 } from './db.js';
 import {
@@ -68,10 +69,12 @@ const cierreNotaInput               = document.getElementById('cierreNotaInput')
 const detallePlantaCierreCancelarBtn  = document.getElementById('detallePlantaCierreCancelarBtn');
 const detallePlantaCierreConfirmarBtn = document.getElementById('detallePlantaCierreConfirmarBtn');
 
-// ── Detalle de CAMA completa (Fase 14.5) — solo lectura ─────────────
+// ── Detalle de CAMA completa (Fase 14.5, editable desde Fase 16.5) ──
 const detalleCamaModalClose = document.getElementById('detalleCamaModalClose');
 const detalleCamaTitulo     = document.getElementById('detalleCamaTitulo');
-const detalleCamaNotas      = document.getElementById('detalleCamaNotas');
+const detalleCamaNotasInput  = document.getElementById('detalleCamaNotasInput');
+const detalleCamaPlagasInput = document.getElementById('detalleCamaPlagasInput');
+const detalleCamaGuardarBtn  = document.getElementById('detalleCamaGuardarBtn');
 
 const loginOverlay = document.getElementById('login-overlay');
 const googleLoginBtn    = document.getElementById('googleLoginBtn');
@@ -1449,18 +1452,57 @@ headerNav.addEventListener('click', (e) => {
 });
 
 // ── Detalle de CAMA completa en espiral (Fase 14.5) ─────────────────
-// Solo lectura — reemplaza el toast "pendiente de construir" que tenía
-// onClickCama desde PASO C. NO agrega edición (eso encaja en el futuro
-// formulario de creación/edición de camas arco/circular, que hoy no
-// existe). Sin estado propio (a diferencia de detalleActual/PASO D): no
-// hay botones de acción aquí que necesiten recordar sobre qué cama actuar.
+// Reemplaza el toast "pendiente de construir" que tenía onClickCama desde
+// PASO C. NO es el formulario completo de creación/edición de camas
+// arco/circular (tipo/anillo/indiceSegmento siguen sin editor) — Fase 16.5
+// solo agrega notas/plagas, mismo criterio ya confirmado.
+//
+// detalleCamaActual (Fase 16.5): a diferencia del diagnóstico original de
+// 14.5 ("sin estado propio, no hay botones de acción que necesiten
+// recordar sobre qué cama actuar"), ahora SÍ hace falta — el botón Guardar
+// necesita saber sobre qué documento escribir. Solo se usa `.id`; no hace
+// falta guardar una copia separada de notas/plagas porque los <textarea>
+// ya son la fuente de verdad mientras el modal está abierto.
+let detalleCamaActual = null;
+
 function abrirDetalleCama(cama) {
+    detalleCamaActual = cama;
     detalleCamaTitulo.textContent = cama.nombre || cama.id;
-    detalleCamaNotas.textContent = cama.notas || 'Sin notas';
+    detalleCamaNotasInput.value = cama.notas || '';
+    detalleCamaPlagasInput.value = cama.plagas || '';
     openModal('detalleCamaModal');
 }
 
 detalleCamaModalClose.addEventListener('click', () => closeModal('detalleCamaModal'));
+
+async function handleGuardarDetalleCama() {
+    if (!detalleCamaActual) return;
+
+    const notas = detalleCamaNotasInput.value.trim();
+    const plagas = detalleCamaPlagasInput.value.trim();
+
+    detalleCamaGuardarBtn.disabled = true;
+    try {
+        // Payload SOLO { notas, plagas } — mismo criterio de merge parcial
+        // ya establecido con actualizarInventario, para no pisar tipo/
+        // anillo/indiceSegmento/plantas por accidente.
+        await actualizarDetalleCama(detalleCamaActual.id, { notas, plagas });
+        // Mismo orden anti-parpadeo ya establecido (agregarPlantaACama,
+        // cierre de cultivo): await iniciarHuerto() ANTES del toast, para
+        // que camasActuales/el render en espiral ya reflejen el cambio
+        // cuando el usuario vea la confirmación — incluye el `cama.plagas`
+        // de solo lectura que ya se mostraba en detallePlantaModal.
+        await iniciarHuerto();
+        mostrarToast('Cama actualizada', 'green');
+    } catch (e) {
+        console.error('[main] Error actualizando la cama:', e);
+        mostrarToast(e.message || 'No se pudo actualizar la cama', 'red');
+    } finally {
+        detalleCamaGuardarBtn.disabled = false;
+    }
+}
+
+detalleCamaGuardarBtn.addEventListener('click', handleGuardarDetalleCama);
 
 // ── Detalle de planta en espiral (PASO D) ───────────────────────────
 // { cama, plantaEntry } de la tarjeta actualmente abierta, o null — los

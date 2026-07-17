@@ -374,3 +374,29 @@ export async function agregarPlantaACama(camaId, plantaId) {
     _logActividad('AGREGAR_PLANTA', camaId, plantaId);
     return nuevaPlanta;
 }
+
+// Fase 16.5: notas/plagas de una cama arco/circular, editables desde
+// detalleCamaModal por cualquier usuario autenticado — misma regla de
+// Firestore que agregarPlantaACama (create/update sin restricción de rol
+// en camas_cosecha, ver diagnóstico de la fase). A diferencia de
+// agregarPlantaACama, esta función NO lee el documento primero: no depende
+// de ningún valor calculado a partir del estado actual en Firestore (no
+// hay posición que no-traslapar, no hay array que fusionar a mano) — es un
+// merge parcial directo, mismo molde que actualizarInventario/
+// actualizarQuimico. El llamador es responsable de mandar SOLO
+// { notas, plagas } — updateDoc nunca toca `plantas`/`tipo`/`nombre`/etc.
+// aunque existan en el documento, mismo criterio ya documentado en
+// actualizarInventario sobre no mandar de más.
+//
+// Nombre: actualizarDetalleCama, no actualizarCamaDetalle ni
+// actualizarNotasPlagasCama. Sigue el orden ya establecido por
+// abrirDetalleCama/detalleCamaModal (Fase 14.5) en vez de invertirlo, y
+// nombra el ALCANCE ("lo que sea que detalleCamaModal edite") en vez de
+// los campos de hoy — si ese modal gana un tercer campo editable más
+// adelante, esta función no necesita renombrarse. Mismo criterio que
+// radiosAnillo en geometria-espiral.js: el nombre describe el concepto
+// estable, no el parámetro de turno.
+export async function actualizarDetalleCama(camaId, datos) {
+    await updateDoc(doc(db, PATHS.camas, camaId), datos);
+    _logActividad('ACTUALIZAR_DETALLE_CAMA', camaId, null);
+}

@@ -1009,9 +1009,16 @@
   </div>
 </div>
 
-<!-- Fase 14.5: detalle de CAMA completa (arco/circular) — solo lectura,
-     reemplaza al toast "pendiente" que tenía onClickCama. No confundir con
-     detallePlantaModal (arriba), que es detalle de una PLANTA. -->
+<!-- Fase 14.5: detalle de CAMA completa (arco/circular) — reemplaza al
+     toast "pendiente" que tenía onClickCama. No confundir con
+     detallePlantaModal (arriba), que es detalle de una PLANTA.
+     Fase 16.5: notas/plagas pasan de solo-lectura a editables — mismo
+     patrón de form-group + botón suelto dentro de modal-body que
+     semillaModal/quimicoModal/herramientaModal usan (NO modal-footer: ese
+     patrón es exclusivo de configModal en este proyecto, no el más común).
+     No es un formulario completo de cama (tipo/anillo/indiceSegmento no
+     son editables aquí) — solo estos dos campos, mismo criterio ya
+     confirmado. -->
 <div class="modal-overlay" id="detalleCamaModal">
   <div class="modal">
     <div class="modal-header">
@@ -1019,7 +1026,15 @@
       <button class="modal-close" id="detalleCamaModalClose">×</button>
     </div>
     <div class="modal-body">
-      <p id="detalleCamaNotas"></p>
+      <div class="form-group">
+        <label for="detalleCamaNotasInput">Notas</label>
+        <textarea id="detalleCamaNotasInput" rows="3" placeholder="Sin notas"></textarea>
+      </div>
+      <div class="form-group">
+        <label for="detalleCamaPlagasInput">Plagas</label>
+        <textarea id="detalleCamaPlagasInput" rows="2" placeholder="Sin plagas registradas"></textarea>
+      </div>
+      <button class="btn btn-primary" id="detalleCamaGuardarBtn">Guardar</button>
     </div>
   </div>
 </div>
