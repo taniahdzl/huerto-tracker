@@ -284,6 +284,11 @@
     background: var(--color-fondo); color: var(--color-texto);
   }
   .form-group input:focus, .form-group select:focus { outline: none; border-color: var(--color-primario); }
+  /* Perfil: nombre bloqueado por defecto (readonly), clic en "Editar" lo
+     habilita — mismo criterio visual que un input deshabilitado en el
+     resto del proyecto, para que se lea como "no tocable" de un vistazo. */
+  .form-group input[readonly] { background: var(--color-borde); cursor: default; }
+  .perfil-nombre-acciones { display: flex; gap: var(--space-2); margin-top: var(--space-2); }
   .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
   /* .slider-group/.slider-val (sliders N/P/K de bedModal) y toda la
      sección AI CHAT (.ai-section/.ai-toggle/.ai-body/.ai-messages/.ai-msg/
@@ -524,6 +529,20 @@
   #view-splash .splash-logo { font-size: 3rem; }
   #view-splash p { font-family: var(--font-mono); font-size: 0.8rem; opacity: 0.8; }
 
+  /* Fase 17.2: .view (Fase 17.1) centra el CONTENEDOR en viewports anchos,
+     pero el contenido de adentro (bienvenida + tarjetas, cada una con su
+     propio max-width) seguía pegado a la izquierda dentro de esa caja —
+     column + align-items:center centra cada bloque como unidad (el texto
+     adentro de cada uno sigue alineado a la izquierda, solo el bloque se
+     mueve). Escopado a #view-dashboard a propósito, no a .view en general:
+     Tareas/Catálogos/etc. usan listas/toolbars que normalmente sí quieren
+     el ancho completo disponible — mismo criterio de "no tocar el
+     contenido de otras vistas en esta fase" ya establecido. */
+  #view-dashboard {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
   /* Fase 17.2: <p> en vez de <h2> a propósito — el saludo necesita un
      color explícito (var(--color-primario)) sin ambigüedad de herencia/
      especificidad con estilos de encabezado del navegador o de otro
@@ -539,7 +558,7 @@
      reutiliza view-perfil (Fase 13.7). */
   .dashboard-card {
     background: var(--color-fondo); border: 1px solid var(--color-borde); border-radius: 10px;
-    padding: var(--space-4) 1.2rem; max-width: 360px; margin-bottom: var(--space-6);
+    padding: var(--space-4) 1.2rem; width: 100%; max-width: 360px; margin-bottom: var(--space-6);
   }
   .dashboard-card h3 {
     font-family: var(--font-mono); font-size: 0.7rem; text-transform: uppercase;
@@ -823,8 +842,11 @@
   <section class="view hidden" id="view-perfil">
     <div class="form-group" style="max-width:320px">
       <label for="perfilNombreInput">Nombre</label>
-      <input type="text" id="perfilNombreInput">
-      <button class="btn btn-primary" id="perfilGuardarNombreBtn" style="margin-top:var(--space-2)">Guardar Nombre</button>
+      <input type="text" id="perfilNombreInput" readonly>
+      <div class="perfil-nombre-acciones">
+        <button class="btn" id="perfilEditarNombreBtn" type="button">✎ Editar</button>
+        <button class="btn btn-primary" id="perfilGuardarNombreBtn" type="button" style="display:none">Guardar</button>
+      </div>
     </div>
     <div class="dashboard-card">
       <h3>Correo</h3>
