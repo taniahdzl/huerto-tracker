@@ -2,6 +2,18 @@
   /* ── Paleta principal (confirmada, sin cambios) ── */
   --color-primario: #2F5038;      /* verde profundo — marca, botones principales */
   --color-primario-claro: #4F8A63;
+  /* --color-primario-hover: el #3d6b4a que .btn-primary:hover ya usaba
+     antes de esta fase — medido, resultó ser MÁS CLARO que --color-primario
+     (queda entre primario y -claro en luminosidad), no más oscuro como
+     asumía el nombre "verde oscuro hover" de la auditoría anterior. Se
+     tokeniza tal cual, sin cambiar el efecto visual ya validado.
+     (Fase 17.3 también definió --color-primario-oscuro, un verde más
+     oscuro derivado con la misma proporción HLS que -claro, pensado
+     precisamente para NO usarse aquí — pero terminó sin ningún otro
+     consumidor real en el proyecto. Se retiró: no existe ningún :active
+     ni otro caso que lo necesite hoy, e inventar uno solo para justificar
+     el token habría sido agregar comportamiento no pedido.) */
+  --color-primario-hover: #3d6b4a;
   --color-secundario: #B5643D;    /* terracota oscuro — ladrillo, anillo exterior */
   --color-secundario-claro: #D9A788; /* terracota claro — anillo interior */
   --color-acento: #E8A838;        /* dorado — cosecha/alertas positivas */
@@ -15,6 +27,19 @@
      oscuro que --color-texto (#221D17) con alpha reducido, mismo criterio
      que el resto de la paleta nueva — no una decisión de diseño nueva. */
   --color-sombra: rgba(34, 29, 23, 0.15);
+  /* Fase 17.3: otras 5 sombras en el proyecto (.header-nav dropdown,
+     .modal-overlay, .modal, .login-box, .gemelo-drag-ghost) usaban negro
+     puro rgba(0,0,0,X) — nunca tokenizadas porque se agregaron en fases
+     previas a que --color-sombra existiera (Fase 14.6b drag&drop, Fase
+     16.3 hamburguesa, y las de modal que son de antes de toda esta
+     migración). NO se reemplazaron por var(--color-sombra) directamente:
+     esa variable ya trae su propia alpha fija (0.15), y las 5 necesitaban
+     alphas más fuertes (0.25/0.3/0.5) para su propósito (backdrop de
+     modal, sombra de tarjeta flotante) — usar la variable tal cual las
+     habría hecho todas visiblemente más tenues que antes. En su lugar se
+     escribió literal rgba(34,29,23, ALPHA-ORIGINAL) en cada una — mismo
+     tono cálido que este token, alpha de cada caso preservada tal cual
+     estaba. */
 
   /* ── Fase 17.1: cierre del mapeo confirmado ── */
   --color-borde: #EDE8DB;         /* tono claro, reemplaza --border (#c8b99a, mucho más oscuro/café) */
