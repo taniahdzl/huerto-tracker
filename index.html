@@ -109,7 +109,7 @@
       position: absolute; top: 100%; left: 0; right: 0;
       background: var(--bg-header);
       padding: 0.6rem var(--space-4) var(--space-4);
-      box-shadow: 0 8px 20px rgba(0,0,0,0.25);
+      box-shadow: 0 8px 20px rgba(34,29,23,0.25);
       z-index: 99;
     }
     .header-nav.open { display: flex; }
@@ -124,9 +124,9 @@
     opacity: 0.7;
     display: flex; align-items: center; gap: var(--space-2);
   }
-  .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #888; transition: background 0.4s; }
-  .status-dot.online { background: var(--color-primario-claro); box-shadow: 0 0 6px var(--color-primario-claro); }
-  .status-dot.error { background: var(--color-error); }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-texto); opacity: 0.6; transition: background 0.4s; }
+  .status-dot.online { background: var(--color-primario-claro); box-shadow: 0 0 6px var(--color-primario-claro); opacity: 1; }
+  .status-dot.error { background: var(--color-error); opacity: 1; }
 
   /* .app/.panel-left/.panel-header (layout de #appRoot) retirados en Fase
      15 junto con el HTML que estilaban — ver diagnóstico. .search-box
@@ -202,7 +202,7 @@
   }
   .btn:hover { background: white; border-color: var(--color-primario); color: var(--color-primario); }
   .btn-primary { background: var(--color-primario); border-color: var(--color-primario); color: white; }
-  .btn-primary:hover { background: #3d6b4a; border-color: #3d6b4a; color: white; }
+  .btn-primary:hover { background: var(--color-primario-hover); border-color: var(--color-primario-hover); color: white; }
   .btn-danger { border-color: var(--color-error); color: var(--color-error); }
   .btn-danger:hover { background: var(--color-error); color: white; }
   /* .btn-ai/.garden-scroll/.garden-grid (layout+botón IA de #appRoot)
@@ -276,7 +276,7 @@
   .alert-item.info { background: #e8f5e9; border-left: 3px solid var(--color-primario); }
 
   .form-group { margin-bottom: 0.8rem; }
-  .form-group label { font-size: 0.68rem; font-family: var(--font-mono); color: #666; display: block; margin-bottom: 0.3rem; }
+  .form-group label { font-size: 0.68rem; font-family: var(--font-mono); color: var(--color-texto); opacity: 0.6; display: block; margin-bottom: 0.3rem; }
   .form-group input, .form-group select, .form-group textarea {
     width: 100%; padding: 0.4rem 0.6rem;
     border: 1px solid var(--color-borde); border-radius: 6px;
@@ -284,6 +284,11 @@
     background: var(--color-fondo); color: var(--color-texto);
   }
   .form-group input:focus, .form-group select:focus { outline: none; border-color: var(--color-primario); }
+  /* Perfil: nombre bloqueado por defecto (readonly), clic en "Editar" lo
+     habilita — mismo criterio visual que un input deshabilitado en el
+     resto del proyecto, para que se lea como "no tocable" de un vistazo. */
+  .form-group input[readonly] { background: var(--color-borde); cursor: default; }
+  .perfil-nombre-acciones { display: flex; gap: var(--space-2); margin-top: var(--space-2); }
   .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
   /* .slider-group/.slider-val (sliders N/P/K de bedModal) y toda la
      sección AI CHAT (.ai-section/.ai-toggle/.ai-body/.ai-messages/.ai-msg/
@@ -292,7 +297,7 @@
 
   /* ── MODAL ── */
   .modal-overlay {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+    position: fixed; inset: 0; background: rgba(34,29,23,0.5);
     display: none; align-items: center; justify-content: center; z-index: 1000;
     backdrop-filter: blur(3px);
   }
@@ -300,7 +305,7 @@
   .modal {
     background: var(--color-fondo); border-radius: 12px;
     width: min(480px, 95vw); max-height: 85vh; overflow-y: auto;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    box-shadow: 0 20px 60px rgba(34,29,23,0.3);
     animation: modal-in 0.2s ease;
   }
   @keyframes modal-in {
@@ -333,7 +338,7 @@
     border-radius: 12px;
     padding: var(--space-8);
     width: min(360px, 90vw);
-    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    box-shadow: 0 20px 60px rgba(34,29,23,0.3);
   }
   .login-box h1 {
     font-family: var(--font-display);
@@ -375,9 +380,14 @@
   }
   .chore-item-info { flex: 1; display: flex; flex-direction: column; gap: 0.1rem; }
   .chore-item-titulo { font-size: 0.85rem; }
-  .chore-item-asignados { font-size: 0.7rem; color: #888; font-family: var(--font-mono); }
+  .chore-item-asignados { font-size: 0.7rem; color: var(--color-texto); opacity: 0.6; font-family: var(--font-mono); }
   .chore-item.completada { opacity: 0.6; }
-  .chore-item.completada .chore-item-titulo { text-decoration: line-through; color: #888; }
+  /* Excepción al patrón muted estándar: este selector vive DENTRO de
+     .chore-item.completada, que ya aplica opacity:0.6 al padre — sumar
+     otro opacity:0.6 acá compondría multiplicativamente (0.6×0.6=0.36),
+     dejando el texto casi ilegible. Solo se tokeniza el color; el
+     atenuado ya lo da el padre. */
+  .chore-item.completada .chore-item-titulo { text-decoration: line-through; color: var(--color-texto); }
   #view-tareas .view-tareas-toolbar {
     display: flex; align-items: center; justify-content: space-between;
     flex-wrap: wrap; gap: 0.6rem; margin-bottom: var(--space-4);
@@ -402,7 +412,7 @@
   }
   .catalogo-item-info { flex: 1; display: flex; flex-direction: column; gap: 0.1rem; }
   .catalogo-item-nombre { font-size: 0.85rem; }
-  .catalogo-item-meta { font-size: 0.7rem; color: #888; font-family: var(--font-mono); }
+  .catalogo-item-meta { font-size: 0.7rem; color: var(--color-texto); opacity: 0.6; font-family: var(--font-mono); }
   .catalogo-eliminar-btn { border-color: var(--color-error); color: var(--color-error); }
   .catalogo-eliminar-btn:hover { background: var(--color-error); color: white; }
 
@@ -410,7 +420,7 @@
   .admin-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: var(--space-2); }
   .admin-table th {
     text-align: left; font-family: var(--font-mono); font-size: 0.65rem;
-    text-transform: uppercase; letter-spacing: 0.05em; color: #888;
+    text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-texto); opacity: 0.6;
     padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--color-borde);
   }
   .admin-table td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--color-borde); }
@@ -427,7 +437,13 @@
     max-width: 280px;
   }
   #toast.show { transform: translateY(0); opacity: 1; }
-  #toast.green { background: var(--color-primario); }
+  /* Fase 17.3: antes de la migración de 17.1 era var(--leaf) (#4a7c59),
+     distinto de var(--soil) (#3d2b1f) del toast base — un sed masivo por
+     nombre de variable vieja colapsó ambas a --color-primario sin revisar
+     este caso puntual. --color-exitoso ya existía desde las 9 originales
+     con exactamente este rol (éxito, distinto del verde de marca) — se
+     usa aquí en vez de reintroducir --leaf. */
+  #toast.green { background: var(--color-exitoso); }
   #toast.red { background: var(--color-error); }
 
   /* .legend/.legend-item/.legend-dot (leyenda de colores del garden-
@@ -436,7 +452,7 @@
   /* ── CONFIG MODAL ── */
   .config-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2) var(--space-4); margin-bottom: var(--space-4); }
   .config-item { display: flex; flex-direction: column; gap: 0.2rem; }
-  .config-item label { font-size: 0.65rem; font-family: var(--font-mono); color: #666; }
+  .config-item label { font-size: 0.65rem; font-family: var(--font-mono); color: var(--color-texto); opacity: 0.6; }
   .config-item input { padding: 0.35rem var(--space-2); border: 1px solid var(--color-borde); border-radius: 5px; font-size: 0.78rem; }
 
   /* scrollbar */
@@ -505,7 +521,7 @@
     transform: translate(-50%, -50%);
     padding: var(--space-2) 0.8rem; border-radius: 8px;
     background: var(--color-fondo); border: 1px solid var(--color-primario);
-    box-shadow: 0 8px 20px rgba(0,0,0,0.25);
+    box-shadow: 0 8px 20px rgba(34,29,23,0.25);
     font-size: 0.8rem; display: flex; align-items: center; gap: 0.4rem;
     opacity: 0.95;
   }
@@ -524,6 +540,20 @@
   #view-splash .splash-logo { font-size: 3rem; }
   #view-splash p { font-family: var(--font-mono); font-size: 0.8rem; opacity: 0.8; }
 
+  /* Fase 17.2: .view (Fase 17.1) centra el CONTENEDOR en viewports anchos,
+     pero el contenido de adentro (bienvenida + tarjetas, cada una con su
+     propio max-width) seguía pegado a la izquierda dentro de esa caja —
+     column + align-items:center centra cada bloque como unidad (el texto
+     adentro de cada uno sigue alineado a la izquierda, solo el bloque se
+     mueve). Escopado a #view-dashboard a propósito, no a .view en general:
+     Tareas/Catálogos/etc. usan listas/toolbars que normalmente sí quieren
+     el ancho completo disponible — mismo criterio de "no tocar el
+     contenido de otras vistas en esta fase" ya establecido. */
+  #view-dashboard {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
   /* Fase 17.2: <p> en vez de <h2> a propósito — el saludo necesita un
      color explícito (var(--color-primario)) sin ambigüedad de herencia/
      especificidad con estilos de encabezado del navegador o de otro
@@ -539,7 +569,7 @@
      reutiliza view-perfil (Fase 13.7). */
   .dashboard-card {
     background: var(--color-fondo); border: 1px solid var(--color-borde); border-radius: 10px;
-    padding: var(--space-4) 1.2rem; max-width: 360px; margin-bottom: var(--space-6);
+    padding: var(--space-4) 1.2rem; width: 100%; max-width: 360px; margin-bottom: var(--space-6);
   }
   .dashboard-card h3 {
     font-family: var(--font-mono); font-size: 0.7rem; text-transform: uppercase;
@@ -584,7 +614,7 @@
   .dashboard-resumen-grupo:nth-child(2) { background: var(--bg-proceso); }
   .dashboard-resumen-grupo:nth-child(3) { background: var(--bg-semilla); }
   .dashboard-resumen-grupo-titulo {
-    display: block; font-size: 0.75rem; color: #888; margin-bottom: 0.3rem;
+    display: block; font-size: 0.75rem; color: var(--color-texto); opacity: 0.6; margin-bottom: 0.3rem;
   }
   .dashboard-resumen-fichas { display: flex; flex-wrap: wrap; gap: 0.3rem; }
   .mini-ficha {
@@ -594,11 +624,11 @@
     background: var(--color-fondo, #F7F4EE);
     font-size: 0.8rem; line-height: 1;
   }
-  .dashboard-resumen-vacio { font-size: 0.8rem; color: #888; }
+  .dashboard-resumen-vacio { font-size: 0.8rem; color: var(--color-texto); opacity: 0.6; }
 
   .dashboard-tareas-lista { list-style: none; display: flex; flex-direction: column; gap: 0.4rem; }
   .dashboard-tareas-lista li { font-size: 0.9rem; }
-  .dashboard-tareas-mas { color: #888; font-style: italic; }
+  .dashboard-tareas-mas { color: var(--color-texto); opacity: 0.6; font-style: italic; }
 
   /* ── Fase 14.7: hover-scale + fade-in del render en espiral (Gemelo) ──
      Validado con Playwright contra un arnés mock de mismo shape que los 9
@@ -823,8 +853,11 @@
   <section class="view hidden" id="view-perfil">
     <div class="form-group" style="max-width:320px">
       <label for="perfilNombreInput">Nombre</label>
-      <input type="text" id="perfilNombreInput">
-      <button class="btn btn-primary" id="perfilGuardarNombreBtn" style="margin-top:var(--space-2)">Guardar Nombre</button>
+      <input type="text" id="perfilNombreInput" readonly>
+      <div class="perfil-nombre-acciones">
+        <button class="btn" id="perfilEditarNombreBtn" type="button">✎ Editar</button>
+        <button class="btn btn-primary" id="perfilGuardarNombreBtn" type="button" style="display:none">Guardar</button>
+      </div>
     </div>
     <div class="dashboard-card">
       <h3>Correo</h3>
