@@ -49,6 +49,17 @@ const px = (v) => v * ESCALA;
 // claro contra --color-fondo) sin comerse demasiado el ancho del segmento
 // interior (el más angosto, anchoCamaInterior=0.30 en geometria-espiral.js);
 // 8 no mejoraba sustancialmente más ese punto crítico.
+//
+// Re-validado en Fase 18.2 contra --bg-pasto (el fondo verde nuevo detrás
+// de las camas, no existía en 14.7) — mismo método, capturas reales con
+// datos de producción, comparando 6.5/8/9 tanto en el segmento interior
+// (el caso crítico de siempre) como en el borde exterior contra el pasto
+// (la comparación nueva que introduce esta fase). 6.5 se mantuvo sin
+// cambios: el stroke sigue siendo var(--color-fondo), un tono lo bastante
+// distinto de --bg-pasto en matiz Y luminosidad como para separarse
+// claramente sin subir el grosor — subir a 8/9 solo volvía a comerse el
+// segmento interior, mismo problema de 14.7, sin ganancia de contraste
+// que lo justificara esta vez tampoco.
 const GROSOR_CONTORNO = 6.5;       // "recorte de papel" entre sectores/círculo
 const RADIO_FICHA = px(RADIO_FICHA_UNIDADES); // Fase 14.6a: fuente de verdad en geometria-espiral.js
 const GROSOR_ANILLO_PROGRESO = 3.5;
@@ -61,6 +72,58 @@ function crearElemento(tag, attrs = {}) {
     const el = document.createElementNS(SVG_NS, tag);
     for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
     return el;
+}
+
+// Radio del fondo de pasto (Fase 18.2): un poco más grande que el borde
+// externo real de las camas — se consulta calcularGeometriaArco (el
+// anillo exterior es siempre el que llega más lejos del centro) en vez de
+// repetir a mano los PARAMS internos de geometria-espiral.js
+// (radioCentro/anchoCamaExterior/etc., que ese módulo no expone), mismo
+// criterio de no duplicar geometría fuera de su fuente de verdad. +25px de
+// margen, criterio del mockup original (un borde de pasto visible más
+// allá de la cama más externa, no un recorte pegado al borde).
+const RADIO_PASTO = px(calcularGeometriaArco('exterior', 0).radioExterno) + 25;
+
+// Fase 18.2: fondo verde de "pasto" con textura sutil de puntos —
+// renderEspiralSVG lo agrega como PRIMER hijo del <svg>, antes que
+// cualquier .cama-espiral, para quedar pintado DETRÁS de todo lo demás
+// (SVG no tiene z-index; el orden del DOM es el orden de pintado). Vive
+// DENTRO del <svg>, en el mismo espacio de coordenadas que las camas —
+// así hereda el pan/zoom de Fase 18.1 automáticamente (que solo cambia el
+// viewBox del <svg>, afecta a todos sus hijos por igual) sin código extra
+// acá. Sin NINGÚN listener propio a propósito — un pointerdown sobre el
+// pasto debe burbujear tal cual hasta el <svg> raíz, donde 18.1 ya
+// escucha para el pan; agregarle un listener propio (aunque fuera solo
+// para no hacer nada) sería superficie nueva para bugs de propagación sin
+// ganar nada — ver validación de la fase.
+function crearFondoPasto() {
+    const grupo = crearElemento('g', { class: 'fondo-pasto' });
+
+    const patternId = 'patron-puntos-pasto';
+    const defs = crearElemento('defs', {});
+    const patron = crearElemento('pattern', {
+        id: patternId,
+        width: 40, height: 40,
+        patternUnits: 'userSpaceOnUse'
+    });
+    patron.appendChild(crearElemento('circle', {
+        cx: 20, cy: 20, r: 2.5,
+        fill: 'var(--color-primario)',
+        opacity: 0.12
+    }));
+    defs.appendChild(patron);
+
+    const circuloFondo = crearElemento('circle', {
+        cx: 0, cy: 0, r: RADIO_PASTO,
+        fill: 'var(--bg-pasto)'
+    });
+    const textura = crearElemento('circle', {
+        cx: 0, cy: 0, r: RADIO_PASTO,
+        fill: `url(#${patternId})`
+    });
+
+    grupo.append(defs, circuloFondo, textura);
+    return grupo;
 }
 
 // Sector anular (arco) o círculo completo (centro) — el contenedor visual
@@ -314,6 +377,9 @@ export function renderEspiralSVG(container, camas, catalogo, opciones = {}) {
         height: '100%',
         'aria-label': 'Mapa del huerto en espiral'
     });
+
+    // Fase 18.2: primer hijo — pintado detrás de todas las camas.
+    svg.appendChild(crearFondoPasto());
 
     camasEspiral.forEach((cama) => {
         const grupoCama = crearElemento('g', { class: 'cama-espiral', 'data-cama-id': cama.id });

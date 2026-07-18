@@ -55,6 +55,18 @@
   --bg-proceso: #CEE6DA;          /* verde menta pastel — "en proceso" en Estado de las Camas */
   --bg-cosecha: #F6DDD6;          /* rosa pastel — "para cosechar" */
   --bg-semilla: #EDE6D4;          /* arena pastel — "semilla" */
+  /* --bg-pasto (Fase 18.2): fondo verde del mapa en espiral (mockup de
+     16.2, nunca implementado hasta esta fase — ver diagnóstico). No
+     reutiliza --bg-header aunque el tono sea cercano: son roles distintos
+     (chrome del header vs. plano de fondo del mapa) y el resto de la
+     paleta --bg-* ya sigue ese mismo criterio de un token por uso, no por
+     similitud de color (ver --bg-proceso vs --bg-header, misma lógica).
+     Derivado, no elegido a ojo: mismo matiz (H) que --color-primario,
+     luminosidad L=0.85 igual que el resto de --bg-* (todos caen en la
+     misma banda ~0.85-0.90), saturación S=0.45 — entre --bg-proceso
+     (0.324, el otro pastel verde) y --bg-header (0.378), para leer
+     "verde césped" sin competir visualmente con las camas encima. */
+  --bg-pasto: #C8EAD1;
 
   /* ── Fase 17.1b: cierre de las pendientes de 17.1 ──
      --transplant y --germinate se retiraron por completo (ver más abajo
