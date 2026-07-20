@@ -21,25 +21,34 @@
   --color-texto: #221D17;
   --color-exitoso: #3F7A46;
   --color-error: #B23A2C;
+  /* --color-sombra-rgb (parametrización, sin fecha de fase propia — es una
+     reorganización interna, no un cambio de diseño): el triplete 34,29,23
+     por sí solo, sin alpha, para que cualquier selector que necesite una
+     opacidad distinta a la del default pueda escribir
+     rgba(var(--color-sombra-rgb), X) en vez de repetir el triplete a
+     mano. --color-sombra sigue siendo la variable de siempre — mismo
+     default exacto (alpha 0.15) — ahora construida a partir de esta. */
+  --color-sombra-rgb: 34, 29, 23;
   /* --color-sombra: no estaba en las 9 originales, pero --shadow (viejo,
      rgba(61,43,31,0.15) — un rgba con alpha, no un color plano) necesitaba
      un destino para completar la migración de la Fase 17.1. Mismo tono
      oscuro que --color-texto (#221D17) con alpha reducido, mismo criterio
      que el resto de la paleta nueva — no una decisión de diseño nueva. */
-  --color-sombra: rgba(34, 29, 23, 0.15);
+  --color-sombra: rgba(var(--color-sombra-rgb), 0.15);
   /* Fase 17.3: otras 5 sombras en el proyecto (.header-nav dropdown,
      .modal-overlay, .modal, .login-box, .gemelo-drag-ghost) usaban negro
      puro rgba(0,0,0,X) — nunca tokenizadas porque se agregaron en fases
      previas a que --color-sombra existiera (Fase 14.6b drag&drop, Fase
      16.3 hamburguesa, y las de modal que son de antes de toda esta
      migración). NO se reemplazaron por var(--color-sombra) directamente:
-     esa variable ya trae su propia alpha fija (0.15), y las 5 necesitaban
+     esa variable trae su propia alpha fija (0.15), y las 5 necesitaban
      alphas más fuertes (0.25/0.3/0.5) para su propósito (backdrop de
      modal, sombra de tarjeta flotante) — usar la variable tal cual las
-     habría hecho todas visiblemente más tenues que antes. En su lugar se
-     escribió literal rgba(34,29,23, ALPHA-ORIGINAL) en cada una — mismo
-     tono cálido que este token, alpha de cada caso preservada tal cual
-     estaba. */
+     habría hecho todas visiblemente más tenues que antes. Con
+     --color-sombra-rgb (ver arriba) ya no hace falta repetir el triplete
+     a mano para lograr eso: cada una usa rgba(var(--color-sombra-rgb), X)
+     con su propia alpha — mismo resultado visual exacto, sin duplicar el
+     34,29,23 literal cinco veces. */
 
   /* ── Fase 17.1: cierre del mapeo confirmado ── */
   --color-borde: #EDE8DB;         /* tono claro, reemplaza --border (#c8b99a, mucho más oscuro/café) */
