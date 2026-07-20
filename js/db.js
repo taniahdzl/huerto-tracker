@@ -2,7 +2,7 @@
 import {
     db, PATHS,
     collection, doc,
-    getDocs, getDoc, setDoc, updateDoc, deleteDoc, addDoc, serverTimestamp,
+    getDocs, getDoc, setDoc, updateDoc, deleteDoc, addDoc, serverTimestamp, Timestamp,
     query, where, orderBy, limit,
     writeBatch
 } from './firebase.js';
@@ -30,10 +30,57 @@ function _logActividad(tipo, entidad, detalle) {
 // (db/chores/usuarios) escriben ahí vía su propio _logActividad. Vive
 // aquí en db.js por ser el módulo de datos general, no porque sea su
 // dueño exclusivo.
-export async function obtenerRegistroActividad(cantidad = 50) {
-    const q = query(collection(db, PATHS.actividad), orderBy('fecha', 'desc'), limit(cantidad));
+//
+// Filtros de la tabla de auditoría de Admin (tipo/persona/rango de fecha).
+// Los tres son opcionales y combinables — el caller (main.js) arma el
+// objeto según qué filtros tenga activos el usuario en ese momento.
+//
+// ── Índices compuestos: las 7 combinaciones posibles se probaron contra
+// Firestore real (proyecto huerto-57477, colección con 12 documentos
+// reales) antes de escribir este código, no en software de prueba. Nunca
+// se crearon los índices desde aquí — se dejó fallar cada combinación una
+// vez para capturar el link exacto que Firestore devuelve. Resultado:
+// solo 3 índices compuestos DISTINTOS cubren las 7 combinaciones (los
+// campos duplicados en dos combinaciones piden literalmente el mismo
+// índice, confirmado comparando el query string de cada link):
+//
+//   1. tipo(ASC) + fecha(DESC)         — cubre "solo tipo" y "tipo + fecha"
+//      https://console.firebase.google.com/v1/r/project/huerto-57477/firestore/indexes?create_composite=Cldwcm9qZWN0cy9odWVydG8tNTc0NzcvZGF0YWJhc2VzLyhkZWZhdWx0KS9jb2xsZWN0aW9uR3JvdXBzL3JlZ2lzdHJvX2FjdGl2aWRhZC9pbmRleGVzL18QARoICgR0aXBvEAEaCQoFZmVjaGEQAhoMCghfX25hbWVfXxAC
+//   2. uid(ASC) + fecha(DESC)          — cubre "solo persona" y "persona + fecha"
+//      https://console.firebase.google.com/v1/r/project/huerto-57477/firestore/indexes?create_composite=Cldwcm9qZWN0cy9odWVydG8tNTc0NzcvZGF0YWJhc2VzLyhkZWZhdWx0KS9jb2xsZWN0aW9uR3JvdXBzL3JlZ2lzdHJvX2FjdGl2aWRhZC9pbmRleGVzL18QARoHCgN1aWQQARoJCgVmZWNoYRACGgwKCF9fbmFtZV9fEAI
+//   3. tipo(ASC) + uid(ASC) + fecha(DESC) — cubre "tipo + persona" y "tipo + persona + fecha"
+//      https://console.firebase.google.com/v1/r/project/huerto-57477/firestore/indexes?create_composite=Cldwcm9qZWN0cy9odWVydG8tNTc0NzcvZGF0YWJhc2VzLyhkZWZhdWx0KS9jb2xsZWN0aW9uR3JvdXBzL3JlZ2lzdHJvX2FjdGl2aWRhZC9pbmRleGVzL18QARoICgR0aXBvEAEaBwoDdWlkEAEaCQoFZmVjaGEQAhoMCghfX25hbWVfXxAC
+//
+// Único caso SIN índice compuesto (solo el índice de campo simple que
+// Firestore crea por default): rango de fecha SOLO — where('fecha','>=')
+// + where('fecha','<=') + orderBy('fecha'), porque el rango y el orderBy
+// caen sobre el MISMO campo.
+//
+// Hasta que esos 3 índices existan en producción, cualquier combinación
+// que los necesite lanza FAILED_PRECONDITION — el catch del caller (ver
+// abrirFiltroAuditoria en main.js) usa extraerLinkIndice() para mostrarle
+// al admin el link real del error tal cual lo devuelve Firestore, en vez
+// de fallar en silencio.
+export async function obtenerRegistroActividad({ cantidad = 50, tipo, uid, desde, hasta } = {}) {
+    const condiciones = [];
+    if (tipo) condiciones.push(where('tipo', '==', tipo));
+    if (uid) condiciones.push(where('uid', '==', uid));
+    if (desde) condiciones.push(where('fecha', '>=', Timestamp.fromDate(desde)));
+    if (hasta) condiciones.push(where('fecha', '<=', Timestamp.fromDate(hasta)));
+
+    const q = query(collection(db, PATHS.actividad), ...condiciones, orderBy('fecha', 'desc'), limit(cantidad));
     const snapshot = await getDocs(q);
     return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
+
+// Extrae el link de creación de índice del mensaje de error de Firestore
+// (código 'failed-precondition') — mismo procedimiento manual ya usado
+// varias veces en este proyecto para resolver índices faltantes, ahora
+// expuesto para que la UI se lo muestre directo al admin en vez de que
+// tenga que ir a leer la consola del navegador.
+export function extraerLinkIndice(error) {
+    const match = error?.message?.match(/https:\/\/console\.firebase\.google\.com\S+/);
+    return match ? match[0] : null;
 }
 
 // bitacora_sesiones permite varias entradas para la misma fecha (sin

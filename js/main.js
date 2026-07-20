@@ -31,7 +31,7 @@ import {
     crearCatalogo, actualizarCatalogo, eliminarCatalogo,
     obtenerQuimicos, crearQuimico, actualizarQuimico, eliminarQuimico,
     obtenerInventario, crearInventario, actualizarInventario, eliminarInventario,
-    obtenerRegistroActividad,
+    obtenerRegistroActividad, extraerLinkIndice,
     marcarParaSemilla, agregarPlantaACama, crearHistorialCultivo,
     actualizarDetalleCama,
     obtenerBitacoraSesiones, crearBitacoraSesion, obtenerSesionConDetalle
@@ -206,6 +206,15 @@ const adminSaveBtn       = document.getElementById('adminSaveBtn');
 const abrirAjusteHorasBtn = document.getElementById('abrirAjusteHorasBtn');
 const resumenHorasBody     = document.getElementById('resumenHorasBody');
 const registroActividadBody = document.getElementById('registroActividadBody');
+
+// Filtros de auditoría (tipo/persona/rango de fecha) — ver auditoria.
+const auditoriaFiltroTipo     = document.getElementById('auditoriaFiltroTipo');
+const auditoriaFiltroPersona  = document.getElementById('auditoriaFiltroPersona');
+const auditoriaFiltroDesde    = document.getElementById('auditoriaFiltroDesde');
+const auditoriaFiltroHasta    = document.getElementById('auditoriaFiltroHasta');
+const auditoriaLimpiarFiltrosBtn = document.getElementById('auditoriaLimpiarFiltrosBtn');
+const auditoriaErrorIndice    = document.getElementById('auditoriaErrorIndice');
+const auditoriaVacio          = document.getElementById('auditoriaVacio');
 
 let catalogoActual    = [];
 let camasActuales     = [];
@@ -1546,19 +1555,101 @@ function irAVistaAdmin() {
     cargarYRenderizarVistaAdmin();
 }
 
+// directorioParaFiltroPersona: el actor de un registro de actividad puede
+// ser cualquier rol (admin incluido — ver comentario arriba sobre
+// entrada.usuario), así que el filtro de persona usa
+// obtenerDirectorioCompleto(), no obtenerDirectorioEstudiantes() (esa
+// sigue siendo solo para renderResumenHoras, que si debe quedarse
+// estudiantes-only — ver auditoría de la Fase de obtenerDirectorioCompleto).
+let directorioParaFiltroPersona = [];
+
 async function cargarYRenderizarVistaAdmin() {
     try {
-        const [registro, estudiantes] = await Promise.all([
-            obtenerRegistroActividad(50),
-            obtenerDirectorioEstudiantes()
+        const [registro, estudiantes, directorioCompleto] = await Promise.all([
+            obtenerRegistroActividad(),
+            obtenerDirectorioEstudiantes(),
+            obtenerDirectorioCompleto()
         ]);
         renderRegistroActividad(registro, registroActividadBody);
         renderResumenHoras(estudiantes, resumenHorasBody);
+        auditoriaVacio.style.display = registro.length === 0 ? '' : 'none';
+
+        directorioParaFiltroPersona = directorioCompleto;
+        poblarFiltrosAuditoria(registro);
     } catch (e) {
         console.error('[main] Error cargando el panel de Admin:', e);
         mostrarToast('No se pudo cargar el panel de Admin', 'red');
     }
 }
+
+// Opciones de los selectores tipo/persona: derivadas de los valores REALES
+// que ya trajo la carga inicial sin filtro (12 documentos hoy, todos caben
+// en el límite de 50) — no una lista fija inventada en el código. Se
+// puebla una sola vez al entrar a la vista, no se recalcula con cada
+// filtro aplicado (así el usuario siempre puede volver a cualquier tipo/
+// persona sin que las opciones se reduzcan por el filtro previo).
+function poblarFiltrosAuditoria(registroSinFiltrar) {
+    const tiposReales = [...new Set(registroSinFiltrar.map((r) => r.tipo).filter(Boolean))].sort();
+    auditoriaFiltroTipo.innerHTML = '<option value="">Todos los tipos</option>' +
+        tiposReales.map((t) => `<option value="${t}">${t}</option>`).join('');
+
+    auditoriaFiltroPersona.innerHTML = '<option value="">Todas las personas</option>';
+    directorioParaFiltroPersona.forEach((persona) => {
+        const opt = document.createElement('option');
+        opt.value = persona.id;
+        opt.textContent = nombreParaMostrar(persona);
+        auditoriaFiltroPersona.appendChild(opt);
+    });
+}
+
+async function aplicarFiltrosAuditoria() {
+    const tipo = auditoriaFiltroTipo.value || undefined;
+    const uid = auditoriaFiltroPersona.value || undefined;
+    // input[type=date] da 'YYYY-MM-DD' en hora LOCAL del navegador — mismo
+    // criterio que fechaSiembra en otras partes del proyecto (Gemelo):
+    // fuerza T00:00:00/T23:59:59 explícitos para no caer en UTC medianoche.
+    const desde = auditoriaFiltroDesde.value ? new Date(`${auditoriaFiltroDesde.value}T00:00:00`) : undefined;
+    const hasta = auditoriaFiltroHasta.value ? new Date(`${auditoriaFiltroHasta.value}T23:59:59`) : undefined;
+
+    auditoriaErrorIndice.style.display = 'none';
+    try {
+        const registro = await obtenerRegistroActividad({ tipo, uid, desde, hasta });
+        renderRegistroActividad(registro, registroActividadBody);
+        auditoriaVacio.style.display = registro.length === 0 ? '' : 'none';
+    } catch (e) {
+        // FAILED_PRECONDITION de Firestore por falta de índice compuesto —
+        // de las 7 combinaciones posibles, 3 índices distintos ya se
+        // identificaron y documentaron en obtenerRegistroActividad (db.js).
+        // Si esto dispara, es una combinación que ya se anticipó (o una
+        // nueva si el schema de filtros cambia) — se le muestra el link
+        // real al admin en vez de fallar en silencio, mismo procedimiento
+        // ya usado varias veces en este proyecto para índices faltantes.
+        const link = extraerLinkIndice(e);
+        if (link) {
+            auditoriaErrorIndice.innerHTML = `Esta combinación de filtros necesita un índice nuevo en Firestore. <a href="${link}" target="_blank" rel="noopener">Crear índice</a>`;
+            auditoriaErrorIndice.style.display = '';
+            console.error('[main] Índice faltante para filtros de auditoría:', link);
+        } else {
+            console.error('[main] Error aplicando filtros de auditoría:', e);
+            mostrarToast('No se pudieron aplicar los filtros', 'red');
+        }
+    }
+}
+
+function limpiarFiltrosAuditoria() {
+    auditoriaFiltroTipo.value = '';
+    auditoriaFiltroPersona.value = '';
+    auditoriaFiltroDesde.value = '';
+    auditoriaFiltroHasta.value = '';
+    auditoriaErrorIndice.style.display = 'none';
+    aplicarFiltrosAuditoria();
+}
+
+auditoriaFiltroTipo.addEventListener('change', aplicarFiltrosAuditoria);
+auditoriaFiltroPersona.addEventListener('change', aplicarFiltrosAuditoria);
+auditoriaFiltroDesde.addEventListener('change', aplicarFiltrosAuditoria);
+auditoriaFiltroHasta.addEventListener('change', aplicarFiltrosAuditoria);
+auditoriaLimpiarFiltrosBtn.addEventListener('click', limpiarFiltrosAuditoria);
 
 // Reutiliza el adminModal existente (Fase 13.2) sin tocar su lógica
 // interna — solo cambia de dónde se abre.

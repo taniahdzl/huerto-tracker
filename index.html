@@ -443,6 +443,32 @@
   .admin-table td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--color-borde); }
   .admin-table tbody tr:hover { background: var(--color-borde); }
 
+  /* Filtros de la tabla de auditoría (tipo/persona/rango de fecha) —
+     cada control dispara la query en 'change' (ver aplicarFiltrosAuditoria
+     en main.js), sin botón "Aplicar" — solo "Limpiar" para volver a las
+     últimas 50 sin filtro. */
+  .admin-auditoria-filtros {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem;
+    margin-top: var(--space-2); margin-bottom: var(--space-2);
+  }
+  .admin-auditoria-filtros select,
+  .admin-auditoria-filtros input[type="date"] {
+    font-family: var(--font-body); font-size: 0.8rem;
+    padding: 0.35rem 0.5rem; border-radius: 6px; border: 1px solid var(--color-borde);
+    background: var(--color-fondo); color: var(--color-texto);
+  }
+  .admin-auditoria-filtro-fecha {
+    display: inline-flex; align-items: center; gap: 0.3rem;
+    font-size: 0.75rem; opacity: 0.8;
+  }
+  .admin-auditoria-error {
+    font-size: 0.8rem; color: var(--color-error);
+    background: var(--bg-cosecha); border-radius: 6px;
+    padding: 0.5rem 0.7rem; margin-bottom: var(--space-2);
+    word-break: break-all;
+  }
+  .admin-auditoria-error a { color: var(--color-error); font-weight: 600; }
+
   /* ── TOAST ── */
   #toast {
     position: fixed; bottom: 1.5rem; right: 1.5rem;
@@ -979,11 +1005,28 @@
     </div>
 
     <div class="dashboard-card" style="max-width:none">
-      <h3>Registro de Actividad (últimas 50)</h3>
+      <h3>Registro de Actividad (últimas 50 que cumplen los filtros)</h3>
+      <div class="admin-auditoria-filtros">
+        <select id="auditoriaFiltroTipo">
+          <option value="">Todos los tipos</option>
+        </select>
+        <select id="auditoriaFiltroPersona">
+          <option value="">Todas las personas</option>
+        </select>
+        <label class="admin-auditoria-filtro-fecha">Desde
+          <input type="date" id="auditoriaFiltroDesde">
+        </label>
+        <label class="admin-auditoria-filtro-fecha">Hasta
+          <input type="date" id="auditoriaFiltroHasta">
+        </label>
+        <button class="btn" id="auditoriaLimpiarFiltrosBtn">Limpiar filtros</button>
+      </div>
+      <p id="auditoriaErrorIndice" class="admin-auditoria-error" style="display:none"></p>
       <table class="admin-table">
         <thead><tr><th>Fecha</th><th>Tipo</th><th>Entidad</th><th>Detalle</th><th>Quién</th></tr></thead>
         <tbody id="registroActividadBody"></tbody>
       </table>
+      <p id="auditoriaVacio" class="dashboard-resumen-vacio" style="display:none">Sin resultados con estos filtros.</p>
     </div>
   </section>
 
