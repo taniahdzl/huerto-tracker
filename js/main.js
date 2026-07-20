@@ -38,21 +38,32 @@ import {
 } from './db.js';
 import {
     renderListaTareas, renderListaCatalogos,
-    renderRegistroActividad, renderResumenHoras, renderListaBitacora, emojiDePlanta
+    renderRegistroActividad, renderResumenHoras, renderListaBitacora, emojiDePlanta,
+    crearLeyendaCategorias
 } from './render.js';
 import { renderEspiralSVG, calcularEstadoFicha } from './render-spiral-2d.js';
 import { generarRespuestaHuerto } from './ai.js';
 import { setUsuarioActual, nombreParaMostrar } from './session.js';
 import { obtenerTareas, crearTarea, completarTarea, obtenerTareasAsignadas } from './chores.js';
-import { obtenerUsuario, registrarUsuario, obtenerDirectorioEstudiantes, ajustarHoras, actualizarRolPropio, actualizarNombrePropio } from './usuarios.js';
+import { obtenerUsuario, registrarUsuario, obtenerDirectorioEstudiantes, obtenerDirectorioCompleto, ajustarHoras, actualizarRolPropio, actualizarNombrePropio } from './usuarios.js';
 
 const statusDot   = document.getElementById('statusDot');
 const statusText  = document.getElementById('statusText');
 const toast       = document.getElementById('toast');
 const gemeloMapaContainer = document.getElementById('gemeloMapaContainer');
+const gemeloMapaWrapper    = document.querySelector('#view-gemelo .gemelo-mapa-wrapper');
 const gemeloPanelLista     = document.getElementById('gemeloPanelLista');
 const gemeloZoomInBtn      = document.getElementById('gemeloZoomInBtn');
 const gemeloZoomOutBtn     = document.getElementById('gemeloZoomOutBtn');
+const viewCatalogosToolbar = document.querySelector('#view-catalogos .view-catalogos-toolbar');
+
+// Leyenda de categorías: contenido fijo (EMOJI_POR_TIPO/COLOR_POR_TIPO, no
+// datos de Firestore), se inserta una sola vez al arrancar — a diferencia
+// de renderListaCatalogos/renderEspiralSVG, estos contenedores NO se
+// reemplazan por completo en cada carga, así que no hace falta
+// re-insertarla en cada render.
+viewCatalogosToolbar.appendChild(crearLeyendaCategorias());
+gemeloMapaWrapper.appendChild(crearLeyendaCategorias());
 
 const detallePlantaModalClose = document.getElementById('detallePlantaModalClose');
 const detallePlantaTitulo    = document.getElementById('detallePlantaTitulo');
@@ -466,7 +477,22 @@ function renderResumenCamasDashboard(camas, catalogo) {
                 const ficha = document.createElement('span');
                 ficha.className = 'mini-ficha';
                 ficha.style.borderColor = info.color;
-                ficha.textContent = info.badge || emojiDePlanta(plantaEntry.plantaTipo);
+
+                const emoji = document.createElement('span');
+                emoji.className = 'mini-ficha-emoji';
+                emoji.textContent = emojiDePlanta(plantaEntry.plantaTipo);
+                ficha.appendChild(emoji);
+
+                // Mismo lenguaje visual que crearFichaPlanta (render-spiral-2d.js):
+                // el badge es un círculo pequeño superpuesto en la esquina, nunca
+                // reemplaza el emoji central.
+                if (info.badge) {
+                    const badge = document.createElement('span');
+                    badge.className = `mini-ficha-badge ${info.badge === '⏳' ? 'mini-ficha-badge-semilla' : 'mini-ficha-badge-atrasada'}`;
+                    badge.textContent = info.badge;
+                    ficha.appendChild(badge);
+                }
+
                 fichas.appendChild(ficha);
             });
             grupo.appendChild(fichas);
@@ -941,7 +967,13 @@ function irAVistaTareas() {
 
 async function cargarYRenderizarVistaTareas() {
     try {
-        const [tareas, estudiantes] = await Promise.all([obtenerTareas(), obtenerDirectorioEstudiantes()]);
+        // obtenerDirectorioCompleto() (no la versión filtrada a
+        // 'estudiante'): el selector de asignados de "+ Crear tarea"
+        // necesita poder asignar tareas a cualquier rol, incluido admin.
+        // abrirAdminModal/cargarYRenderizarVistaAdmin/obtenerSesionConDetalle
+        // siguen usando obtenerDirectorioEstudiantes() sin cambios (ver
+        // auditoría) — no dependen de este call site.
+        const [tareas, estudiantes] = await Promise.all([obtenerTareas(), obtenerDirectorioCompleto()]);
         tareasActuales = tareas;
         estudiantesActuales = estudiantes;
         renderizarVistaTareas();

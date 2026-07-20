@@ -68,6 +68,41 @@ export function colorDePlanta(tipo) {
     return COLOR_POR_TIPO[tipo] || '#757575';
 }
 
+// Leyenda de categorías (Catálogos + Gemelo): un único generador a partir
+// de EMOJI_POR_TIPO/COLOR_POR_TIPO, para no repetir los 6 pares a mano en
+// dos vistas. <details>/<summary> nativos dan el colapsable sin JS extra.
+// Los nombres en español SON las claves del mapa (hoja/raíz/fruto/flor/
+// tallo/semilla) — no existe una tercera lista de nombres que mantener
+// sincronizada, solo se capitaliza la clave al mostrarla.
+export function crearLeyendaCategorias() {
+    const detalles = document.createElement('details');
+    detalles.className = 'leyenda-categorias';
+
+    const resumen = document.createElement('summary');
+    resumen.textContent = 'Leyenda';
+    detalles.appendChild(resumen);
+
+    const lista = document.createElement('ul');
+    lista.className = 'leyenda-categorias-lista';
+
+    Object.keys(EMOJI_POR_TIPO).forEach((tipo) => {
+        const item = document.createElement('li');
+
+        const swatch = document.createElement('span');
+        swatch.className = 'leyenda-swatch';
+        swatch.style.background = COLOR_POR_TIPO[tipo];
+        item.appendChild(swatch);
+
+        const nombre = tipo.charAt(0).toUpperCase() + tipo.slice(1);
+        item.append(`${EMOJI_POR_TIPO[tipo]} ${nombre}`);
+
+        lista.appendChild(item);
+    });
+
+    detalles.appendChild(lista);
+    return detalles;
+}
+
 // renderCatalogo/renderMapaHuerto (camas tipo 'rectangular') retiradas en
 // Fase 15 junto con #appRoot/bedModal, sus únicos consumidores — ver
 // diagnóstico. `.plant-card`/`.plant-icon`/`.plant-info`/`.plant-name`

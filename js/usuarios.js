@@ -42,6 +42,16 @@ export async function obtenerDirectorioEstudiantes() {
     return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 }
 
+// Mismo shape que obtenerDirectorioEstudiantes(), sin el where('rol') —
+// trae estudiante, externo Y admin. Uso: selector de asignados de tareas
+// (cualquier rol puede ser asignado a una tarea), NO reemplaza a la
+// función filtrada — "ajustar horas", el resumen de horas de Admin y el
+// detalle de bitácora siguen usando la vieja a propósito (ver auditoría).
+export async function obtenerDirectorioCompleto() {
+    const snapshot = await getDocs(collection(db, PATHS.usuarios));
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
+
 export async function registrarUsuario(uid, email, rol, nombre) {
     if (!nombre || !nombre.trim()) {
         throw new Error('El nombre es obligatorio para completar el registro.');

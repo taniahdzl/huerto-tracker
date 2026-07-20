@@ -405,6 +405,23 @@
     flex-wrap: wrap; gap: 0.6rem; margin-bottom: var(--space-4);
   }
   #view-catalogos .search-box { max-width: 240px; }
+
+  /* Leyenda de categorías (emoji + color), generada por crearLeyendaCategorias
+     (render.js) — misma clase reutilizada en Catálogos y Gemelo, cada vista
+     solo ajusta POSICIÓN (ver override .gemelo-mapa-wrapper más abajo), no
+     el contenido ni el resto del estilo base. */
+  .leyenda-categorias { font-size: 0.72rem; color: var(--color-texto); }
+  .leyenda-categorias summary {
+    cursor: pointer; font-family: var(--font-mono); opacity: 0.65;
+    list-style: none;
+  }
+  .leyenda-categorias summary::-webkit-details-marker { display: none; }
+  .leyenda-categorias-lista {
+    list-style: none; margin: 0.4rem 0 0; padding: 0;
+    display: flex; flex-wrap: wrap; gap: 0.4rem 0.7rem;
+  }
+  .leyenda-categorias-lista li { display: inline-flex; align-items: center; gap: 0.3rem; white-space: nowrap; }
+  .leyenda-swatch { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; }
   .catalogo-item {
     display: flex; align-items: center; gap: 0.7rem;
     padding: 0.6rem 0.8rem; border-radius: 8px;
@@ -530,6 +547,20 @@
     background: white; box-shadow: 0 2px 6px var(--color-sombra);
   }
 
+  /* Leyenda en Gemelo: mismo patrón que .gemelo-zoom-controles (vive
+     dentro de gemelo-mapa-wrapper, position:relative, para sobrevivir al
+     replaceChildren() de renderEspiralSVG sobre gemeloMapaContainer) pero
+     en la esquina opuesta (bottom-left vs. bottom-right de los zoom) para
+     no competir con ellos ni con el panel de arrastre (aside, fuera de
+     este wrapper). */
+  .gemelo-mapa-wrapper .leyenda-categorias {
+    position: absolute; bottom: var(--space-3); left: var(--space-3);
+    z-index: 10; max-width: 200px;
+    background: rgba(247, 244, 238, 0.92);
+    border-radius: 8px; padding: 0.4rem 0.6rem;
+    box-shadow: 0 2px 6px var(--color-sombra);
+  }
+
   /* Ficha flotante que sigue al puntero durante el arrastre (Pointer
      Events, no la API de drag&drop nativa — no funciona en touch, y el
      proyecto es mobile-first desde Fase 13). pointer-events:none es lo
@@ -636,13 +667,32 @@
     display: block; font-size: 0.75rem; color: var(--color-texto); opacity: 0.6; margin-bottom: 0.3rem;
   }
   .dashboard-resumen-fichas { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+  /* Bug fix: .mini-ficha mostraba el badge EN LUGAR del emoji (textContent
+     único, info.badge || emoji). Ahora es un contenedor con dos hijos,
+     mismo patrón que crearFichaPlanta (render-spiral-2d.js): emoji
+     siempre visible + badge como círculo pequeño superpuesto en la
+     esquina superior derecha, position:relative/absolute en vez de
+     transform SVG. */
   .mini-ficha {
+    position: relative;
     display: inline-flex; align-items: center; justify-content: center;
     width: 26px; height: 26px; border-radius: 50%;
     border: 3px solid #9e9e9e; /* color real lo fija JS por planta (mismo que calcularEstadoFicha) */
     background: var(--color-fondo, #F7F4EE);
-    font-size: 0.8rem; line-height: 1;
   }
+  .mini-ficha-emoji { font-size: 0.8rem; line-height: 1; }
+  .mini-ficha-badge {
+    position: absolute; top: -3px; right: -3px;
+    width: 13px; height: 13px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.55rem; line-height: 1; font-weight: bold;
+    border: 1.5px solid var(--color-fondo, #F7F4EE);
+  }
+  /* Mismos colores que crearFichaPlanta: badgeColor = badge === '⏳' ?
+     var(--color-acento) : var(--color-error); texto oscuro sobre el
+     dorado de semilla, blanco sobre el rojo de atrasada. */
+  .mini-ficha-badge-semilla { background: var(--color-acento); color: #221D17; }
+  .mini-ficha-badge-atrasada { background: var(--color-error); color: #fff; }
   .dashboard-resumen-vacio { font-size: 0.8rem; color: var(--color-texto); opacity: 0.6; }
 
   .dashboard-tareas-lista { list-style: none; display: flex; flex-direction: column; gap: 0.4rem; }

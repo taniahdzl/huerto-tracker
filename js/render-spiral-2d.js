@@ -211,7 +211,14 @@ function crearFormaCama(cama) {
 // porque sin dias_siembra_a_cosecha no hay progreso que calcular.
 export function calcularEstadoFicha(plantaEntry, catalogoPorId) {
     if ((plantaEntry.finalidad || 'cosecha') === 'semilla') {
-        return { color: 'var(--color-acento)', fraccion: 1, badge: '🌰', estado: 'semilla', diasTranscurridos: null, diasSiembraACosecha: null };
+        // Badge '⏳' (no '🌰'): 🌰 es también el emoji de EMOJI_POR_TIPO
+        // para tipo:'semilla' — una planta catalogada con ese tipo Y
+        // finalidad:'semilla' mostraría dos 🌰 superpuestos e
+        // indistinguibles (emoji de categoría vs. badge de estado). ⏳
+        // comunica "guardado/en espera" sin parecer una categoría de
+        // planta y no coincide con ninguno de los 6 valores de
+        // EMOJI_POR_TIPO (render.js).
+        return { color: 'var(--color-acento)', fraccion: 1, badge: '⏳', estado: 'semilla', diasTranscurridos: null, diasSiembraACosecha: null };
     }
 
     const infoCatalogo = catalogoPorId.get(plantaEntry.plantaId);
@@ -299,7 +306,7 @@ function crearFichaPlanta(cama, plantaEntry, posicion, catalogoPorId, onClickPla
     escala.append(fondo, anillo, emoji);
 
     if (badge) {
-        const badgeColor = badge === '🌰' ? 'var(--color-acento)' : 'var(--color-error)';
+        const badgeColor = badge === '⏳' ? 'var(--color-acento)' : 'var(--color-error)';
         const badgeCx = RADIO_FICHA * 0.72;
         const badgeCy = -RADIO_FICHA * 0.72;
 
@@ -314,7 +321,7 @@ function crearFichaPlanta(cama, plantaEntry, posicion, catalogoPorId, onClickPla
             'text-anchor': 'middle',
             'dominant-baseline': 'central',
             'font-size': RADIO_BADGE * 1.3,
-            fill: badge === '🌰' ? '#221D17' : '#fff',
+            fill: badge === '⏳' ? '#221D17' : '#fff',
             'font-weight': 'bold'
         });
         badgeTexto.textContent = badge;
