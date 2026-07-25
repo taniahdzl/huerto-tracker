@@ -148,14 +148,14 @@ para ver más plantas vs. arrastrar hacia el mapa" (Fase 18.4).
 - [x] ~~Paso 1: Consolidación~~ — completo: JS en `js/`, CSS en `css/`.
 - [x] Paso 1b: mover el `<style>` de `index.html` a
       `css/main.css`/`css/components.css` (Fase 20, 2026-07-24).
-- [ ] Paso 1c: confirmar visualmente en navegador que la consolidación de
-      CSS no cambió nada — verificado solo por comparación de tokens
-      (sin comentarios/espacios) entre el `<style>` original y los 2
-      archivos nuevos, y por HTTP 200 en los 4 archivos CSS servidos
-      localmente; NO se vio renderizado en un navegador real todavía.
+- [x] Paso 1c: confirmar visualmente en navegador que la consolidación de
+      CSS no cambió nada — confirmado 2026-07-24, se ve igual.
 - [x] Paso 2 (Firebase): resuelto vía `js/config.js` gitignored + fail-fast.
-- [ ] Paso 2b (Gemini): sigue pendiente — implementar detrás de una Cloud
-      Function antes de conectar `js/ai.js` a la API real.
+- [ ] Paso 2b (Gemini): sigue pendiente, **no es prioridad** (confirmado
+      con el usuario 2026-07-24) — implementaría detrás de una Cloud
+      Function antes de conectar `js/ai.js` a la API real, pero no hay
+      urgencia de atacarlo. No proponer trabajo acá salvo que se pida
+      explícitamente.
 - [x] Paso 3a: `firestore.rules` versionado.
 - [ ] Paso 3b: `firestore.indexes.json` sigue vacío — exportar el índice
       real de producción y commitear.
