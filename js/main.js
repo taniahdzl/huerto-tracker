@@ -868,7 +868,7 @@ function renderPanelCatalogoArrastrable(catalogo) {
         info.appendChild(name);
 
         card.append(icon, info);
-        card.addEventListener('pointerdown', (e) => iniciarArrastrePlanta(e, planta.id, card));
+        card.addEventListener('pointerdown', (e) => iniciarPosibleArrastrePlanta(e, planta.id, card));
         fragment.appendChild(card);
     });
 
@@ -877,10 +877,88 @@ function renderPanelCatalogoArrastrable(catalogo) {
 
 // Pointer Events (pointerdown/pointermove/pointerup), NUNCA la API de
 // drag&drop nativa del navegador (draggable/dragstart/drop) — esa API no
-// dispara en touch, y el proyecto es mobile-first desde Fase 13. Un solo
-// listener de pointerdown por tarjeta arranca el arrastre; pointermove/up
-// se escuchan en window mientras dura, y se desmontan al soltar — no hay
-// listeners globales vivos fuera de un arrastre en curso.
+// dispara en touch, y el proyecto es mobile-first desde Fase 13.
+//
+// Fase 18.4 (auditoría mobile 2026-07-24): antes de esta fase, un solo
+// pointerdown por tarjeta arrancaba el arrastre de inmediato — con
+// touch-action:none en .plant-card (ver index.html) eso bloqueaba TAMBIÉN
+// el scroll horizontal nativo de .gemelo-panel-lista, así que en mobile
+// (fila apilada arriba del mapa, ~33 plantas en el catálogo) no había forma
+// de deslizar el dedo para ver más plantas: cualquier toque sobre una
+// tarjeta quedaba marcado "sin scroll nativo" desde el touchstart, antes de
+// que corriera JS. touch-action ahora es pan-x (scroll horizontal nativo
+// permitido, vertical no), e iniciarPosibleArrastrePlanta espera a que el
+// gesto cruce UMBRAL_ARRASTRE_PLANTA_PX para decidir, por la dirección
+// dominante, si es scroll de la lista (horizontal — no hace nada, deja que
+// el navegador siga con el pan-x que ya venía haciendo) o arrastre hacia el
+// mapa (vertical — recién ahí arranca iniciarArrastrePlanta). Mismo
+// criterio de umbral por distancia que ya usa el pan del mapa
+// (UMBRAL_PAN_PX), aplicado acá también por dirección.
+const UMBRAL_ARRASTRE_PLANTA_PX = 9;
+
+function iniciarPosibleArrastrePlanta(evento, plantaId, elementoOrigen) {
+    // touch-action solo afecta gestos táctiles/pluma — mouse nunca tuvo el
+    // problema de scroll bloqueado (la rueda/scrollbar no pelean con nada
+    // acá), así que mouse conserva el comportamiento original de arrancar
+    // el arrastre de inmediato. Importa además en desktop (≥720px, layout
+    // en fila): ahí el panel scrollea VERTICAL y el mapa queda a la
+    // derecha, el eje contrario a mobile — un drag real panel→mapa con
+    // mouse puede ser bien horizontal, y esperar "dirección vertical" lo
+    // interpretaría como scroll y jamás arrancaría el arrastre.
+    if (evento.pointerType === 'mouse') {
+        iniciarArrastrePlanta(evento, plantaId, elementoOrigen);
+        return;
+    }
+
+    const pointerId = evento.pointerId;
+    const inicioX = evento.clientX;
+    const inicioY = evento.clientY;
+    let resuelto = false;
+
+    function limpiar() {
+        window.removeEventListener('pointermove', onPointerMove);
+        window.removeEventListener('pointerup', onPointerUpOCancel);
+        window.removeEventListener('pointercancel', onPointerUpOCancel);
+    }
+
+    function onPointerMove(ev) {
+        if (ev.pointerId !== pointerId || resuelto) return;
+        const dx = ev.clientX - inicioX;
+        const dy = ev.clientY - inicioY;
+        if (Math.hypot(dx, dy) < UMBRAL_ARRASTRE_PLANTA_PX) return;
+
+        resuelto = true;
+        limpiar();
+
+        // Mismo breakpoint que .gemelo-panel-lista (720px, index.html):
+        // bajo eso la lista scrollea horizontal (fila arriba del mapa, ver
+        // touch-action:pan-x base), desde ahí scrollea vertical (columna a
+        // la izquierda del mapa, ver override touch-action:pan-y dentro del
+        // media query) — el eje "es scroll, no arrastre" se invierte según
+        // el layout, no es siempre horizontal.
+        const esDesktop = window.matchMedia('(min-width: 720px)').matches;
+        const esGestoDeScroll = esDesktop
+            ? Math.abs(dy) > Math.abs(dx)   // desktop: scroll vertical
+            : Math.abs(dx) > Math.abs(dy);  // mobile: scroll horizontal
+
+        if (esGestoDeScroll) return; // ya en curso vía pan-x/pan-y nativo
+
+        // Intención de arrastre hacia el mapa. Se le pasa `ev` (no el
+        // pointerdown original) para que el ghost arranque en la posición
+        // actual del dedo, no en la de hace varios px de movimiento.
+        iniciarArrastrePlanta(ev, plantaId, elementoOrigen);
+    }
+
+    function onPointerUpOCancel(ev) {
+        if (ev.pointerId !== pointerId) return;
+        limpiar();
+    }
+
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUpOCancel);
+    window.addEventListener('pointercancel', onPointerUpOCancel);
+}
+
 function iniciarArrastrePlanta(evento, plantaId, elementoOrigen) {
     evento.preventDefault();
 
@@ -894,9 +972,20 @@ function iniciarArrastrePlanta(evento, plantaId, elementoOrigen) {
     ghost.textContent = elementoOrigen.textContent;
     document.body.appendChild(ghost);
 
+    // Fase 18.5 (auditoría mobile 2026-07-24): en touch, el ghost centrado
+    // exactamente en clientX/clientY queda tapado por el propio dedo — ni
+    // el ghost ni el resaltado .drop-target de la cama se ven mientras se
+    // arrastra. Se desplaza el ghost hacia ARRIBA del punto de contacto
+    // solo para touch/pen (mouse no tapa nada, sigue centrado como antes).
+    // Puramente visual: onPointerMove más abajo sigue pasando
+    // ev.clientX/clientY SIN este desplazamiento a elementFromPoint — el
+    // drop tiene que sentirse anclado a donde está el dedo, no a donde se
+    // ve el ghost.
+    const desplazamientoGhostY = evento.pointerType === 'mouse' ? 0 : -70;
+
     const moverGhost = (x, y) => {
         ghost.style.left = `${x}px`;
-        ghost.style.top = `${y}px`;
+        ghost.style.top = `${y + desplazamientoGhostY}px`;
     };
     moverGhost(evento.clientX, evento.clientY);
     elementoOrigen.classList.add('dragging');

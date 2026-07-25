@@ -173,10 +173,19 @@
     background: var(--color-fondo);
     display: flex; align-items: center; gap: 0.6rem;
     user-select: none;
-    /* Fase 14.6b: sin esto, un pointerdown+move táctil sobre la tarjeta
-       hace scroll de la página en vez de arrastrar — Pointer Events no
-       cancela el gesto de scroll nativo del navegador por sí solo. */
-    touch-action: none;
+    /* Fase 18.4 (auditoría mobile 2026-07-24): touch-action:none original
+       de Fase 14.6b bloqueaba TODO gesto nativo desde el toque inicial —
+       incluido el scroll horizontal de .gemelo-panel-lista, que en mobile
+       (fila apilada arriba del mapa, ~33 plantas en el catálogo) necesita
+       scroll para verse completa. El navegador decide si permite scroll
+       nativo en el momento del touchstart, solo mirando esta propiedad —
+       ningún threshold en JS después puede revertir esa decisión. pan-x
+       deja que el navegador scrollee horizontal nativo (el caso "quiero
+       ver más plantas"), y como NO incluye pan-y, un gesto vertical no
+       dispara scroll de página desde acá — main.js (iniciarPosibleArrastrePlanta)
+       usa esa ausencia para interpretar movimiento vertical como intención
+       de arrastre hacia el mapa, sin pelear con el navegador por el gesto. */
+    touch-action: pan-x;
   }
   .plant-card:hover { border-color: var(--color-primario); background: white; transform: translateX(2px); }
   .plant-card.dragging { opacity: 0.4; }
@@ -552,6 +561,13 @@
       max-height: calc(min(90vh, 900px) - 2.5rem);
     }
     .gemelo-panel-lista .plant-card { flex: none; }
+    /* Fase 18.4: desde acá la lista scrollea VERTICAL (overflow-y:auto
+       arriba), no horizontal — el pan-x base (mobile) dejaría de coincidir
+       con el eje real de scroll en un touchscreen ancho (tablet/laptop
+       táctil). main.js (iniciarPosibleArrastrePlanta) usa el mismo
+       breakpoint para invertir qué eje interpreta como "es scroll, no
+       arrastre". */
+    .gemelo-panel-lista .plant-card { touch-action: pan-y; }
   }
 
   /* Fase 18.1: pan/zoom del mapa en espiral. gemelo-mapa-wrapper es
@@ -903,7 +919,19 @@
            re-render. touch-action:none evita que un pan/pinch táctil sobre
            el SVG dispare scroll/zoom nativo de la página (mismo problema
            que .plant-card ya resolvía en Fase 14.6b). -->
-      <div class="gemelo-mapa-wrapper" style="width:min(90vh,900px); height:min(90vh,900px); margin:0 auto;">
+      <!-- Fase 18.3 (auditoría mobile 2026-07-24): min(90vh,900px) por sí
+           solo asumía vh <= vw. En vertical (la mayoría de los celulares,
+           vh > vw) ese valor superaba el ancho real de pantalla y
+           desbordaba TODA la vista Gemelo horizontalmente — sin ningún
+           max-width que lo frenara. calc(100vw - 2 * var(--space-6)) es el
+           ancho de contenido real disponible dentro de #view-gemelo (.view
+           aporta var(--space-6) de padding a cada lado, .gemelo-layout no
+           agrega padding propio) — se agrega como tercer término del min()
+           en AMBOS ejes (no solo el ancho) para que el wrapper siga siendo
+           cuadrado; si solo se acotara el ancho, el <svg> de adentro
+           (width:100%/height:100%, viewBox cuadrado) se estiraría a una
+           proporción no cuadrada y distorsionaría la geometría circular. -->
+      <div class="gemelo-mapa-wrapper" style="width:min(90vh,900px,calc(100vw - 2 * var(--space-6))); height:min(90vh,900px,calc(100vw - 2 * var(--space-6))); margin:0 auto;">
         <div id="gemeloMapaContainer" style="width:100%; height:100%; touch-action:none;"></div>
         <div class="gemelo-zoom-controles">
           <button type="button" id="gemeloZoomInBtn" class="btn" aria-label="Acercar">+</button>
