@@ -58,10 +58,26 @@ un estado del proyecto (monolito en `index.html`, JS vacío, API key en
   mientras que en producción existen índices compuestos reales (usados por
   queries `where` + `orderBy` en `db.js`/`chores.js`). Pendiente exportar con
   `firebase firestore:indexes` y commitear.
-- **Sin suite de tests.** No hay ningún archivo de test en el repo. La
-  validación mencionada en comentarios (ej. "Playwright + arnés mock" en
-  `render-spiral-2d.js`/`geometria-espiral.js`) fue manual/ad-hoc por fase,
-  no quedó como test automatizado reproducible.
+- **Suite de tests iniciada (Fase 21, 2026-07-24).** `test/*.test.js`, 33
+  tests, usando `node:test`/`node:assert` nativos de Node (18+) — CERO
+  dependencias nuevas, sin `package.json`, corre con `node --test` desde la
+  raíz del repo. Cubre los únicos 3 módulos hoy sin DOM ni Firebase
+  (`geometria-espiral.js`, `session.js`, `estado-app.js`) — el resto
+  (`render.js`/`render-spiral-2d.js`/toda `vista-*.js`/`db.js`/`chores.js`/
+  `usuarios.js`/`auth.js`) queda SIN cubrir a propósito: tocan `document`
+  o importan `firebase.js` (que a su vez importa el SDK desde una URL de
+  CDN, ver intento fallido de `node --input-type=module -e "import(...)"`
+  en la Fase 19) — probarlos requeriría un shim de DOM (jsdom) y/o mocks de
+  Firebase, una decisión de dependencias aparte, no tomada todavía (se
+  preguntó explícitamente: Node nativo vs. Vitest+jsdom, se eligió Node
+  nativo). Deliberadamente NO se agregó `package.json` con
+  `"type":"module"` para silenciar el warning cosmético de detección de
+  sintaxis — `scripts/generate-config.js` (el `buildCommand` real de
+  `vercel.json`) y `scripts/upload.js` usan `require()` de CommonJS; ese
+  cambio habría roto el build de producción. Playwright + arnés mock
+  mencionado en comentarios de fases previas (`render-spiral-2d.js`/
+  `geometria-espiral.js`) sigue siendo validación manual/ad-hoc, no forma
+  parte de esta suite.
 - **La app es una SPA multi-vista real**, mucho más grande que lo que el
   roadmap original de 3 pasos preveía: dashboard, gemelo (mapa espiral con
   pan/zoom + drag&drop), tareas, catálogos, perfil, admin — con RBAC por rol
@@ -156,6 +172,17 @@ para ver más plantas vs. arrastrar hacia el mapa" (Fase 18.4).
       confirmado 2026-07-24 en teléfono real, las 8 vistas (Dashboard,
       Gemelo, Tareas, Catálogos, Perfil, Admin, Bitácora) funcionan igual
       que antes de la división.
+- [x] Nuevo: suite de tests automatizados con `node:test` (Fase 21,
+      2026-07-24) — ver sección 1, cubre solo los 3 módulos puros hoy.
+- [ ] Nuevo: ampliar cobertura de tests a módulos con DOM/Firebase — requiere
+      decidir jsdom (o similar) y/o mocks de Firebase primero, no asumido.
+- [x] Nuevo: gender-neutral en la bienvenida (Fase 21, 2026-07-24) —
+      "Bienvenido" → "Te damos la bienvenida" en Dashboard (`#view-dashboard
+      .dashboard-saludo`) y Setup (label de `#newUserNombre`), las únicas 2
+      ocurrencias en todo `index.html`. Revisado el resto de la copy visible
+      (grep de adjetivos terminados en -o/-a) — "Conectado"/"Conectando…"
+      en el status dot del header son estado del sistema, no un adjetivo
+      que concuerde con el género de quien lee, se dejaron sin tocar.
 
 ## 4. Arquitectura de módulos (Fase 19, 2026-07-24)
 
@@ -227,3 +254,13 @@ probó en un navegador real — ver pendiente en la sección 3.
 - No inventar defaults ante datos faltantes (`dias_siembra_a_cosecha`, `r`
   de planta, `notas` de cama) — se documenta el fallback explícito o se
   lanza error, nunca se asume un valor.
+- Tests: `node --test` desde la raíz (sin build, sin instalar nada) corre
+  todo `test/*.test.js`. NUNCA agregar un `package.json` con
+  `"type":"module"` para silenciar el warning de detección de sintaxis —
+  `scripts/generate-config.js` (el `buildCommand` real de `vercel.json`) y
+  `scripts/upload.js` usan `require()` de CommonJS, y ese cambio rompería
+  el build de producción (ver Fase 21).
+- Copy dirigida al usuario: gender-neutral (Fase 21) — evitar adjetivos que
+  concuerden en género con quien lee ("Bienvenido" → "Te damos la
+  bienvenida"); palabras de estado del sistema invariantes ("Conectado",
+  gerundios) no cuentan, no hace falta tocarlas.
