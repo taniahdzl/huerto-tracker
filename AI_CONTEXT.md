@@ -6,15 +6,22 @@ un estado del proyecto (monolito en `index.html`, JS vacío, API key en
 
 ## 1. Estado Actual (SINCERO)
 
-- **Ya no es un monolito de `index.html`.** La lógica vive en `js/` (11
-  módulos, ~5700 líneas en total: `main.js`, `db.js`, `render.js`,
-  `render-spiral-2d.js`, `geometria-espiral.js`, `auth.js`, `chores.js`,
-  `usuarios.js`, `firebase.js`, `ai.js`, `session.js`). `index.html` bajó a
-  ~1300 líneas, casi todo HTML de vistas + un `<style>` inline grande.
-- **`js/main.js` es el monolito nuevo.** 2152 líneas: routing de la SPA,
-  pan/zoom del mapa espiral, drag&drop de plantas, y todos los handlers de
-  cada vista (dashboard, gemelo, tareas, catálogos, perfil, admin). Sin capas
-  service/logic/ui todavía — sigue creciendo fase a fase sin dividirse.
+- **Ya no es un monolito de `index.html`.** La lógica vive en `js/` (22
+  módulos). `index.html` bajó a ~1300 líneas, casi todo HTML de vistas + un
+  `<style>` inline grande.
+- **`js/main.js` ya NO es el monolito nuevo — se dividió en módulos por
+  vista (Fase 19, 2026-07-24).** Bajó de 2152 a ~140 líneas: solo bootstrap
+  de sesión (`auth:resuelto`) + el listener delegado de `headerNav`. Toda
+  la lógica de cada vista vive en su propio `js/vista-*.js`
+  (`vista-dashboard`, `vista-gemelo`, `vista-tareas`, `vista-catalogos`,
+  `vista-perfil`, `vista-admin`, `vista-bitacora`, `vista-login`), con
+  `js/router.js` (routing puro), `js/core-ui.js` (toast/modal/status —
+  módulo hoja) y `js/estado-app.js` (`esAdminActual`) como los módulos
+  compartidos. Ver sección "Arquitectura de módulos" más abajo para el
+  detalle completo — no re-derivarlo leyendo cada archivo, ya está mapeado
+  ahí. El código muerto del Asistente IA (desconectado desde Fase 15) se
+  borró en esta misma fase — `js/ai.js` sigue en disco sin usarse, ver
+  Paso 2b.
 - **CSS sigue sin consolidar.** `css/variables.css` (117 líneas) sí tiene
   contenido real y se usa (design tokens). `css/main.css` y
   `css/components.css` existen pero están **vacíos** — el resto del CSS
@@ -59,10 +66,11 @@ un estado del proyecto (monolito en `index.html`, JS vacío, API key en
 - **Render**: `js/render-spiral-2d.js` construye el SVG a mano
   (`createElementNS`/`setAttribute`, nunca `innerHTML`, ni siquiera en el
   namespace SVG).
-- **Interacción**: `js/main.js` agrega pan (arrastre de 1 dedo), zoom
-  (rueda / pellizco de 2 dedos / botones ±) y drag&drop de plantas — todo
-  con Pointer Events, nunca la API de drag&drop nativa (no dispara en
-  touch; el proyecto es mobile-first desde Fase 13).
+- **Interacción**: `js/vista-gemelo.js` (antes vivía en `main.js`, movido en
+  la división de Fase 19) agrega pan (arrastre de 1 dedo), zoom (rueda /
+  pellizco de 2 dedos / botones ±) y drag&drop de plantas — todo con
+  Pointer Events, nunca la API de drag&drop nativa (no dispara en touch; el
+  proyecto es mobile-first desde Fase 13).
 - **Bug de mobile detectado y corregido (auditoría 2026-07-24, fix mismo
   día, Fase 18.3).** `.gemelo-mapa-wrapper` usaba `width/height:
   min(90vh,900px)`, sin ningún `max-width:100%` que lo frenara. En
@@ -85,7 +93,8 @@ un estado del proyecto (monolito en `index.html`, JS vacío, API key en
   mobile (el navegador decide si permite scroll nativo en el touchstart,
   antes de que corriera cualquier JS). Fix: `touch-action:pan-x` en mobile
   / `pan-y` desde 720px (mismo breakpoint que el layout), más
-  `iniciarPosibleArrastrePlanta` (`main.js`) — espera
+  `iniciarPosibleArrastrePlanta` (`js/vista-gemelo.js` desde Fase 19, vivía
+  en `main.js` cuando se escribió este fix) — espera
   `UMBRAL_ARRASTRE_PLANTA_PX` (9px) y decide por la dirección dominante del
   gesto si es scroll de la lista (no hace nada, deja el pan nativo) o
   arrastre hacia el mapa (recién ahí arranca `iniciarArrastrePlanta`). Mouse
@@ -94,8 +103,9 @@ un estado del proyecto (monolito en `index.html`, JS vacío, API key en
 - **Ghost del drag tapado por el dedo: corregido (misma auditoría, Fase
   18.5).** `.gemelo-drag-ghost` se centraba exactamente en `clientX/clientY`
   — en touch, el propio dedo tapaba el ghost y el resaltado de la cama de
-  destino mientras se arrastraba. Fix: `iniciarArrastrePlanta` (`main.js`)
-  desplaza el ghost 70px hacia arriba del punto de contacto SOLO para
+  destino mientras se arrastraba. Fix: `iniciarArrastrePlanta`
+  (`js/vista-gemelo.js` desde Fase 19) desplaza el ghost 70px hacia arriba
+  del punto de contacto SOLO para
   `pointerType !== 'mouse'` — puramente visual, `elementFromPoint` sigue
   usando `clientX/clientY` reales (sin el desplazamiento) para detectar la
   cama bajo el dedo, así el drop se siente anclado a donde está el dedo, no
@@ -121,15 +131,76 @@ el código.
 - [x] Paso 3a: `firestore.rules` versionado.
 - [ ] Paso 3b: `firestore.indexes.json` sigue vacío — exportar el índice
       real de producción y commitear.
-- [ ] Nuevo: dividir `js/main.js` (2152 líneas) en capas antes de que
-      seguir creciendo lo vuelva el monolito nuevo.
+- [x] Nuevo: dividir `js/main.js` en módulos por vista (Fase 19,
+      2026-07-24) — ver "Arquitectura de módulos" más abajo.
 - [x] Nuevo: fix de mobile en `.gemelo-mapa-wrapper` (ver sección 2, Fase 18.3).
 - [x] Nuevo: fix de scroll táctil en panel de plantas (ver sección 2, Fase 18.4).
 - [x] Nuevo: fix de ghost tapado por el dedo (ver sección 2, Fase 18.5).
 - [ ] Nuevo: fichas de planta con touch target chico en mobile (ver sección 2).
-- [ ] Nuevo: confirmar en teléfono real los 3 fixes de Fase 18.3/18.4/18.5 (ver sección 2).
+- [x] Nuevo: confirmar en teléfono real los 3 fixes de Fase 18.3/18.4/18.5 (ver sección 2) — confirmado 2026-07-24, se ven bien.
+- [ ] Nuevo: confirmar en navegador real la división de Fase 19 — verificada
+      por inspección de código + linking estático de ES modules con Node
+      (sin poder ejecutar el runtime completo por falta de `js/config.js`
+      real en este entorno), NO en un navegador real todavía. Pase de
+      regresión sugerido: login → las 8 vistas → drag&drop de una planta →
+      logout (ver detalle por módulo en "Arquitectura de módulos").
 
-## 4. Reglas de trabajo (vigentes, confirmadas en el código)
+## 4. Arquitectura de módulos (Fase 19, 2026-07-24)
+
+`js/main.js` se dividió en 12 módulos. Capas, de más pura a más orquestadora:
+
+- **Servicio (sin cambios en esta fase)**: `db.js`, `chores.js`,
+  `usuarios.js`, `auth.js`, `firebase.js`, `session.js` — no conocen el DOM.
+- **UI pura (sin cambios)**: `render.js`, `render-spiral-2d.js`,
+  `geometria-espiral.js`.
+- **Hojas nuevas (Fase 19, sin imports salientes entre sí)**: `core-ui.js`
+  (`mostrarToast`/`openModal`/`closeModal`/`marcarStatus*`), `estado-app.js`
+  (`esAdminActual` vía `getEsAdminActual`/`setEsAdminActual`).
+- **`router.js`**: `navegarA`/`ocultarTodasLasVistas`. A propósito NO
+  importa ningún `vista-*.js` — si lo hiciera, cada vista tendría que
+  importarlo de vuelta, un ciclo entre 6+ archivos.
+- **Vistas** (cada una con sus propios `document.getElementById` — sin
+  registro central de refs DOM, cada módulo consulta directo lo que usa):
+  `vista-perfil.js`, `vista-bitacora.js`, `vista-catalogos.js`,
+  `vista-tareas.js`, `vista-admin.js`, `vista-gemelo.js`,
+  `vista-dashboard.js`, `vista-login.js`.
+- **`main.js` (raíz de composición)**: bootstrap de `auth:resuelto` +
+  listener delegado de `headerNav` — el único módulo al que le toca
+  importar las 5 rutas con carga de datos propia (`irAVistaTareas` etc.).
+
+Dependencias entre vistas (todas de una sola dirección, sin ciclos):
+`vista-catalogos.js` → `vista-gemelo.js` (comparte el caché de
+`catalogoActual` vía `getCatalogoActual`/`setCatalogoActual` — AMBAS vistas
+piden `catalogo_semillas` de forma independiente y escriben al mismo
+caché, tal como ya pasaba en el `main.js` original, no es una
+simplificación nueva). `vista-admin.js` → `vista-tareas.js` (comparte
+`estudiantesActuales`, aunque en la práctica `abrirAdminModal` siempre
+re-fetch en vez de confiar en el caché). `vista-dashboard.js` →
+`vista-gemelo.js` (`iniciarHuerto`) y → `vista-bitacora.js`
+(`cargarBannerBitacora`). `vista-login.js` → `vista-dashboard.js`
+(`mostrarDashboard`).
+
+`vista-admin.js` fusiona dos secciones que en el `main.js` original tenían
+nombres parecidos pero eran distintas: el modal de ajuste de horas ("Panel
+de Admin") y el log de auditoría con filtros ("Vista de Admin") — se
+fusionaron porque ya estaban conectadas por un botón real
+(`abrirAjusteHorasBtn` abre el modal del otro "sub-módulo").
+
+Sin cambios en `index.html` — sigue con un solo
+`<script type="module" src="js/main.js">`; el navegador resuelve todo el
+árbol de imports nuevo transitivamente.
+
+**Verificación de esta fase**: `node --check` en los 22 archivos de `js/`
+(sintaxis), cruce manual de cada `import` contra el `export` real de su
+archivo destino (sin mismatches), cero declaraciones duplicadas de estado
+compartido, y un intento de `node --input-type=module -e "import('./js/main.js')"`
+que confirmó el linking estático de ES modules recorriendo
+`main.js → vista-login → vista-dashboard → vista-gemelo → db.js → firebase.js`
+sin error de export faltante, antes de toparse (esperado) con el import a
+CDN de Firebase que Node no puede resolver sin red/loader especial. NO se
+probó en un navegador real — ver pendiente en la sección 3.
+
+## 5. Reglas de trabajo (vigentes, confirmadas en el código)
 
 - Mobile-first desde Fase 13 — confirmado explícitamente en comentarios de
   `main.js`/`index.html` (ej. elección de Pointer Events sobre drag&drop
