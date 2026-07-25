@@ -7,8 +7,9 @@ un estado del proyecto (monolito en `index.html`, JS vacío, API key en
 ## 1. Estado Actual (SINCERO)
 
 - **Ya no es un monolito de `index.html`.** La lógica vive en `js/` (22
-  módulos). `index.html` bajó a ~1300 líneas, casi todo HTML de vistas + un
-  `<style>` inline grande.
+  módulos). `index.html` bajó a ~555 líneas — solo HTML de vistas y los
+  `<link>` a `css/variables.css`/`css/main.css`/`css/components.css` (ver
+  bullet de CSS más abajo, ya no hay `<style>` inline).
 - **`js/main.js` ya NO es el monolito nuevo — se dividió en módulos por
   vista (Fase 19, 2026-07-24).** Bajó de 2152 a ~140 líneas: solo bootstrap
   de sesión (`auth:resuelto`) + el listener delegado de `headerNav`. Toda
@@ -22,10 +23,20 @@ un estado del proyecto (monolito en `index.html`, JS vacío, API key en
   ahí. El código muerto del Asistente IA (desconectado desde Fase 15) se
   borró en esta misma fase — `js/ai.js` sigue en disco sin usarse, ver
   Paso 2b.
-- **CSS sigue sin consolidar.** `css/variables.css` (117 líneas) sí tiene
-  contenido real y se usa (design tokens). `css/main.css` y
-  `css/components.css` existen pero están **vacíos** — el resto del CSS
-  (~900 líneas) sigue dentro del `<style>` de `index.html`.
+- **CSS consolidado (Fase 20, 2026-07-24).** `css/variables.css` (117
+  líneas, design tokens, sin cambios) + `css/main.css` (~227 líneas:
+  esqueleto de página — reset, body, header, login overlay, splash,
+  mecánica de la SPA `.view`/`.hidden`) + `css/components.css` (~574
+  líneas: widgets reutilizables — botones, tarjetas, modales, chips,
+  badges, todo lo de Gemelo/Dashboard/Tareas/Catálogos/Admin). El viejo
+  `<style>` inline de `index.html` (774 líneas) se retiró por completo.
+  Verificado por comparación de tokens (sin comentarios/espacios) que el
+  contenido migrado es 100% idéntico al original, sin selectores
+  perdidos ni duplicados — el único empate de especificidad documentado
+  en el CSS (`.header-nav .btn` / `.btn-danger` / `.btn.active`) se
+  mantuvo intacto dentro de `main.css`, mismo orden relativo que antes.
+  `index.html` enlaza `variables.css` → `main.css` → `components.css`, en
+  ese orden.
 - **Seguridad de Firebase resuelta, distinto de lo planeado originalmente.**
   Ya no hay API key en `localStorage`. `js/firebase.js` es el único punto de
   `initializeApp()`; lee `js/config.js` (gitignored, con
@@ -80,11 +91,11 @@ un estado del proyecto (monolito en `index.html`, JS vacío, API key en
   término del `min()` en AMBOS ejes (ancho y alto — solo acotar el ancho
   habría estirado el `<svg>` cuadrado de adentro a una proporción no
   cuadrada). Ver comentario en `index.html` junto al wrapper.
-  Pendiente aparte, NO corregido en este fix: las fichas de planta
-  (`RADIO_FICHA_PX=16` en `geometria-espiral.js`) rendean muy chicas en la
-  vista por defecto en mobile (~13-15px de diámetro, bajo el mínimo táctil
-  de 44px) — el zoom (hasta 4x) compensa parcialmente pero no lo resuelve
-  de raíz.
+  Fichas de planta (`RADIO_FICHA_PX=16` en `geometria-espiral.js`, ~13-15px
+  de diámetro por defecto en mobile — bajo el mínimo táctil de 44px):
+  probado en teléfono real 2026-07-24, el usuario lo dio por aceptable tal
+  cual (el zoom hasta 4x compensa en la práctica) — cerrado sin cambio de
+  código.
 - **Drag&drop de plantas: bug de scroll táctil detectado y corregido
   (misma auditoría, fix mismo día, Fase 18.4).** `.plant-card` tenía
   `touch-action:none` incondicional + arranque de arrastre en el propio
@@ -111,20 +122,21 @@ un estado del proyecto (monolito en `index.html`, JS vacío, API key en
   cama bajo el dedo, así el drop se siente anclado a donde está el dedo, no
   a donde se ve el ghost.
 
-**Pendiente de confirmación manual**: los 3 fixes de esta sección (wrapper
-del mapa, scroll de la lista de plantas, ghost del drag) se verificaron por
-inspección de código, NO en un teléfono real — no había `js/config.js` con
-credenciales de Firebase en este entorno ni acceso a la extensión de
-Chrome. Falta confirmar en dispositivo real, sobre todo el gesto de
-"deslizar para ver más plantas vs. arrastrar hacia el mapa" (Fase 18.4),
-que es el tipo de cosa que se siente distinto en la mano de lo que se ve en
-el código.
+**Confirmado en dispositivo real 2026-07-24**: los 3 fixes de esta sección
+(wrapper del mapa, scroll de la lista de plantas, ghost del drag) se
+probaron en teléfono real — se ven bien, incluido el gesto de "deslizar
+para ver más plantas vs. arrastrar hacia el mapa" (Fase 18.4).
 
 ## 3. Roadmap de Saneamiento (revisado)
 
-- [x] ~~Paso 1: Consolidación~~ — parcial: JS sí se movió a `js/`, CSS no.
-- [ ] Paso 1b: terminar de mover el `<style>` de `index.html` a
-      `css/main.css`/`css/components.css` (hoy vacíos).
+- [x] ~~Paso 1: Consolidación~~ — completo: JS en `js/`, CSS en `css/`.
+- [x] Paso 1b: mover el `<style>` de `index.html` a
+      `css/main.css`/`css/components.css` (Fase 20, 2026-07-24).
+- [ ] Paso 1c: confirmar visualmente en navegador que la consolidación de
+      CSS no cambió nada — verificado solo por comparación de tokens
+      (sin comentarios/espacios) entre el `<style>` original y los 2
+      archivos nuevos, y por HTTP 200 en los 4 archivos CSS servidos
+      localmente; NO se vio renderizado en un navegador real todavía.
 - [x] Paso 2 (Firebase): resuelto vía `js/config.js` gitignored + fail-fast.
 - [ ] Paso 2b (Gemini): sigue pendiente — implementar detrás de una Cloud
       Function antes de conectar `js/ai.js` a la API real.
@@ -136,14 +148,14 @@ el código.
 - [x] Nuevo: fix de mobile en `.gemelo-mapa-wrapper` (ver sección 2, Fase 18.3).
 - [x] Nuevo: fix de scroll táctil en panel de plantas (ver sección 2, Fase 18.4).
 - [x] Nuevo: fix de ghost tapado por el dedo (ver sección 2, Fase 18.5).
-- [ ] Nuevo: fichas de planta con touch target chico en mobile (ver sección 2).
+- [x] Nuevo: fichas de planta con touch target chico en mobile (ver sección
+      2) — probado en teléfono real 2026-07-24, aceptado tal cual, sin
+      cambio de código.
 - [x] Nuevo: confirmar en teléfono real los 3 fixes de Fase 18.3/18.4/18.5 (ver sección 2) — confirmado 2026-07-24, se ven bien.
-- [ ] Nuevo: confirmar en navegador real la división de Fase 19 — verificada
-      por inspección de código + linking estático de ES modules con Node
-      (sin poder ejecutar el runtime completo por falta de `js/config.js`
-      real en este entorno), NO en un navegador real todavía. Pase de
-      regresión sugerido: login → las 8 vistas → drag&drop de una planta →
-      logout (ver detalle por módulo en "Arquitectura de módulos").
+- [x] Nuevo: confirmar en navegador real la división de Fase 19 —
+      confirmado 2026-07-24 en teléfono real, las 8 vistas (Dashboard,
+      Gemelo, Tareas, Catálogos, Perfil, Admin, Bitácora) funcionan igual
+      que antes de la división.
 
 ## 4. Arquitectura de módulos (Fase 19, 2026-07-24)
 

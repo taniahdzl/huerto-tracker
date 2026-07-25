@@ -1,0 +1,227 @@
+/* css/main.css
+ *
+ * Fase 20 (2026-07-24): consolidación de CSS — este archivo y
+ * components.css reemplazan el <style> inline de index.html (774 líneas,
+ * pendiente desde Fase 17.1). Split por criterio de alcance, no por
+ * "sección visual": acá vive el esqueleto de página — reset, body, header,
+ * el overlay de login, la Splash, y la mecánica de la SPA (.view/.hidden) —
+ * cosas que aparecen UNA sola vez en el documento. components.css tiene
+ * todo lo demás: widgets reutilizables (botones, tarjetas, modales, chips,
+ * badges) aunque hoy solo los use una vista. Dentro de cada archivo el
+ * ORDEN de las reglas es el mismo que tenían en el <style> original —
+ * ningún selector se reordenó, solo se relocalizó — así que ningún empate
+ * de especificidad documentado en comentarios (ver el de .header-nav
+ * .btn-danger más abajo) cambia de resultado.
+ *
+ * Fase 17.1: el :root vivía en el <style> de index.html con las 20
+ * variables viejas — se consolidó por completo en css/variables.css (ya
+ * enlazado antes que este archivo). --soil-light y --alert-soft se
+ * retiraron sin reemplazo: 0 usos reales en todo el proyecto (confirmado
+ * por grep en la auditoría de Fase 16.1), nada que migrar. El resto de las
+ * 18 variables con uso real se migró selector por selector — ver
+ * css/variables.css para los nombres nuevos. Fase 17.1b cerró las que
+ * quedaron pendientes de esa fase: --transplant/--germinate se retiraron
+ * (con sus 2 selectores muertos), --parchment-dark migró a --color-borde,
+ * --water/--compost/--plaga se conservan tal cual a propósito — ver
+ * css/variables.css para el detalle de cada decisión.
+ */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--font-body);
+  background: var(--color-fondo);
+  color: var(--color-texto);
+  min-height: 100vh;
+  background-image:
+    radial-gradient(ellipse at 10% 0%, rgba(74,124,89,0.08) 0%, transparent 50%),
+    radial-gradient(ellipse at 90% 100%, rgba(232,168,56,0.06) 0%, transparent 50%);
+}
+
+/* ── HEADER (Fase 17.2: mockup aprobado) ── */
+header {
+  background: var(--bg-header);
+  color: var(--color-primario);
+  padding: 0.6rem var(--space-8);
+  display: flex; align-items: center; gap: 0.8rem var(--space-6);
+  flex-wrap: wrap;
+  min-height: 64px;
+  box-shadow: 0 2px 12px var(--color-sombra);
+  position: sticky; top: 0; z-index: 100;
+}
+/* Wordmark: "Huerto ITAM" en itálica, sin emoji (la tipografía es el
+   elemento visual, mockup aprobado) — ya no hay <span> de dos tonos, un
+   solo color (var(--color-primario)) para todo el wordmark. */
+header h1 {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 1.4rem;
+  letter-spacing: 0.03em;
+  color: var(--color-primario);
+  flex: 1;
+  cursor: pointer;
+}
+/* Fase 16: barra de navegación persistente — mismos destinos que la
+   antigua .dashboard-quicklinks (retirada), visible en TODAS las vistas,
+   no solo Dashboard. flex-basis:100% la manda a su propia fila dentro
+   del header (que ya es flex-wrap), tanto en móvil como en desktop, para
+   no competir por espacio horizontal con h1/status/Configurar. */
+.header-nav {
+  display: flex; flex-wrap: wrap; gap: 0.4rem;
+  flex-basis: 100%;
+}
+/* Fase 17.2: pastilla inactiva = blanco sobre el fondo pastel del header
+   (--bg-header, pastel claro, no aguanta el mismo tratamiento que tenía
+   con --color-primario sólido de fondo — Fase 17.1 lo dejó como parche
+   temporal). Pastilla activa = sin cambios, ya estaba correcta. .btn-danger
+   (adminBtn) necesita su propia regla DESPUÉS de esta para que su borde/
+   texto rojo no se pierda bajo el blanco genérico — misma especificidad
+   (dos clases), gana por orden de aparición. .btn.active tiene MÁS
+   especificidad que .btn-danger (tres clases vs dos) así que sigue
+   ganando sobre rojo cuando adminBtn está activo, mismo comportamiento
+   que ya existía antes de este cambio, sin tocarlo a propósito. */
+.header-nav .btn {
+  background: white; border-color: white; color: var(--color-primario);
+}
+.header-nav .btn-danger {
+  background: white; border-color: var(--color-error); color: var(--color-error);
+}
+.header-nav .btn.active {
+  background: var(--color-primario); border-color: var(--color-primario); color: white;
+}
+/* Fase 16.3: colapso a hamburguesa en viewport angosto — verificado con
+   Playwright a 375px (iPhone SE): flex-wrap solo daba botones de ~33px
+   de alto (bajo el mínimo táctil de ~44px) y 3 filas completas antes de
+   ver contenido real. Mismo breakpoint que .gemelo-layout (720px) ya usa
+   implícitamente en el resto de la SPA — no se inventa uno nuevo.
+   headerNavToggle oculto por default (desktop no lo necesita, el flex-
+   wrap de arriba ya es cómodo ahí — no se probó explícitamente arriba de
+   720px, pero con una sola fila de 6 botones no hay indicio de que
+   hiciera falta el mismo tratamiento). Fase 17.2: mismo tratamiento
+   blanco-sobre-pastel que el resto de las pastillas del header — antes
+   heredaba el .btn genérico (crema sobre --color-primario sólido, alto
+   contraste); con --bg-header pastel de fondo necesitaba su propio ajuste
+   para no perder legibilidad. */
+.header-nav-toggle {
+  display: none;
+  background: white; border-color: white; color: var(--color-primario);
+}
+@media (max-width: 719px) {
+  .header-nav-toggle {
+    display: flex; align-items: center; justify-content: center;
+    min-height: 44px; padding: var(--space-2) var(--space-4);
+  }
+  .header-nav {
+    display: none;
+    flex-direction: column;
+    flex-basis: auto;
+    position: absolute; top: 100%; left: 0; right: 0;
+    background: var(--bg-header);
+    padding: 0.6rem var(--space-4) var(--space-4);
+    box-shadow: 0 8px 20px rgba(var(--color-sombra-rgb), 0.25);
+    z-index: 99;
+  }
+  .header-nav.open { display: flex; }
+  .header-nav .btn {
+    display: flex; align-items: center; justify-content: flex-start;
+    min-height: 44px; width: 100%;
+  }
+}
+.header-status {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  opacity: 0.7;
+  display: flex; align-items: center; gap: var(--space-2);
+}
+.status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-texto); opacity: 0.6; transition: background 0.4s; }
+.status-dot.online { background: var(--color-primario-claro); box-shadow: 0 0 6px var(--color-primario-claro); opacity: 1; }
+.status-dot.error { background: var(--color-error); opacity: 1; }
+
+/* ── LOGIN OVERLAY ── */
+#login-overlay {
+  position: fixed; inset: 0;
+  background: var(--color-primario);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 2000;
+}
+#login-overlay.hidden { display: none; }
+/* .app-hidden ocultaba #appRoot — retirado en Fase 15 junto con él. */
+.login-box {
+  background: var(--color-fondo);
+  border-radius: 12px;
+  padding: var(--space-8);
+  width: min(360px, 90vw);
+  box-shadow: 0 20px 60px rgba(var(--color-sombra-rgb), 0.3);
+}
+.login-box h1 {
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+  margin-bottom: var(--space-6);
+  text-align: center;
+  color: var(--color-texto);
+}
+.login-box h1 span { color: var(--color-acento); }
+.login-error {
+  color: var(--color-error);
+  font-size: 0.75rem;
+  margin: -0.4rem 0 0.8rem;
+}
+
+/* scrollbar */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-borde); border-radius: 3px; }
+
+/* ── SPA (Fase 13) ── */
+/* .hidden con !important: los estados "mostrado" de vistas concretas
+   (ej. #view-splash con display:flex) usan selectores de igual o mayor
+   especificidad que .hidden — sin !important, .hidden podría perder el
+   empate/la especificidad y la vista seguiría visible. */
+.hidden { display: none !important; }
+/* Fase 17.1 punto 5: primer contenedor centrado del proyecto — hasta
+   ahora TODAS las vistas ocupaban el ancho completo del viewport sin
+   límite (confirmado en la auditoría de Fase 16.1). 1160px: dentro del
+   rango sugerido (1100-1200px), y con margen de sobra sobre los 900px
+   máximos de #gemeloMapaContainer (index.html, inline style,
+   width:min(90vh,900px)) — el SVG de la espiral nunca se ve forzado a
+   encoger por este límite, sigue con su propio sistema de coordenadas y
+   su propio centrado (margin:0 auto) independiente de este contenedor.
+   #view-splash NO se ve afectado: su propia regla (position:fixed;
+   inset:0) tiene más especificidad para tamaño/posición que esto. */
+.view { padding: var(--space-6); min-height: calc(100vh - 0px); max-width: 1160px; margin: 0 auto; }
+
+#view-splash {
+  position: fixed; inset: 0; z-index: 3000;
+  display: flex; align-items: center; justify-content: center;
+  flex-direction: column; gap: 0.8rem;
+  background: var(--color-primario); color: var(--color-fondo);
+  padding: 0;
+}
+#view-splash .splash-logo { font-size: 3rem; }
+#view-splash p { font-family: var(--font-mono); font-size: 0.8rem; opacity: 0.8; }
+
+/* Fase 17.2: .view (arriba) centra el CONTENEDOR en viewports anchos,
+   pero el contenido de adentro (bienvenida + tarjetas, cada una con su
+   propio max-width) seguía pegado a la izquierda dentro de esa caja —
+   column + align-items:center centra cada bloque como unidad (el texto
+   adentro de cada uno sigue alineado a la izquierda, solo el bloque se
+   mueve). Escopado a #view-dashboard a propósito, no a .view en general:
+   Tareas/Catálogos/etc. usan listas/toolbars que normalmente sí quieren
+   el ancho completo disponible — mismo criterio de "no tocar el
+   contenido de otras vistas en esta fase" ya establecido. Las tarjetas
+   pintadas DENTRO de este contenedor (.dashboard-card y familia) son
+   widgets reutilizables — ver components.css. */
+#view-dashboard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+/* Fase 17.2: <p> en vez de <h2> a propósito — el saludo necesita un
+   color explícito (var(--color-primario)) sin ambigüedad de herencia/
+   especificidad con estilos de encabezado del navegador o de otro
+   selector que pudiera targetear h2 en el futuro. */
+#view-dashboard .dashboard-welcome .dashboard-saludo {
+  font-family: var(--font-display); font-size: 1.4rem; margin-bottom: 0.3rem;
+  color: var(--color-primario);
+}
+#view-dashboard .dashboard-sub {
+  font-size: 0.8rem; color: var(--color-texto); opacity: 0.6; max-width: 480px; margin-bottom: var(--space-6);
+}
