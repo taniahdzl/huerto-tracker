@@ -1,0 +1,11 @@
+{
+  "name": "huerto-tracker",
+  "private": true,
+  "description": "Sin 'type' a propósito — scripts/generate-config.js y scripts/upload.js usan require() de CommonJS (ver AI_CONTEXT.md). Los test/*.test.js siguen corriendo como ES modules vía la detección automática de sintaxis de Node, no por este campo.",
+  "scripts": {
+    "test": "node --experimental-test-module-mocks --test"
+  },
+  "devDependencies": {
+    "jsdom": "^25.0.1"
+  }
+}

@@ -110,27 +110,69 @@ un estado del proyecto (monolito en `index.html`, JS vacío, API key en
   eran una propuesta documentada a partir de links de error, no un hecho
   consumado; el comentario de `db.js` se corrigió para no dar a entender lo
   contrario.
-- **Suite de tests iniciada (Fase 21, 2026-07-24).** `test/*.test.js`, 33
-  tests, usando `node:test`/`node:assert` nativos de Node (18+) — CERO
-  dependencias nuevas, sin `package.json`, corre con `node --test` desde la
-  raíz del repo. Cubre los únicos 3 módulos hoy sin DOM ni Firebase
-  (`js/render/geometria-espiral.js`, `js/services/session.js`,
-  `js/shared/estado-app.js`) — el resto (`render.js`/`render-spiral-2d.js`/
-  toda `vista-*.js`/`db.js`/`chores.js`/`usuarios.js`/`auth.js`) queda SIN
-  cubrir a propósito: tocan `document` o importan `firebase.js` (que a su
-  vez importa el SDK desde una URL de CDN, ver intento fallido de
-  `node --input-type=module -e "import(...)"` en la Fase 19, repetido sin
-  cambios tras la reorganización de Fase 22) — probarlos requeriría un shim
-  de DOM (jsdom) y/o mocks de Firebase, una decisión de dependencias aparte,
-  no tomada todavía (se preguntó explícitamente: Node nativo vs.
-  Vitest+jsdom, se eligió Node nativo). Deliberadamente NO se agregó
-  `package.json` con `"type":"module"` para silenciar el warning cosmético
-  de detección de sintaxis — `scripts/generate-config.js` (el `buildCommand`
-  real de `vercel.json`) y `scripts/upload.js` usan `require()` de
-  CommonJS; ese cambio habría roto el build de producción. Playwright +
-  arnés mock mencionado en comentarios de fases previas
-  (`render-spiral-2d.js`/`geometria-espiral.js`) sigue siendo validación
-  manual/ad-hoc, no forma parte de esta suite.
+- **Cobertura de tests completa — TODOS los módulos de `js/` (Fase 23,
+  2026-07-26).** `test/*.test.js`, 223 tests en 20 archivos, corren con
+  `npm test` (= `node --experimental-test-module-mocks --test`). La Fase 21
+  (33 tests, solo los 3 módulos sin DOM ni Firebase) dejó pendiente la
+  decisión de cómo cubrir el resto — se resolvió así:
+  - **jsdom** (única dependencia real del proyecto — primer `package.json`,
+    ver abajo) para `document`/`window` en los módulos con DOM. Dos setups
+    en `test/helpers/dom.js`: `instalarDomVacio()` (fragmento mínimo, para
+    módulos que reciben su `contenedor` por parámetro — `render.js`,
+    `gemelo-drag-drop.js`) e `instalarDomCompleto()` (carga el `index.html`
+    real — necesario para toda `vista-*.js`, que hace
+    `document.getElementById('idDeIndexHtml')` a nivel de módulo).
+  - **Mock de Firestore/Auth en memoria** (`test/helpers/firebase-mock.js`,
+    ~300 líneas) — implementa el subconjunto real de la API que
+    `firebase.js` re-exporta (`collection`/`doc`/`query`/`where`/`orderBy`/
+    `limit`/`getDoc(s)`/`addDoc`/`setDoc`/`updateDoc`/`deleteDoc`/
+    `writeBatch`/`increment`/`serverTimestamp`/`Timestamp`/
+    `getCountFromServer`/Auth), verificado contra los 4 módulos de
+    `js/services/` que realmente la usan (no una réplica genérica del SDK).
+    Se sustituye vía `node:test`'s `mock.module()` (experimental desde Node
+    22.3, flag `--experimental-test-module-mocks` en el script `test` de
+    `package.json`) — SIEMPRE llamado antes del `import()` dinámico del
+    módulo real, nunca después (los bindings de ES modules se resuelven al
+    evaluar, mockear tarde no tiene efecto).
+  - **`package.json` nuevo** — primera vez que el proyecto tiene uno.
+    Deliberadamente SIN `"type":"module"` (los test files se siguen
+    resolviendo como ESM por detección automática de sintaxis, con el
+    warning cosmético de siempre) para no romper el `require()` de
+    `scripts/generate-config.js`/`scripts/upload.js`, mismo criterio ya
+    documentado en Fase 21. `devDependencies: { jsdom }` es la única entrada
+    — no afecta el build de producción de Vercel (`vercel.json` sigue
+    corriendo solo `node scripts/generate-config.js`, sin `npm install`).
+  - **Límites conocidos de la suite** (documentados en cada test file, no
+    generan falsos "no cubierto"): el mock de Firestore nunca falla por sí
+    solo (no simula `FAILED_PRECONDITION` por índice faltante ni fallas de
+    red) — el caso 4 del contrato `auth:resuelto` (error consultando
+    perfil) y el camino de "índice faltante" en `aplicarFiltrosAuditoria`
+    (`vista-admin.js`) quedan sin probar por esto. jsdom no implementa
+    `PointerEvent` ni `SVGSVGElement.viewBox.baseVal`/layout real
+    (`getBoundingClientRect` siempre `{0,0,0,0}`) — `gemelo-pan-zoom.test.js`
+    instala un polyfill mínimo de `viewBox`/rect fijo por test;
+    `gemelo-drag-drop.test.js` simula Pointer Events con un `Event`
+    genérico + propiedades asignadas a mano (el código solo lee
+    `clientX`/`clientY`/`pointerId`/`pointerType`, nunca llama métodos
+    específicos de la interfaz real). El gesto de pellizco (2 punteros
+    simultáneos) no se probó — más infraestructura por una ganancia
+    marginal sobre lo que ya cubre el zoom de rueda (misma función
+    `zoomHacia` interna). La rama de sábado de `completarTarea()`
+    (`new Date().getDay() === 6`) tampoco se probó — depende del día real
+    del sistema, sin fecha inyectable en el código.
+  - **Trampa de aislamiento encontrada 3 veces, misma causa raíz**: estado
+    de MÓDULO (no de test) sobrevive entre tests dentro de un mismo archivo
+    porque `node --test` corre cada ARCHIVO en un proceso propio, pero
+    dentro de un archivo todos los `test()` comparten la misma instancia
+    importada de cada módulo — `vistaEspiral` (`gemelo-pan-zoom.js`),
+    `tabCatalogosActual` (`vista-catalogos.js`), y el registro de
+    `onAuthStateChanged` del mock de `auth.js` (el `reset()` del mock NO
+    debe des-registrar ese callback — `AuthService.init()` se llama UNA vez
+    por archivo, no por test). Mismo criterio para el DOM: el `document` de
+    `instalarDomCompleto()` también es UNO SOLO por archivo — un
+    `<input>` con valor dejado por un test anterior (ej. la búsqueda de
+    Catálogos) sigue filtrando el siguiente test si no se limpia en
+    `beforeEach`.
 - **La app es una SPA multi-vista real**, mucho más grande que lo que el
   roadmap original de 3 pasos preveía: dashboard, gemelo (mapa espiral con
   pan/zoom + drag&drop), tareas, catálogos, perfil, admin — con RBAC por rol
@@ -232,9 +274,10 @@ para ver más plantas vs. arrastrar hacia el mapa" (Fase 18.4).
       Gemelo, Tareas, Catálogos, Perfil, Admin, Bitácora) funcionan igual
       que antes de la división.
 - [x] Nuevo: suite de tests automatizados con `node:test` (Fase 21,
-      2026-07-24) — ver sección 1, cubre solo los 3 módulos puros hoy.
-- [ ] Nuevo: ampliar cobertura de tests a módulos con DOM/Firebase — requiere
-      decidir jsdom (o similar) y/o mocks de Firebase primero, no asumido.
+      2026-07-24) — arrancó cubriendo solo los 3 módulos puros.
+- [x] Nuevo: cobertura de tests ampliada a TODOS los módulos con DOM/Firebase
+      (Fase 23, 2026-07-26) — decisión tomada (jsdom + mock de Firestore en
+      memoria), 223 tests en 20 archivos, ver sección 1.
 - [x] Nuevo: gender-neutral en la bienvenida (Fase 21, 2026-07-24) —
       "Bienvenido" → "Te damos la bienvenida" en Dashboard (`#view-dashboard
       .dashboard-saludo`) y Setup (label de `#newUserNombre`), las únicas 2
@@ -248,10 +291,8 @@ para ver más plantas vs. arrastrar hacia el mapa" (Fase 18.4).
 - [x] Nuevo: `vista-gemelo.js` partido en 3 (`vista-gemelo.js` +
       `gemelo-pan-zoom.js` + `gemelo-drag-drop.js`, Fase 22, 2026-07-25) —
       ver sección 1 y sección 2.
-- [ ] Nuevo: confirmar en navegador real (Dashboard, Gemelo — pan/zoom +
-      drag&drop de plantas, Catálogos) que la reorganización de Fase 22 no
-      cambió nada — verificado por `node --check`/cruce de imports/
-      `node --test`, NO probado todavía en navegador real.
+- [x] Nuevo: confirmar en navegador real que la reorganización de Fase 22 no
+      cambió nada — confirmado por el usuario 2026-07-26.
 
 ## 4. Arquitectura de módulos (Fase 19, 2026-07-24 — reorganizado en
    carpetas y `vista-gemelo.js` partido en Fase 22, 2026-07-25)
@@ -347,12 +388,15 @@ NO se probó en un navegador real — ver pendiente en la sección 3.
 - No inventar defaults ante datos faltantes (`dias_siembra_a_cosecha`, `r`
   de planta, `notas` de cama) — se documenta el fallback explícito o se
   lanza error, nunca se asume un valor.
-- Tests: `node --test` desde la raíz (sin build, sin instalar nada) corre
-  todo `test/*.test.js`. NUNCA agregar un `package.json` con
-  `"type":"module"` para silenciar el warning de detección de sintaxis —
-  `scripts/generate-config.js` (el `buildCommand` real de `vercel.json`) y
-  `scripts/upload.js` usan `require()` de CommonJS, y ese cambio rompería
-  el build de producción (ver Fase 21).
+- Tests: `npm install` una vez (jsdom, única dependencia — Fase 23) y luego
+  `npm test` desde la raíz corre todo `test/*.test.js` con
+  `--experimental-test-module-mocks` (necesario para `mock.module()`, ver
+  sección 1). `node --test` a secas también corre la suite pero sin ese
+  flag los tests que mockean Firestore truenan — usar `npm test`. NUNCA
+  agregar `"type":"module"` al `package.json` para silenciar el warning de
+  detección de sintaxis — `scripts/generate-config.js` (el `buildCommand`
+  real de `vercel.json`) y `scripts/upload.js` usan `require()` de
+  CommonJS, y ese cambio rompería el build de producción (ver Fase 21).
 - Copy dirigida al usuario: gender-neutral (Fase 21) — evitar adjetivos que
   concuerden en género con quien lee ("Bienvenido" → "Te damos la
   bienvenida"); palabras de estado del sistema invariantes ("Conectado",
