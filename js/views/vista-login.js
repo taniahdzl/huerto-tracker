@@ -1,4 +1,4 @@
-// js/vista-login.js
+// js/views/vista-login.js
 //
 // Login con Google + Setup (primer registro). mostrarErrorLogin/
 // mostrarErrorSetup/actualizarGatingSetup se exportan porque el bootstrap
@@ -7,9 +7,9 @@
 // cabecera de main.js. Extraído de main.js (Fase 19, división en módulos
 // por vista).
 
-import { AuthService } from './auth.js';
-import { registrarUsuario } from './usuarios.js';
-import { setUsuarioActual } from './session.js';
+import { AuthService } from '../services/auth.js';
+import { registrarUsuario } from '../services/usuarios.js';
+import { setUsuarioActual } from '../services/session.js';
 import { mostrarDashboard } from './vista-dashboard.js';
 
 const googleLoginBtn      = document.getElementById('googleLoginBtn');

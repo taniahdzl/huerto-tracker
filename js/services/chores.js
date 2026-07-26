@@ -1,4 +1,4 @@
-// js/chores.js
+// js/services/chores.js
 //
 // Servicio de tareas (chores) y asistencias. Mismo patrón que db.js:
 // funciones planas, _logActividad privado fire-and-forget, identidad leída

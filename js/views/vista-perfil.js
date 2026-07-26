@@ -1,4 +1,4 @@
-// js/vista-perfil.js
+// js/views/vista-perfil.js
 //
 // Vista de Perfil (Fase 13.7) — a diferencia de Tareas/Catálogos, sí hace
 // una query nueva al entrar (obtenerUsuario): no hay caché en memoria que
@@ -6,10 +6,10 @@
 // de documento, no una query cara. Extraído de main.js (Fase 19, división
 // en módulos por vista).
 
-import { AuthService } from './auth.js';
-import { obtenerUsuario, actualizarRolPropio, actualizarNombrePropio } from './usuarios.js';
-import { mostrarToast } from './core-ui.js';
-import { navegarA } from './router.js';
+import { AuthService } from '../services/auth.js';
+import { obtenerUsuario, actualizarRolPropio, actualizarNombrePropio } from '../services/usuarios.js';
+import { mostrarToast } from '../shared/core-ui.js';
+import { navegarA } from '../shared/router.js';
 
 const perfilNombreInput      = document.getElementById('perfilNombreInput');
 const perfilEditarNombreBtn  = document.getElementById('perfilEditarNombreBtn');

@@ -1,6 +1,6 @@
 // test/geometria-espiral.test.js
 //
-// js/geometria-espiral.js es el único módulo del proyecto sin DOM ni
+// js/render/geometria-espiral.js es el único módulo del proyecto sin DOM ni
 // Firebase — se puede probar tal cual con el test runner nativo de Node
 // (`node --test`), sin ninguna dependencia nueva. Es también el de mayor
 // riesgo lógico si se rompe en silencio: es la única fuente de verdad de
@@ -19,7 +19,7 @@ import {
     posicionPlantaEnCentro,
     proximaPosicionDisponible,
     RADIO_FICHA_UNIDADES
-} from '../js/geometria-espiral.js';
+} from '../js/render/geometria-espiral.js';
 
 // Tolerancia para comparaciones de punto flotante (trigonometría) — no se
 // usa assert.equal en ningún valor derivado de sin/cos.

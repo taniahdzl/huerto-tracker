@@ -1,4 +1,4 @@
-// js/estado-app.js
+// js/shared/estado-app.js
 //
 // esAdminActual: flag de RBAC/UI puro (perfil.rol de Firestore, no el
 // usuario de Firebase Auth que guarda session.js) — deliberadamente

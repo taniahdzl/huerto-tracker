@@ -1,4 +1,4 @@
-// js/geometria-espiral.js
+// js/render/geometria-espiral.js
 //
 // Módulo puro (sin DOM, sin Firebase) — única fuente de verdad de la forma
 // física del huerto en espiral. Traduce identidad geométrica ({anillo,

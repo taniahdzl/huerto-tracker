@@ -1,4 +1,4 @@
-// js/auth.js
+// js/services/auth.js
 //
 // ── Contrato del evento 'auth:resuelto' ─────────────────────────────
 //

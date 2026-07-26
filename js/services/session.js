@@ -1,4 +1,4 @@
-// js/session.js
+// js/services/session.js
 //
 // Única fuente de verdad para "quién está logueado ahora mismo", consumida
 // por los módulos de datos (db.js, chores.js) para sus propios _logActividad

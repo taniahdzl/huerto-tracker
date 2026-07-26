@@ -1,6 +1,6 @@
 // test/estado-app.test.js
 //
-// js/estado-app.js es puro (sin DOM) — flag de RBAC/UI (esAdminActual)
+// js/shared/estado-app.js es puro (sin DOM) — flag de RBAC/UI (esAdminActual)
 // detrás de get/set, ver su propio comentario de cabecera para por qué
 // vive separado de session.js. Poco que probar más allá del roundtrip,
 // pero es gratis y documenta el default esperado (arranca en false, nunca
@@ -10,7 +10,7 @@
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { getEsAdminActual, setEsAdminActual } from '../js/estado-app.js';
+import { getEsAdminActual, setEsAdminActual } from '../js/shared/estado-app.js';
 
 describe('getEsAdminActual / setEsAdminActual', () => {
     test('arranca en false por defecto (nadie es admin hasta que se confirme)', () => {

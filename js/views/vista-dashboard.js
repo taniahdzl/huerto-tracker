@@ -1,4 +1,4 @@
-// js/vista-dashboard.js
+// js/views/vista-dashboard.js
 //
 // mostrarDashboard() es la entrada única al sistema de vistas tras login —
 // la usan tanto el listener de 'auth:resuelto' (login normal, en main.js)
@@ -10,12 +10,12 @@
 // nuevo: la vista destino recarga sus propios datos recién cuando el
 // usuario navega OTRA vez a través de headerNav.
 
-import { nombreParaMostrar } from './session.js';
-import { obtenerUsuario } from './usuarios.js';
-import { obtenerTareasAsignadas } from './chores.js';
-import { marcarStatusConectado } from './core-ui.js';
-import { navegarA } from './router.js';
-import { setEsAdminActual } from './estado-app.js';
+import { nombreParaMostrar } from '../services/session.js';
+import { obtenerUsuario } from '../services/usuarios.js';
+import { obtenerTareasAsignadas } from '../services/chores.js';
+import { marcarStatusConectado } from '../shared/core-ui.js';
+import { navegarA } from '../shared/router.js';
+import { setEsAdminActual } from '../shared/estado-app.js';
 import { iniciarHuerto } from './vista-gemelo.js';
 import { cargarBannerBitacora } from './vista-bitacora.js';
 

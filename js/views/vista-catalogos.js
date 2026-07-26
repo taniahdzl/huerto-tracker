@@ -1,4 +1,4 @@
-// js/vista-catalogos.js
+// js/views/vista-catalogos.js
 //
 // Vista de Catálogos (Fase 13.6b) — 3 subcategorías (semillas, químicos,
 // herramientas) sobre 2 colecciones de Firestore (catalogo_semillas,
@@ -26,11 +26,11 @@ import {
     obtenerCatalogo, crearCatalogo, actualizarCatalogo, eliminarCatalogo,
     obtenerQuimicos, crearQuimico, actualizarQuimico, eliminarQuimico,
     obtenerInventario, crearInventario, actualizarInventario, eliminarInventario
-} from './db.js';
-import { renderListaCatalogos, crearLeyendaCategorias } from './render.js';
-import { mostrarToast, openModal, closeModal } from './core-ui.js';
-import { navegarA } from './router.js';
-import { getEsAdminActual } from './estado-app.js';
+} from '../services/db.js';
+import { renderListaCatalogos, crearLeyendaCategorias } from '../render/render.js';
+import { mostrarToast, openModal, closeModal } from '../shared/core-ui.js';
+import { navegarA } from '../shared/router.js';
+import { getEsAdminActual } from '../shared/estado-app.js';
 import { getCatalogoActual, setCatalogoActual } from './vista-gemelo.js';
 
 const viewCatalogosToolbar = document.querySelector('#view-catalogos .view-catalogos-toolbar');

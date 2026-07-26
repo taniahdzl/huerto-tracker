@@ -1,4 +1,4 @@
-// js/vista-tareas.js
+// js/views/vista-tareas.js
 //
 // Vista de Tareas (Fase 13.5) — ya no es modal, es destino de navegación
 // recurrente. "Crear" sigue siendo un modal puntual (crearTareaModal), solo
@@ -12,14 +12,14 @@
 // datos real entre las dos vistas. Extraído de main.js (Fase 19, división
 // en módulos por vista).
 
-import { AuthService } from './auth.js';
-import { obtenerTareas, crearTarea, completarTarea } from './chores.js';
-import { obtenerDirectorioCompleto } from './usuarios.js';
-import { renderListaTareas } from './render.js';
-import { nombreParaMostrar } from './session.js';
-import { mostrarToast, openModal, closeModal } from './core-ui.js';
-import { navegarA } from './router.js';
-import { getEsAdminActual } from './estado-app.js';
+import { AuthService } from '../services/auth.js';
+import { obtenerTareas, crearTarea, completarTarea } from '../services/chores.js';
+import { obtenerDirectorioCompleto } from '../services/usuarios.js';
+import { renderListaTareas } from '../render/render.js';
+import { nombreParaMostrar } from '../services/session.js';
+import { mostrarToast, openModal, closeModal } from '../shared/core-ui.js';
+import { navegarA } from '../shared/router.js';
+import { getEsAdminActual } from '../shared/estado-app.js';
 
 const tareasListaVista = document.getElementById('tareasListaVista');
 const crearTareaBtn     = document.getElementById('crearTareaBtn');

@@ -1,4 +1,4 @@
-// js/vista-bitacora.js
+// js/views/vista-bitacora.js
 //
 // PASO F: Bitácora de sesiones — vista independiente de view-admin,
 // accesible a cualquier rol autenticado tanto para crear entradas como para
@@ -9,10 +9,10 @@
 // la importa desde acá en vez de duplicarla. Extraído de main.js (Fase 19,
 // división en módulos por vista).
 
-import { obtenerBitacoraSesiones, crearBitacoraSesion, obtenerSesionConDetalle } from './db.js';
-import { renderListaBitacora } from './render.js';
-import { mostrarToast } from './core-ui.js';
-import { navegarA } from './router.js';
+import { obtenerBitacoraSesiones, crearBitacoraSesion, obtenerSesionConDetalle } from '../services/db.js';
+import { renderListaBitacora } from '../render/render.js';
+import { mostrarToast } from '../shared/core-ui.js';
+import { navegarA } from '../shared/router.js';
 
 const bitacoraFechaInput      = document.getElementById('bitacoraFechaInput');
 const bitacoraResumenInput    = document.getElementById('bitacoraResumenInput');

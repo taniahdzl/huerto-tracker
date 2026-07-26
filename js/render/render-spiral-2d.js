@@ -1,4 +1,4 @@
-// js/render-spiral-2d.js
+// js/render/render-spiral-2d.js
 //
 // Render 2D de las camas en espiral (arco/circular). Mismo criterio que
 // render.js: no sabe qué es Firestore, no importa nada de firebase.js ni de

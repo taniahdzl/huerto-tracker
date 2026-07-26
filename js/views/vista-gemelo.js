@@ -1,17 +1,19 @@
-// js/vista-gemelo.js
+// js/views/vista-gemelo.js
 //
-// El mapa del huerto en espiral: pan/zoom (Fase 18.1), carga de datos
-// (iniciarHuerto — el hub central de esta vista), el panel lateral
-// arrastrable + drag&drop de plantas sobre la espiral (Fase 14.6b, con los
-// fixes de mobile de la auditoría 2026-07-24: Fase 18.3/18.4/18.5), y los
+// El mapa del huerto en espiral: carga de datos (iniciarHuerto — el hub
+// central de esta vista), el panel lateral arrastrable de plantas, y los
 // dos modales de detalle (cama completa — Fase 14.5/16.5 — y planta
-// individual + cierre de cultivo — PASO D/E). Se mantiene como un solo
-// módulo, no fragmentado por sub-sección, porque ninguna de estas piezas
-// fue nunca independientemente reusable entre sí: cada handler de mutación
-// de los modales de detalle existe específicamente para refrescar lo que
-// iniciarHuerto()/renderEspiralSVG ya pintaron, y abrirDetalleCama/
-// abrirDetallePlanta se pasan como callbacks directos a renderEspiralSVG
-// desde DENTRO de esta misma función.
+// individual + cierre de cultivo — PASO D/E). Pan/zoom (Fase 18.1) vive en
+// gemelo-pan-zoom.js y el drag&drop de plantas sobre la espiral (Fase
+// 14.6b, con los fixes de mobile de la auditoría 2026-07-24: Fase
+// 18.3/18.4/18.5) vive en gemelo-drag-drop.js — ambos extraídos de este
+// archivo porque eran genuinamente autocontenidos (ver sus propios
+// comentarios de cabecera). Lo que SIGUE acá, a propósito, no se fragmenta
+// más: cada handler de mutación de los modales de detalle existe
+// específicamente para refrescar lo que iniciarHuerto()/renderEspiralSVG ya
+// pintaron, y abrirDetalleCama/abrirDetallePlanta se pasan como callbacks
+// directos a renderEspiralSVG desde DENTRO de esta misma función — ninguna
+// de estas piezas es independientemente reusable.
 //
 // catalogoActual se expone vía getCatalogoActual/setCatalogoActual porque
 // vista-catalogos.js también lo lee y lo escribe — ver el comentario de
@@ -21,20 +23,20 @@
 //
 // Extraído de main.js (Fase 19, división en módulos por vista).
 
-import { renderEspiralSVG, calcularEstadoFicha } from './render-spiral-2d.js';
-import { emojiDePlanta, crearLeyendaCategorias } from './render.js';
+import { renderEspiralSVG, calcularEstadoFicha } from '../render/render-spiral-2d.js';
+import { emojiDePlanta, crearLeyendaCategorias } from '../render/render.js';
 import {
     obtenerCatalogo, obtenerCamas,
-    agregarPlantaACama, marcarParaSemilla, crearHistorialCultivo,
+    marcarParaSemilla, crearHistorialCultivo,
     actualizarDetalleCama
-} from './db.js';
-import { mostrarToast, openModal, closeModal, marcarStatusError } from './core-ui.js';
+} from '../services/db.js';
+import { mostrarToast, openModal, closeModal, marcarStatusError } from '../shared/core-ui.js';
+import { aplicarVistaEspiral, configurarPanZoomEspiral } from './gemelo-pan-zoom.js';
+import { iniciarPosibleArrastrePlanta } from './gemelo-drag-drop.js';
 
 const gemeloMapaContainer = document.getElementById('gemeloMapaContainer');
 const gemeloMapaWrapper   = document.querySelector('#view-gemelo .gemelo-mapa-wrapper');
 const gemeloPanelLista    = document.getElementById('gemeloPanelLista');
-const gemeloZoomInBtn     = document.getElementById('gemeloZoomInBtn');
-const gemeloZoomOutBtn    = document.getElementById('gemeloZoomOutBtn');
 
 const dashboardResumenCamas = document.getElementById('dashboardResumenCamas');
 
@@ -77,244 +79,6 @@ export function getCatalogoActual() {
 export function setCatalogoActual(valor) {
     catalogoActual = valor;
 }
-
-// ── Pan/zoom del mapa en espiral (Fase 18.1) ─────────────────────────
-//
-// El estado {escala, offsetX, offsetY} vive ACÁ, no en render-spiral-2d.js
-// — cada llamada a renderEspiralSVG() reemplaza el <svg> por completo
-// (container.replaceChildren), así que cualquier estado que viviera solo
-// en el viewBox del nodo anterior se perdería en cada re-render (drop de
-// planta, marcar semilla, cerrar cultivo — todo pasa por iniciarHuerto()).
-// aplicarVistaEspiral()/configurarPanZoomEspiral() se llaman de nuevo
-// después de CADA renderEspiralSVG(), sobre el <svg> nuevo.
-//
-// R_MAPA debe coincidir con la constante `R` de render-spiral-2d.js — no
-// se importa de ahí porque ese módulo no expone su viewBox base como
-// valor público (es un detalle interno de cómo arma el <svg>), así que se
-// duplica aquí de forma literal y documentada, mismo criterio ya usado
-// para ESCALA/RADIO_FICHA_PX entre geometria-espiral.js y
-// render-spiral-2d.js.
-const R_MAPA = 420;
-const ESCALA_MIN = 1;   // no se puede alejar más allá de la vista original
-const ESCALA_MAX = 4;
-const UMBRAL_PAN_PX = 9; // 8-10px pedido — punto medio del rango
-
-let vistaEspiral = { escala: 1, offsetX: 0, offsetY: 0 };
-
-// Fase 14.6b ya usaba `.dragging`/ghost para señalar un arrastre de planta
-// en curso, pero no había ninguna bandera que otro gesto pudiera consultar
-// — el pan la necesita para quedarse quieto mientras dura un arrastre
-// (prioridad total al drag de planta sobre el mapa, nunca al revés, ver
-// diagnóstico de la fase). Se declara acá porque iniciarArrastrePlanta
-// también vive en este archivo.
-let arrastrandoPlanta = false;
-
-function clampVistaEspiral() {
-    vistaEspiral.escala = Math.min(ESCALA_MAX, Math.max(ESCALA_MIN, vistaEspiral.escala));
-    // El pan nunca puede alejarse tanto que el viewBox salga del cuadro
-    // [-R_MAPA, R_MAPA] original — maxOffset = R*(1 - 1/escala) garantiza
-    // que ambos bordes del viewBox (offset ± R/escala) queden siempre
-    // dentro de ese cuadro. En escala=1 (sin zoom) maxOffset=0: no hay
-    // pan posible sin zoom, correcto — no hay nada "extra" a donde
-    // desplazarse si ya se ve todo el contenido.
-    const maxOffset = R_MAPA * (1 - 1 / vistaEspiral.escala);
-    vistaEspiral.offsetX = Math.min(maxOffset, Math.max(-maxOffset, vistaEspiral.offsetX));
-    vistaEspiral.offsetY = Math.min(maxOffset, Math.max(-maxOffset, vistaEspiral.offsetY));
-}
-
-function aplicarVistaEspiral(svg) {
-    if (!svg) return;
-    const mitad = R_MAPA / vistaEspiral.escala;
-    svg.setAttribute('viewBox', `${vistaEspiral.offsetX - mitad} ${vistaEspiral.offsetY - mitad} ${2 * mitad} ${2 * mitad}`);
-}
-
-// Convierte un punto de pantalla (clientX/clientY) a coordenadas del
-// espacio SVG nativo, usando el viewBox y el tamaño real renderizado del
-// <svg> — necesario para el pan (convertir px de pantalla a unidades SVG)
-// y el zoom hacia el cursor/centro del pellizco (saber qué punto del mapa
-// debe quedarse fijo bajo el puntero).
-function pantallaASvg(clientX, clientY, svg) {
-    const rect = svg.getBoundingClientRect();
-    const vb = svg.viewBox.baseVal;
-    return {
-        x: vb.x + ((clientX - rect.left) / rect.width) * vb.width,
-        y: vb.y + ((clientY - rect.top) / rect.height) * vb.height
-    };
-}
-
-function zoomHacia(clientX, clientY, svg, nuevaEscala) {
-    // Fija el punto (clientX,clientY) bajo el cursor/pellizco antes y
-    // después del cambio de escala — sin esto, hacer zoom siempre
-    // "empujaría" el mapa hacia el centro en vez de sentirse anclado a
-    // donde apunta el usuario.
-    const antes = pantallaASvg(clientX, clientY, svg);
-    vistaEspiral.escala = nuevaEscala;
-    clampVistaEspiral();
-    aplicarVistaEspiral(svg);
-    const despues = pantallaASvg(clientX, clientY, svg);
-    vistaEspiral.offsetX += antes.x - despues.x;
-    vistaEspiral.offsetY += antes.y - despues.y;
-    clampVistaEspiral();
-    aplicarVistaEspiral(svg);
-}
-
-// (Re)configura pan (arrastre de un puntero), zoom con rueda y pellizco
-// (dos punteros) sobre un <svg> — se llama de nuevo en cada render porque
-// el <svg> es un nodo nuevo cada vez (ver comentario de cabecera).
-//
-// pointermove/pointerup/pointercancel viven en `window`, montados/
-// desmontados dinámicamente mientras dura el gesto — MISMO patrón que ya
-// usa iniciarArrastrePlanta, a propósito. La primera versión de esta
-// función usaba svg.setPointerCapture(), que parecía la solución más
-// "moderna" — pero se verificó con Playwright (ver validación de la fase)
-// que retargeta también el `click` sintético posterior al propio <svg> en
-// vez de al elemento real bajo el puntero, así que un clic corto sobre
-// una cama dejaba de llegarle a `forma`/`grupo` (onClickCama/onClickPlanta
-// nunca se disparaban). Sin pointer capture, el click se resuelve normal.
-function configurarPanZoomEspiral(svg) {
-    if (!svg) return;
-
-    // pointerId -> {x, y} de cada puntero activo — 1 entrada = pan de un
-    // dedo/mouse, 2 entradas = pellizco. Un Map, no un array, porque el
-    // pointerId de quien se levanta primero no es necesariamente el que
-    // arrancó el gesto.
-    const punteros = new Map();
-    let panActivo = false;
-    let panCruzoUmbral = false;
-    let panInicioX = 0;
-    let panInicioY = 0;
-    let pellizcoActivo = false;
-    let pellizcoDistanciaInicial = 0;
-    let pellizcoEscalaInicial = 1;
-    let listenersGlobalesMontados = false;
-
-    function distanciaEntrePunteros() {
-        const [a, b] = [...punteros.values()];
-        return Math.hypot(a.x - b.x, a.y - b.y);
-    }
-    function centroEntrePunteros() {
-        const [a, b] = [...punteros.values()];
-        return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-    }
-
-    function onPointerMove(e) {
-        if (arrastrandoPlanta) return;
-        if (!punteros.has(e.pointerId)) return;
-        const anterior = punteros.get(e.pointerId);
-        punteros.set(e.pointerId, { x: e.clientX, y: e.clientY });
-
-        if (pellizcoActivo && punteros.size === 2) {
-            const distanciaActual = distanciaEntrePunteros();
-            const factor = distanciaActual / pellizcoDistanciaInicial;
-            const centro = centroEntrePunteros();
-            zoomHacia(centro.x, centro.y, svg, pellizcoEscalaInicial * factor);
-            return;
-        }
-
-        if (panActivo && punteros.size === 1) {
-            const distDesdeInicio = Math.hypot(e.clientX - panInicioX, e.clientY - panInicioY);
-            if (distDesdeInicio > UMBRAL_PAN_PX) panCruzoUmbral = true;
-            if (!panCruzoUmbral) return; // bajo el umbral: no mover nada todavía, podría ser un clic
-
-            const dx = e.clientX - anterior.x;
-            const dy = e.clientY - anterior.y;
-            // px de pantalla -> unidades SVG, usando el ancho actual del
-            // viewBox contra el ancho real renderizado (cuadrado, mismo
-            // factor para X e Y). Arrastrar a la derecha debe mover el
-            // CONTENIDO a la derecha (manipulación directa), por eso resta.
-            const rect = svg.getBoundingClientRect();
-            const vb = svg.viewBox.baseVal;
-            const factorPxAUnidades = vb.width / rect.width;
-            vistaEspiral.offsetX -= dx * factorPxAUnidades;
-            vistaEspiral.offsetY -= dy * factorPxAUnidades;
-            clampVistaEspiral();
-            aplicarVistaEspiral(svg);
-        }
-    }
-
-    function montarListenersGlobales() {
-        if (listenersGlobalesMontados) return;
-        window.addEventListener('pointermove', onPointerMove);
-        window.addEventListener('pointerup', onPointerUpOCancel);
-        window.addEventListener('pointercancel', onPointerUpOCancel);
-        listenersGlobalesMontados = true;
-    }
-    function desmontarListenersGlobales() {
-        window.removeEventListener('pointermove', onPointerMove);
-        window.removeEventListener('pointerup', onPointerUpOCancel);
-        window.removeEventListener('pointercancel', onPointerUpOCancel);
-        listenersGlobalesMontados = false;
-    }
-
-    function onPointerUpOCancel(e) {
-        punteros.delete(e.pointerId);
-        if (punteros.size < 2) pellizcoActivo = false;
-        if (punteros.size === 0) {
-            panActivo = false;
-            desmontarListenersGlobales();
-        }
-    }
-
-    svg.addEventListener('pointerdown', (e) => {
-        if (arrastrandoPlanta) return; // prioridad total al drag de planta
-        punteros.set(e.pointerId, { x: e.clientX, y: e.clientY });
-        montarListenersGlobales();
-
-        if (punteros.size === 1) {
-            panActivo = true;
-            panCruzoUmbral = false;
-            panInicioX = e.clientX;
-            panInicioY = e.clientY;
-        } else if (punteros.size === 2) {
-            // Un segundo puntero llegó a mitad de un pan de un dedo — se
-            // pausa el pan (no lo cancela: si un dedo se levanta, el pan
-            // NO se reanuda automáticamente con el dedo que queda, evita
-            // un salto brusco) y arranca el pellizco.
-            panActivo = false;
-            pellizcoActivo = true;
-            pellizcoDistanciaInicial = distanciaEntrePunteros();
-            pellizcoEscalaInicial = vistaEspiral.escala;
-        }
-    });
-
-    // Suprime el click sintético que el navegador dispara después de un
-    // pointerup si el gesto cruzó el umbral — sin esto, soltar tras un pan
-    // largo sobre una cama abriría igual su modal de notas. Fase de
-    // CAPTURA (tercer argumento `true`): corre antes de que el evento
-    // llegue a los listeners de clic de onClickCama/onClickPlanta (que
-    // están en fase de burbuja, más profundo en el árbol — forma/grupo
-    // dentro de cada <g class="cama-espiral">), así que detenerlo acá
-    // nunca deja que lleguen a dispararse.
-    svg.addEventListener('click', (e) => {
-        if (panCruzoUmbral) {
-            e.stopPropagation();
-            e.preventDefault();
-        }
-        panCruzoUmbral = false; // listo para el próximo gesto
-    }, true);
-
-    // Rueda del mouse (desktop) — zoom hacia el cursor. preventDefault +
-    // passive:false para que la página no haga scroll mientras se hace
-    // zoom sobre el mapa.
-    svg.addEventListener('wheel', (e) => {
-        e.preventDefault();
-        const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
-        zoomHacia(e.clientX, e.clientY, svg, vistaEspiral.escala * factor);
-    }, { passive: false });
-}
-
-function zoomBotonEspiral(factor) {
-    const svg = gemeloMapaContainer.querySelector('svg');
-    if (!svg) return;
-    const rect = svg.getBoundingClientRect();
-    // Sin cursor/dedo real, el zoom por botón ancla al centro visible del
-    // mapa — mismo mecanismo (zoomHacia) que rueda/pellizco, solo con un
-    // punto de referencia distinto.
-    zoomHacia(rect.left + rect.width / 2, rect.top + rect.height / 2, svg, vistaEspiral.escala * factor);
-}
-
-gemeloZoomInBtn.addEventListener('click', () => zoomBotonEspiral(1.4));
-gemeloZoomOutBtn.addEventListener('click', () => zoomBotonEspiral(1 / 1.4));
 
 // ── Carga de datos ────────────────────────────────────────────────
 
@@ -465,181 +229,14 @@ function renderPanelCatalogoArrastrable(catalogo) {
         info.appendChild(name);
 
         card.append(icon, info);
-        card.addEventListener('pointerdown', (e) => iniciarPosibleArrastrePlanta(e, planta.id, card));
+        // iniciarHuerto se pasa como `onSoltar` — ver comentario de cabecera
+        // de gemelo-drag-drop.js para por qué ese módulo no lo importa
+        // directo (evitar un ciclo entre los dos archivos).
+        card.addEventListener('pointerdown', (e) => iniciarPosibleArrastrePlanta(e, planta.id, card, iniciarHuerto));
         fragment.appendChild(card);
     });
 
     gemeloPanelLista.replaceChildren(fragment);
-}
-
-// Pointer Events (pointerdown/pointermove/pointerup), NUNCA la API de
-// drag&drop nativa del navegador (draggable/dragstart/drop) — esa API no
-// dispara en touch, y el proyecto es mobile-first desde Fase 13.
-//
-// Fase 18.4 (auditoría mobile 2026-07-24): antes de esta fase, un solo
-// pointerdown por tarjeta arrancaba el arrastre de inmediato — con
-// touch-action:none en .plant-card (ver index.html) eso bloqueaba TAMBIÉN
-// el scroll horizontal nativo de .gemelo-panel-lista, así que en mobile
-// (fila apilada arriba del mapa, ~33 plantas en el catálogo) no había forma
-// de deslizar el dedo para ver más plantas: cualquier toque sobre una
-// tarjeta quedaba marcado "sin scroll nativo" desde el touchstart, antes de
-// que corriera JS. touch-action ahora es pan-x (scroll horizontal nativo
-// permitido, vertical no), e iniciarPosibleArrastrePlanta espera a que el
-// gesto cruce UMBRAL_ARRASTRE_PLANTA_PX para decidir, por la dirección
-// dominante, si es scroll de la lista (horizontal — no hace nada, deja que
-// el navegador siga con el pan-x que ya venía haciendo) o arrastre hacia el
-// mapa (vertical — recién ahí arranca iniciarArrastrePlanta). Mismo
-// criterio de umbral por distancia que ya usa el pan del mapa
-// (UMBRAL_PAN_PX), aplicado acá también por dirección.
-const UMBRAL_ARRASTRE_PLANTA_PX = 9;
-
-function iniciarPosibleArrastrePlanta(evento, plantaId, elementoOrigen) {
-    // touch-action solo afecta gestos táctiles/pluma — mouse nunca tuvo el
-    // problema de scroll bloqueado (la rueda/scrollbar no pelean con nada
-    // acá), así que mouse conserva el comportamiento original de arrancar
-    // el arrastre de inmediato. Importa además en desktop (≥720px, layout
-    // en fila): ahí el panel scrollea VERTICAL y el mapa queda a la
-    // derecha, el eje contrario a mobile — un drag real panel→mapa con
-    // mouse puede ser bien horizontal, y esperar "dirección vertical" lo
-    // interpretaría como scroll y jamás arrancaría el arrastre.
-    if (evento.pointerType === 'mouse') {
-        iniciarArrastrePlanta(evento, plantaId, elementoOrigen);
-        return;
-    }
-
-    const pointerId = evento.pointerId;
-    const inicioX = evento.clientX;
-    const inicioY = evento.clientY;
-    let resuelto = false;
-
-    function limpiar() {
-        window.removeEventListener('pointermove', onPointerMove);
-        window.removeEventListener('pointerup', onPointerUpOCancel);
-        window.removeEventListener('pointercancel', onPointerUpOCancel);
-    }
-
-    function onPointerMove(ev) {
-        if (ev.pointerId !== pointerId || resuelto) return;
-        const dx = ev.clientX - inicioX;
-        const dy = ev.clientY - inicioY;
-        if (Math.hypot(dx, dy) < UMBRAL_ARRASTRE_PLANTA_PX) return;
-
-        resuelto = true;
-        limpiar();
-
-        // Mismo breakpoint que .gemelo-panel-lista (720px, index.html):
-        // bajo eso la lista scrollea horizontal (fila arriba del mapa, ver
-        // touch-action:pan-x base), desde ahí scrollea vertical (columna a
-        // la izquierda del mapa, ver override touch-action:pan-y dentro del
-        // media query) — el eje "es scroll, no arrastre" se invierte según
-        // el layout, no es siempre horizontal.
-        const esDesktop = window.matchMedia('(min-width: 720px)').matches;
-        const esGestoDeScroll = esDesktop
-            ? Math.abs(dy) > Math.abs(dx)   // desktop: scroll vertical
-            : Math.abs(dx) > Math.abs(dy);  // mobile: scroll horizontal
-
-        if (esGestoDeScroll) return; // ya en curso vía pan-x/pan-y nativo
-
-        // Intención de arrastre hacia el mapa. Se le pasa `ev` (no el
-        // pointerdown original) para que el ghost arranque en la posición
-        // actual del dedo, no en la de hace varios px de movimiento.
-        iniciarArrastrePlanta(ev, plantaId, elementoOrigen);
-    }
-
-    function onPointerUpOCancel(ev) {
-        if (ev.pointerId !== pointerId) return;
-        limpiar();
-    }
-
-    window.addEventListener('pointermove', onPointerMove);
-    window.addEventListener('pointerup', onPointerUpOCancel);
-    window.addEventListener('pointercancel', onPointerUpOCancel);
-}
-
-function iniciarArrastrePlanta(evento, plantaId, elementoOrigen) {
-    evento.preventDefault();
-
-    // Fase 18.1: bandera que el pan del mapa consulta en cada pointermove
-    // — prioridad total al arrastre de planta, el pan se queda quieto
-    // mientras dura (ver diagnóstico de la fase).
-    arrastrandoPlanta = true;
-
-    const ghost = document.createElement('div');
-    ghost.className = 'gemelo-drag-ghost';
-    ghost.textContent = elementoOrigen.textContent;
-    document.body.appendChild(ghost);
-
-    // Fase 18.5 (auditoría mobile 2026-07-24): en touch, el ghost centrado
-    // exactamente en clientX/clientY queda tapado por el propio dedo — ni
-    // el ghost ni el resaltado .drop-target de la cama se ven mientras se
-    // arrastra. Se desplaza el ghost hacia ARRIBA del punto de contacto
-    // solo para touch/pen (mouse no tapa nada, sigue centrado como antes).
-    // Puramente visual: onPointerMove más abajo sigue pasando
-    // ev.clientX/clientY SIN este desplazamiento a elementFromPoint — el
-    // drop tiene que sentirse anclado a donde está el dedo, no a donde se
-    // ve el ghost.
-    const desplazamientoGhostY = evento.pointerType === 'mouse' ? 0 : -70;
-
-    const moverGhost = (x, y) => {
-        ghost.style.left = `${x}px`;
-        ghost.style.top = `${y + desplazamientoGhostY}px`;
-    };
-    moverGhost(evento.clientX, evento.clientY);
-    elementoOrigen.classList.add('dragging');
-
-    // Cama (.cama-espiral) resaltada bajo el puntero en este momento del
-    // arrastre — se recalcula en cada pointermove vía elementFromPoint;
-    // .gemelo-drag-ghost tiene pointer-events:none así que nunca se
-    // interpone a sí mismo en ese hit-test.
-    let camaResaltada = null;
-
-    function onPointerMove(ev) {
-        moverGhost(ev.clientX, ev.clientY);
-
-        const elBajoPuntero = document.elementFromPoint(ev.clientX, ev.clientY);
-        const camaGrupo = elBajoPuntero ? elBajoPuntero.closest('.cama-espiral') : null;
-
-        if (camaGrupo !== camaResaltada) {
-            if (camaResaltada) camaResaltada.classList.remove('drop-target');
-            camaResaltada = camaGrupo;
-            if (camaResaltada) camaResaltada.classList.add('drop-target');
-        }
-    }
-
-    async function onPointerUp() {
-        window.removeEventListener('pointermove', onPointerMove);
-        window.removeEventListener('pointerup', onPointerUp);
-        window.removeEventListener('pointercancel', onPointerUp);
-        arrastrandoPlanta = false; // el pan puede retomar de inmediato, no hace falta esperar el guardado
-        ghost.remove();
-        elementoOrigen.classList.remove('dragging');
-
-        const camaDestino = camaResaltada;
-        if (camaDestino) camaDestino.classList.remove('drop-target');
-        if (!camaDestino) return; // soltado fuera de cualquier cama — no-op
-
-        const camaId = camaDestino.dataset.camaId;
-        try {
-            await agregarPlantaACama(camaId, plantaId);
-            // Mismo patrón que detallePlantaSemillaBtn tras marcarParaSemilla:
-            // await iniciarHuerto() ANTES del toast, para no dejar ver un
-            // instante la espiral vieja sin la ficha nueva (el parpadeo que
-            // ya se corrigió en PASO D).
-            await iniciarHuerto();
-            mostrarToast('Planta agregada', 'green');
-        } catch (e) {
-            console.error('[vista-gemelo] Error agregando planta a la cama:', e);
-            // Mensaje real del error (ej. cama saturada, sin espacio sin
-            // traslape) — no uno genérico, a diferencia de otros handlers
-            // que sí generalizan; aquí el mensaje de proximaPosicionDisponible
-            // es información accionable para quien está sembrando.
-            mostrarToast(e.message || 'No se pudo agregar la planta', 'red');
-        }
-    }
-
-    window.addEventListener('pointermove', onPointerMove);
-    window.addEventListener('pointerup', onPointerUp);
-    window.addEventListener('pointercancel', onPointerUp);
 }
 
 // ── Detalle de CAMA completa en espiral (Fase 14.5) ─────────────────

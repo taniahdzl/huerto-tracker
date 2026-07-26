@@ -1,4 +1,4 @@
-// js/core-ui.js
+// js/shared/core-ui.js
 //
 // Helpers de UI genéricos, usados por todas las vistas — módulo hoja, sin
 // imports salientes, para que cualquier otro módulo pueda depender de él

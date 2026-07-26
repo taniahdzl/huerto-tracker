@@ -1,6 +1,6 @@
 // test/session.test.js
 //
-// js/session.js es puro (sin DOM, sin Firebase) — estado de módulo
+// js/services/session.js es puro (sin DOM, sin Firebase) — estado de módulo
 // (_usuario) expuesto vía getUsuarioActual/setUsuarioActual, mismo patrón
 // que luego copiaron estado-app.js y las vista-*.js con estado propio (ver
 // AI_CONTEXT.md, Fase 19). Cada test resetea el estado explícitamente al
@@ -13,7 +13,7 @@
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { setUsuarioActual, getUsuarioActual, nombreParaMostrar } from '../js/session.js';
+import { setUsuarioActual, getUsuarioActual, nombreParaMostrar } from '../js/services/session.js';
 
 describe('setUsuarioActual / getUsuarioActual', () => {
     test('guarda y devuelve el usuario tal cual, sin transformarlo', () => {

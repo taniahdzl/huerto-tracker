@@ -1,4 +1,4 @@
-// js/firebase.js
+// js/services/firebase.js
 //
 // Punto único de inicialización de Firebase. Ningún otro módulo debe
 // importar directamente del CDN de Firebase ni llamar initializeApp():
@@ -27,7 +27,7 @@ try {
     ({ firebaseConfig } = await import('./config.js'));
 } catch (e) {
     throw new Error(
-        '[firebase] Falta js/config.js. Copia js/config.example.js a js/config.js ' +
+        '[firebase] Falta js/services/config.js. Copia js/services/config.example.js a js/services/config.js ' +
         'y agrega tus credenciales reales de Firebase (ver README).',
         { cause: e }
     );
@@ -35,7 +35,7 @@ try {
 
 if (!firebaseConfig?.apiKey || firebaseConfig.apiKey.startsWith('REEMPLAZAR_')) {
     throw new Error(
-        '[firebase] js/config.js existe pero firebaseConfig.apiKey sigue siendo un ' +
+        '[firebase] js/services/config.js existe pero firebaseConfig.apiKey sigue siendo un ' +
         'placeholder. Reemplaza los valores con tus credenciales reales de Firebase ' +
         'Console (Configuración del proyecto → General → Tus apps).'
     );

@@ -1,4 +1,4 @@
-// js/render.js
+// js/render/render.js
 //
 // Capa de pintado. No sabe qué es Firestore, no importa nada de firebase.js
 // ni de db.js — solo recibe arrays de datos ya resueltos y un contenedor
@@ -8,7 +8,7 @@
 // identidad puro (sin firebase.js/db.js detrás), aporta nombreParaMostrar
 // (Fase 14.1) para no duplicar el fallback nombre→email→id aquí.
 
-import { nombreParaMostrar } from './session.js';
+import { nombreParaMostrar } from '../services/session.js';
 
 // ── Shape de `plantas` (catalogo_semillas) ─────────────────────────
 // Verificado contra scripts/upload.js (única fuente real de estos datos):

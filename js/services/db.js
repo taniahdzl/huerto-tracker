@@ -1,4 +1,4 @@
-// js/db.js
+// js/services/db.js
 import {
     db, PATHS,
     collection, doc,
@@ -7,7 +7,7 @@ import {
     writeBatch
 } from './firebase.js';
 import { getUsuarioActual, nombreParaMostrar } from './session.js';
-import { proximaPosicionDisponible } from './geometria-espiral.js';
+import { proximaPosicionDisponible } from '../render/geometria-espiral.js';
 // obtenerSesionConDetalle deriva asistentes/tareas de otros módulos en vez
 // de duplicar esos datos dentro de bitacora_sesiones — ver su cabecera.
 import { obtenerTareas, obtenerAsistenciasPorFecha } from './chores.js';

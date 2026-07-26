@@ -33,18 +33,18 @@
 // reconectar cuando ese backend exista es tan simple como volver a
 // importarlo.
 
-import { AuthService } from './auth.js';
-import { setUsuarioActual } from './session.js';
-import { marcarStatusSinSesion } from './core-ui.js';
-import { navegarA, ocultarTodasLasVistas } from './router.js';
-import { setEsAdminActual } from './estado-app.js';
-import { mostrarErrorLogin, mostrarErrorSetup, actualizarGatingSetup } from './vista-login.js';
-import { mostrarDashboard } from './vista-dashboard.js';
-import { irAVistaTareas } from './vista-tareas.js';
-import { irAVistaCatalogos } from './vista-catalogos.js';
-import { irAVistaPerfil } from './vista-perfil.js';
-import { irAVistaAdmin } from './vista-admin.js';
-import { irAVistaBitacora } from './vista-bitacora.js';
+import { AuthService } from './services/auth.js';
+import { setUsuarioActual } from './services/session.js';
+import { marcarStatusSinSesion } from './shared/core-ui.js';
+import { navegarA, ocultarTodasLasVistas } from './shared/router.js';
+import { setEsAdminActual } from './shared/estado-app.js';
+import { mostrarErrorLogin, mostrarErrorSetup, actualizarGatingSetup } from './views/vista-login.js';
+import { mostrarDashboard } from './views/vista-dashboard.js';
+import { irAVistaTareas } from './views/vista-tareas.js';
+import { irAVistaCatalogos } from './views/vista-catalogos.js';
+import { irAVistaPerfil } from './views/vista-perfil.js';
+import { irAVistaAdmin } from './views/vista-admin.js';
+import { irAVistaBitacora } from './views/vista-bitacora.js';
 
 const headerNav = document.getElementById('headerNav');
 const adminBtn      = document.getElementById('adminBtn');

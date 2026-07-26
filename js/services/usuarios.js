@@ -1,4 +1,4 @@
-// js/usuarios.js
+// js/services/usuarios.js
 //
 // Directorio de usuarios — creación orgánica (lazy) en el primer login.
 // Mismo patrón que db.js/chores.js: funciones planas, _logActividad

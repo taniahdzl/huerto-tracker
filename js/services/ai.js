@@ -1,4 +1,4 @@
-// js/ai.js
+// js/services/ai.js
 //
 // Capa de "inteligencia" del asistente del huerto. No importa nada de
 // Firebase ni toca el DOM — recibe texto y contexto, devuelve texto.

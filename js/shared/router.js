@@ -1,4 +1,4 @@
-// js/router.js
+// js/shared/router.js
 //
 // Router SPA (Fase 13) — puro toggle de visibilidad de .view, nunca carga
 // datos: cada vista que necesita datos tiene su propio irAVistaX() en su

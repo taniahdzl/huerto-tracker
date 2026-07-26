@@ -1,4 +1,4 @@
-// js/vista-admin.js
+// js/views/vista-admin.js
 //
 // Dos secciones históricamente separadas en main.js, fusionadas acá porque
 // están conectadas por un botón real (abrirAjusteHorasBtn dentro de esta
@@ -16,12 +16,12 @@
 // contra obtenerDirectorioEstudiantes(), que además no tendría a los
 // admins. Extraído de main.js (Fase 19, división en módulos por vista).
 
-import { obtenerDirectorioEstudiantes, obtenerDirectorioCompleto, ajustarHoras } from './usuarios.js';
-import { obtenerRegistroActividad, extraerLinkIndice } from './db.js';
-import { renderRegistroActividad, renderResumenHoras } from './render.js';
-import { nombreParaMostrar } from './session.js';
-import { mostrarToast, openModal, closeModal } from './core-ui.js';
-import { navegarA } from './router.js';
+import { obtenerDirectorioEstudiantes, obtenerDirectorioCompleto, ajustarHoras } from '../services/usuarios.js';
+import { obtenerRegistroActividad, extraerLinkIndice } from '../services/db.js';
+import { renderRegistroActividad, renderResumenHoras } from '../render/render.js';
+import { nombreParaMostrar } from '../services/session.js';
+import { mostrarToast, openModal, closeModal } from '../shared/core-ui.js';
+import { navegarA } from '../shared/router.js';
 import { getEstudiantesActuales, setEstudiantesActuales } from './vista-tareas.js';
 
 const adminModalClose    = document.getElementById('adminModalClose');

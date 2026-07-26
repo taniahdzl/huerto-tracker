@@ -1,17 +1,18 @@
 // scripts/generate-config.js
 //
-// Genera js/config.js a partir de variables de entorno FIREBASE_* — pensado
-// para correr como buildCommand en Vercel (ver vercel.json), donde
-// js/config.js nunca se commitea (.gitignore) y no puede escribirse a mano.
+// Genera js/services/config.js a partir de variables de entorno FIREBASE_* —
+// pensado para correr como buildCommand en Vercel (ver vercel.json), donde
+// js/services/config.js nunca se commitea (.gitignore) y no puede escribirse
+// a mano.
 //
-// Mismo criterio "fail-loud" que ya usa js/firebase.js con config.js
-// faltante/placeholder: si falta una variable de entorno, el build debe
-// fallar visiblemente aquí, no generar un config.js a medias que recién
-// falle en el navegador de quien visite el sitio.
+// Mismo criterio "fail-loud" que ya usa js/services/firebase.js con
+// config.js faltante/placeholder: si falta una variable de entorno, el
+// build debe fallar visiblemente aquí, no generar un config.js a medias que
+// recién falle en el navegador de quien visite el sitio.
 //
-// Campos EXACTOS que espera `firebaseConfig` en js/firebase.js (confirmado
-// contra js/config.example.js, no el shape estándar de Firebase — este
-// proyecto no usa messagingSenderId ni measurementId):
+// Campos EXACTOS que espera `firebaseConfig` en js/services/firebase.js
+// (confirmado contra js/services/config.example.js, no el shape estándar de
+// Firebase — este proyecto no usa messagingSenderId ni measurementId):
 //   apiKey, authDomain, projectId, storageBucket, appId
 
 const fs = require('fs');
@@ -53,6 +54,6 @@ export const firebaseConfig = {
 };
 `;
 
-const destino = path.join(__dirname, '..', 'js', 'config.js');
+const destino = path.join(__dirname, '..', 'js', 'services', 'config.js');
 fs.writeFileSync(destino, contenido);
-console.log(`[generate-config] js/config.js generado correctamente (projectId: ${valores.projectId}).`);
+console.log(`[generate-config] js/services/config.js generado correctamente (projectId: ${valores.projectId}).`);
