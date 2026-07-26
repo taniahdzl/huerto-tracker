@@ -92,11 +92,24 @@ un estado del proyecto (monolito en `index.html`, JS vacío, API key en
   `catalogo_quimicos`, `inventario_general`, `historial_cultivo`,
   `bitacora_sesiones`). No queda ninguna referencia a Realtime Database en
   el código (sí sigue en `README.md`, no revisado en esta pasada).
-- **`firestore.rules` versionado y real** (116 líneas).
-- **`firestore.indexes.json` sigue vacío** (`{"indexes": [], "fieldOverrides": []}`)
-  mientras que en producción existen índices compuestos reales (usados por
-  queries `where` + `orderBy` en `db.js`/`chores.js`). Pendiente exportar con
-  `firebase firestore:indexes` y commitear.
+- **`firestore.rules` versionado y real** (116 líneas) — reconfirmado
+  2026-07-26 pegando el contenido actual de la consola de Firebase; el único
+  diff fue un salto de línea final faltante (artefacto de copiar/pegar desde
+  la consola), el contenido de las reglas ya estaba 100% al día.
+- **`firestore.indexes.json` exportado y commiteado (2026-07-26).** Se
+  confirmó con la consola de Firebase (pestaña Índices → "Alcance de la
+  colección") que en producción existe UN SOLO índice compuesto manual:
+  `tareas` — `asignados` (array-contains) + `estado` (==) + `fechaCreacion`
+  (asc), la query real de `obtenerTareasAsignadas()`
+  (`js/services/chores.js`). La pestaña "Alcance del grupo de colecciones"
+  (single-field, Ascendente/Descendente/Matrices todos "Habilitado" — la
+  config default, sin exenciones) confirma que `fieldOverrides` debe seguir
+  vacío. Esto también confirma que los 3 índices compuestos de
+  `registro_actividad` que anticipa el comentario en `db.js`
+  (`obtenerRegistroActividad`) NUNCA se llegaron a crear en producción —
+  eran una propuesta documentada a partir de links de error, no un hecho
+  consumado; el comentario de `db.js` se corrigió para no dar a entender lo
+  contrario.
 - **Suite de tests iniciada (Fase 21, 2026-07-24).** `test/*.test.js`, 33
   tests, usando `node:test`/`node:assert` nativos de Node (18+) — CERO
   dependencias nuevas, sin `package.json`, corre con `node --test` desde la
@@ -202,9 +215,9 @@ para ver más plantas vs. arrastrar hacia el mapa" (Fase 18.4).
       Function antes de conectar `js/services/ai.js` a la API real, pero no
       hay urgencia de atacarlo. No proponer trabajo acá salvo que se pida
       explícitamente.
-- [x] Paso 3a: `firestore.rules` versionado.
-- [ ] Paso 3b: `firestore.indexes.json` sigue vacío — exportar el índice
-      real de producción y commitear.
+- [x] Paso 3a: `firestore.rules` versionado (reconfirmado al día 2026-07-26).
+- [x] Paso 3b: `firestore.indexes.json` exportado y commiteado (2026-07-26)
+      — ver sección 1.
 - [x] Nuevo: dividir `js/main.js` en módulos por vista (Fase 19,
       2026-07-24) — ver "Arquitectura de módulos" más abajo.
 - [x] Nuevo: fix de mobile en `.gemelo-mapa-wrapper` (ver sección 2, Fase 18.3).

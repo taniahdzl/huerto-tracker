@@ -56,11 +56,14 @@ function _logActividad(tipo, entidad, detalle) {
 // + where('fecha','<=') + orderBy('fecha'), porque el rango y el orderBy
 // caen sobre el MISMO campo.
 //
-// Hasta que esos 3 índices existan en producción, cualquier combinación
-// que los necesite lanza FAILED_PRECONDITION — el catch del caller (ver
-// abrirFiltroAuditoria en main.js) usa extraerLinkIndice() para mostrarle
-// al admin el link real del error tal cual lo devuelve Firestore, en vez
-// de fallar en silencio.
+// Confirmado contra la consola de Firebase (2026-07-26, ver AI_CONTEXT.md
+// Paso 3b): ninguno de estos 3 índices se llegó a crear en producción — el
+// único índice compuesto real del proyecto es el de `tareas` (ver
+// firestore.indexes.json). Mientras sigan sin existir, cualquier
+// combinación que los necesite lanza FAILED_PRECONDITION — el catch del
+// caller (ver abrirFiltroAuditoria en main.js) usa extraerLinkIndice() para
+// mostrarle al admin el link real del error tal cual lo devuelve Firestore,
+// en vez de fallar en silencio.
 export async function obtenerRegistroActividad({ cantidad = 50, tipo, uid, desde, hasta } = {}) {
     const condiciones = [];
     if (tipo) condiciones.push(where('tipo', '==', tipo));
