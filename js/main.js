@@ -6,11 +6,12 @@
 // acá si muestra #login-overlay o navega a una vista.
 //
 // Este archivo es intencionalmente delgado: solo el bootstrap de sesión y
-// el listener delegado de headerNav (que dispatcha a las 5 rutas con carga
-// de datos propia) viven acá. Cada vista real vive en su propio
+// el listener delegado de headerNav (que dispatcha a las 6 rutas con carga
+// de datos propia — Proyectos sumada en el rediseño de tareas/proyectos,
+// 2026-08-29) viven acá. Cada vista real vive en su propio
 // js/vista-*.js; router.js/core-ui.js/estado-app.js son los módulos hoja
 // que todas las vistas comparten. El único motivo por el que ESTE archivo
-// conoce a las 5 vistas (import directo de cada irAVistaX) es que
+// conoce a las 6 vistas (import directo de cada irAVistaX) es que
 // router.js, a propósito, NO las conoce — si lo hiciera, cada vista
 // tendría que importar de vuelta navegarA() desde router.js, un ciclo
 // entre 6+ archivos. main.js es el único módulo al que le toca ser la raíz
@@ -41,6 +42,7 @@ import { setEsAdminActual } from './shared/estado-app.js';
 import { mostrarErrorLogin, mostrarErrorSetup, actualizarGatingSetup } from './views/vista-login.js';
 import { mostrarDashboard } from './views/vista-dashboard.js';
 import { irAVistaTareas } from './views/vista-tareas.js';
+import { irAVistaProyectos } from './views/vista-proyectos.js';
 import { irAVistaCatalogos } from './views/vista-catalogos.js';
 import { irAVistaPerfil } from './views/vista-perfil.js';
 import { irAVistaAdmin } from './views/vista-admin.js';
@@ -60,6 +62,10 @@ headerNav.addEventListener('click', (e) => {
     if (!btn) return;
     if (btn.dataset.vista === 'view-tareas') {
         irAVistaTareas();
+        return;
+    }
+    if (btn.dataset.vista === 'view-proyectos') {
+        irAVistaProyectos();
         return;
     }
     if (btn.dataset.vista === 'view-catalogos') {

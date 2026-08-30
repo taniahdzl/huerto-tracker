@@ -1,8 +1,13 @@
 // js/views/vista-tareas.js
 //
 // Vista de Tareas (Fase 13.5) — ya no es modal, es destino de navegación
-// recurrente. "Crear" sigue siendo un modal puntual (crearTareaModal), solo
-// visible para admin.
+// recurrente. "Crear" y "Completar" son modales puntuales (crearTareaModal/
+// completarTareaModal), ambos solo visibles para admin. Rediseño de tareas
+// (tipo/horas explícitas/foto de evidencia, reemplaza la Regla del Sábado
+// fija de chores.js): completar ya no es un clic directo, pasa por
+// completarTareaModal para poder pedir la foto cuando corresponde.
+// abrirModalCompletarTarea() está exportada para que vista-proyectos.js
+// reuse este mismo flujo desde un paso de proyecto (ver su comentario).
 //
 // estudiantesActuales se expone vía getEstudiantesActuales/
 // setEstudiantesActuales porque vista-admin.js también lo usa (selector del
@@ -27,12 +32,23 @@ const tareasFilterTabs  = document.querySelectorAll('#view-tareas .filter-tab');
 
 const crearTareaModalClose = document.getElementById('crearTareaModalClose');
 const crearTareaTitulo     = document.getElementById('crearTareaTitulo');
+const crearTareaTipo       = document.getElementById('crearTareaTipo');
+const crearTareaHoras      = document.getElementById('crearTareaHoras');
 const crearTareaAssignees  = document.getElementById('crearTareaAssignees');
 const crearTareaSaveBtn    = document.getElementById('crearTareaSaveBtn');
+
+const completarTareaModalClose  = document.getElementById('completarTareaModalClose');
+const completarTareaTitulo      = document.getElementById('completarTareaTitulo');
+const completarTareaFotoLabel   = document.getElementById('completarTareaFotoLabel');
+const completarTareaFoto        = document.getElementById('completarTareaFoto');
+const completarTareaFotoPreview = document.getElementById('completarTareaFotoPreview');
+const completarTareaSaveBtn     = document.getElementById('completarTareaSaveBtn');
 
 let tareasActuales      = [];
 let estudiantesActuales = [];
 let filtroTareasActual  = 'mias';
+let tareaEnCompletar    = null;
+let onCompletadoExterno = null;
 
 export function getEstudiantesActuales() {
     return estudiantesActuales;
@@ -93,27 +109,127 @@ tareasFilterTabs.forEach((tab) => {
     });
 });
 
-async function handleCompletarTareaVista(tareaId) {
-    const tarea = tareasActuales.find((t) => t.id === tareaId);
+// Exportada — vista-proyectos.js la reusa para abrir el mismo flujo de
+// completar/foto de evidencia desde un paso de proyecto, sin duplicar esta
+// lógica (misma modal, mismo completarTarea() por debajo, mismas horas vía
+// _registrarHoras). Recibe la tarea YA RESUELTA (no un id + lookup en
+// tareasActuales) porque vista-proyectos.js ya la trae completa desde
+// obtenerProyectosConProgreso() — pedirle un id obligaría a este módulo a
+// tener tareasActuales poblado, que no está garantizado si se navega
+// directo a Proyectos sin pasar antes por Tareas.
+// `onCompletado` (opcional) se dispara tras un completado exitoso, ADEMÁS
+// del cargarYRenderizarVistaTareas() de siempre — así el caller (ej. la
+// galería de Proyectos) puede refrescar su propia vista sin que este
+// módulo necesite saber que Proyectos existe.
+export function abrirModalCompletarTarea(tarea, { onCompletado = null } = {}) {
     if (!tarea) return;
+    tareaEnCompletar = tarea;
+    onCompletadoExterno = onCompletado;
+
+    completarTareaTitulo.textContent = tarea.titulo || 'Sin título';
+    completarTareaFoto.value = '';
+    completarTareaFotoPreview.src = '';
+    completarTareaFotoPreview.classList.add('hidden');
+    completarTareaFotoLabel.textContent = tarea.tipo === 'asistencia'
+        ? 'Foto de evidencia (obligatoria)'
+        : 'Foto de evidencia (opcional)';
+
+    openModal('completarTareaModal');
+}
+
+// El clic en "✅ Completar" ya no completa directo — abre el modal único
+// de finalización (mismo modal para ambos tipos). La foto solo se vuelve
+// obligatoria si tipo:'asistencia' (ver handleCompletarTareaGuardar).
+function handleCompletarTareaVista(tareaId) {
+    const tarea = tareasActuales.find((t) => t.id === tareaId);
+    abrirModalCompletarTarea(tarea);
+}
+
+completarTareaFoto.addEventListener('change', () => {
+    const archivo = completarTareaFoto.files[0];
+    if (!archivo) {
+        completarTareaFotoPreview.classList.add('hidden');
+        return;
+    }
+    completarTareaFotoPreview.src = URL.createObjectURL(archivo);
+    completarTareaFotoPreview.classList.remove('hidden');
+});
+
+// Compresión del lado del cliente antes de subir — Canvas API nativa, sin
+// dependencias nuevas. NO se prueba con jsdom (no implementa un
+// getContext('2d')/toBlob reales sin el paquete `canvas`, que no es
+// dependencia de este proyecto — mismo criterio de límites de jsdom ya
+// documentado para PointerEvent/viewBox, ver AI_CONTEXT.md) — cubierto
+// manualmente, ver punto 7 del diagnóstico de esta fase.
+const EVIDENCIA_LADO_MAX_PX = 1600;
+const EVIDENCIA_CALIDAD_JPEG = 0.7;
+
+function comprimirImagen(archivo) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+            const escala = Math.min(1, EVIDENCIA_LADO_MAX_PX / Math.max(img.width, img.height));
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.round(img.width * escala);
+            canvas.height = Math.round(img.height * escala);
+            canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+            canvas.toBlob((blob) => {
+                URL.revokeObjectURL(img.src);
+                blob ? resolve(blob) : reject(new Error('No se pudo comprimir la imagen'));
+            }, 'image/jpeg', EVIDENCIA_CALIDAD_JPEG);
+        };
+        img.onerror = () => reject(new Error('No se pudo leer el archivo de imagen'));
+        img.src = URL.createObjectURL(archivo);
+    });
+}
+
+async function handleCompletarTareaGuardar() {
+    if (!tareaEnCompletar) return;
+    const archivo = completarTareaFoto.files[0] || null;
+
+    if (tareaEnCompletar.tipo === 'asistencia' && !archivo) {
+        mostrarToast('Esta tarea requiere foto de evidencia', 'red');
+        return;
+    }
 
     // Deshabilita el botón específico (no un estado global) mientras la
-    // escritura está en vuelo, para que un doble clic no dispare la Regla
-    // del Sábado dos veces sobre la misma tarea.
-    const li = tareasListaVista.querySelector(`[data-tarea-id="${tareaId}"]`);
-    const boton = li?.querySelector('.chore-complete-btn');
-    if (boton) boton.disabled = true;
+    // escritura está en vuelo, para que un doble clic no dispare el
+    // otorgamiento de horas dos veces sobre la misma tarea.
+    const li = tareasListaVista.querySelector(`[data-tarea-id="${tareaEnCompletar.id}"]`);
+    const botonLista = li?.querySelector('.chore-complete-btn');
+    if (botonLista) botonLista.disabled = true;
+    completarTareaSaveBtn.disabled = true;
 
     try {
-        await completarTarea(tareaId, tarea.asignados || []);
+        // Orden de operaciones: comprimir+subir la foto ANTES de tocar
+        // Firestore (completarTarea espera la subida primero) — si falla,
+        // completarTarea nunca llega a marcar 'completada', la tarea
+        // queda 'pendiente' y este catch permite reintentar sin perder la
+        // asignación de horas que le correspondía.
+        const archivoComprimido = archivo ? await comprimirImagen(archivo) : null;
+        await completarTarea(tareaEnCompletar.id, tareaEnCompletar.asignados || [], {
+            horasAOtorgar: tareaEnCompletar.horasAOtorgar || 0,
+            archivoEvidencia: archivoComprimido
+        });
+        closeModal('completarTareaModal');
         mostrarToast('Tarea completada', 'green');
+        tareaEnCompletar = null;
         await cargarYRenderizarVistaTareas();
+        if (onCompletadoExterno) {
+            onCompletadoExterno();
+            onCompletadoExterno = null;
+        }
     } catch (e) {
         console.error('[vista-tareas] Error completando tarea:', e);
-        mostrarToast('No se pudo completar la tarea', 'red');
-        if (boton) boton.disabled = false;
+        mostrarToast('No se pudo completar la tarea — intenta de nuevo', 'red');
+        if (botonLista) botonLista.disabled = false;
+    } finally {
+        completarTareaSaveBtn.disabled = false;
     }
 }
+
+completarTareaModalClose.addEventListener('click', () => closeModal('completarTareaModal'));
+completarTareaSaveBtn.addEventListener('click', handleCompletarTareaGuardar);
 
 // ── Modal "Crear Tarea" (admin) ─────────────────────────────────────
 // Reutiliza el mismo patrón de chips que ya existía para el selector de
@@ -140,14 +256,37 @@ function abrirCrearTareaModal() {
     // estudiantesActuales ya está fresco: este botón solo es visible
     // dentro de view-tareas, que siempre se recarga al entrar.
     crearTareaTitulo.value = '';
+    crearTareaTipo.value = '';
+    crearTareaHoras.value = '';
     poblarAssigneesCrearTarea();
     openModal('crearTareaModal');
 }
+
+// Sugerencia de horas al crear: 15 solo si hoy es sábado Y el tipo
+// elegido es 'asistencia' — editable, nunca bloqueada. `fecha` es
+// inyectable (default new Date()) a propósito, para que esto sea
+// testeable sin depender del día real del sistema — a diferencia de la
+// vieja Regla del Sábado en chores.js, que documentaba esta misma
+// limitación como excluida de los tests por no aceptar una fecha
+// inyectada (ver AI_CONTEXT.md); acá se evitó desde el diseño.
+export function calcularSugerenciaHoras(tipo, fecha = new Date()) {
+    return (tipo === 'asistencia' && fecha.getDay() === 6) ? 15 : '';
+}
+
+crearTareaTipo.addEventListener('change', () => {
+    crearTareaHoras.value = calcularSugerenciaHoras(crearTareaTipo.value);
+});
 
 async function handleCrearTareaGuardar() {
     const titulo = crearTareaTitulo.value.trim();
     if (!titulo) {
         mostrarToast('La tarea necesita un título', 'red');
+        return;
+    }
+
+    const tipo = crearTareaTipo.value;
+    if (!tipo) {
+        mostrarToast('Selecciona un tipo de tarea', 'red');
         return;
     }
 
@@ -159,9 +298,11 @@ async function handleCrearTareaGuardar() {
         return;
     }
 
+    const horasAOtorgar = crearTareaHoras.value ? Number(crearTareaHoras.value) : 0;
+
     crearTareaSaveBtn.disabled = true;
     try {
-        await crearTarea({ titulo, asignados });
+        await crearTarea({ titulo, tipo, asignados, horasAOtorgar });
         closeModal('crearTareaModal');
         mostrarToast('Tarea creada', 'green');
         await cargarYRenderizarVistaTareas();

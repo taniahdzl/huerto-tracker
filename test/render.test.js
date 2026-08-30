@@ -15,7 +15,8 @@ instalarDomVacio();
 const {
     emojiDePlanta, colorDePlanta, crearLeyendaCategorias,
     renderListaTareas, renderListaCatalogos, renderRegistroActividad,
-    renderListaBitacora, renderResumenHoras
+    renderListaBitacora, renderResumenHoras,
+    renderGaleriaProyectos, calcularBadgeProyecto
 } = await import('../js/render/render.js');
 
 describe('emojiDePlanta / colorDePlanta', () => {
@@ -88,6 +89,22 @@ describe('renderListaTareas', () => {
         const contenedor = document.createElement('ul');
         renderListaTareas([{ id: 't1', estado: 'pendiente' }], contenedor, () => {});
         assert.equal(contenedor.querySelector('.chore-item-titulo').textContent, 'Sin título');
+    });
+
+    test('muestra miniatura de evidencia solo si la tarea está completada Y tiene fotoEvidenciaUrl', () => {
+        const casos = [
+            { estado: 'completada', fotoEvidenciaUrl: 'https://x/foto.jpg', esperaFoto: true },
+            { estado: 'completada', fotoEvidenciaUrl: null, esperaFoto: false },
+            { estado: 'pendiente', fotoEvidenciaUrl: 'https://x/foto.jpg', esperaFoto: false }
+        ];
+
+        casos.forEach(({ estado, fotoEvidenciaUrl, esperaFoto }) => {
+            const contenedor = document.createElement('ul');
+            renderListaTareas([{ id: 't1', titulo: 'X', estado, fotoEvidenciaUrl }], contenedor, () => {});
+            const img = contenedor.querySelector('.chore-item-evidencia');
+            assert.equal(!!img, esperaFoto, `estado=${estado} fotoEvidenciaUrl=${fotoEvidenciaUrl}`);
+            if (esperaFoto) assert.equal(img.src, 'https://x/foto.jpg');
+        });
     });
 });
 
@@ -203,5 +220,117 @@ describe('renderResumenHoras', () => {
         const fila = contenedor.querySelector('tr');
         assert.equal(fila.children[0].textContent, 'sin-nombre@test.com');
         assert.equal(fila.children[1].textContent, '0');
+    });
+});
+
+describe('calcularBadgeProyecto', () => {
+    const AHORA = new Date(2026, 7, 29); // sábado 2026-08-29, ver constructor local en otros tests de fecha
+
+    test('activo sin fechaObjetivo -> badge "activo"', () => {
+        assert.deepEqual(
+            calcularBadgeProyecto({ estado: 'activo', fechaObjetivo: null }, AHORA),
+            { tipo: 'activo', texto: 'Activo' }
+        );
+    });
+
+    test('activo con fechaObjetivo lejana (>7 días) -> badge "activo", no "fecha"', () => {
+        assert.deepEqual(
+            calcularBadgeProyecto({ estado: 'activo', fechaObjetivo: '2026-12-25' }, AHORA),
+            { tipo: 'activo', texto: 'Activo' }
+        );
+    });
+
+    test('activo con fechaObjetivo dentro de 7 días -> badge "fecha" con la fecha', () => {
+        assert.deepEqual(
+            calcularBadgeProyecto({ estado: 'activo', fechaObjetivo: '2026-09-02' }, AHORA),
+            { tipo: 'fecha', texto: '2026-09-02' }
+        );
+    });
+
+    test('activo con fechaObjetivo ya vencida -> sigue siendo "fecha" (más urgente aún)', () => {
+        assert.deepEqual(
+            calcularBadgeProyecto({ estado: 'activo', fechaObjetivo: '2026-08-01' }, AHORA),
+            { tipo: 'fecha', texto: '2026-08-01' }
+        );
+    });
+
+    test('pausado o completado -> sin badge, con o sin fechaObjetivo', () => {
+        assert.equal(calcularBadgeProyecto({ estado: 'pausado', fechaObjetivo: '2026-09-02' }, AHORA), null);
+        assert.equal(calcularBadgeProyecto({ estado: 'completado', fechaObjetivo: null }, AHORA), null);
+    });
+
+    test('default de `ahora` es "ahora" real — no lanza sin segundo argumento', () => {
+        assert.doesNotThrow(() => calcularBadgeProyecto({ estado: 'activo', fechaObjetivo: null }));
+    });
+});
+
+describe('renderGaleriaProyectos', () => {
+    function proyectoBase(overrides = {}) {
+        return {
+            id: 'p1', nombre: 'Cosecha de otoño', descripcion: 'Preparar las 3 camas del ala norte',
+            estado: 'activo', fechaObjetivo: null,
+            pasos: [
+                { tareaId: 't1', orden: 1, tarea: { titulo: 'Arar', estado: 'completada' } },
+                { tareaId: 't2', orden: 2, tarea: { titulo: 'Sembrar', estado: 'pendiente' } }
+            ],
+            totalPasos: 2, pasosCompletados: 1,
+            ...overrides
+        };
+    }
+
+    test('pinta nombre, descripción, texto de progreso y ancho de la barra', () => {
+        const contenedor = document.createElement('div');
+        renderGaleriaProyectos([proyectoBase()], contenedor, () => {});
+
+        assert.equal(contenedor.querySelector('.proyecto-card-nombre').textContent, 'Cosecha de otoño');
+        assert.equal(contenedor.querySelector('.proyecto-card-descripcion').textContent, 'Preparar las 3 camas del ala norte');
+        assert.equal(contenedor.querySelector('.proyecto-card-progreso-texto').textContent, '1 de 2 pasos completados');
+        assert.equal(contenedor.querySelector('.progress-fill').style.width, '50%');
+    });
+
+    test('checklist: check verde para completado, círculo vacío para pendiente, mismo orden que pasos[]', () => {
+        const contenedor = document.createElement('div');
+        renderGaleriaProyectos([proyectoBase()], contenedor, () => {});
+
+        const marcas = [...contenedor.querySelectorAll('.proyecto-checklist-marca')].map((m) => m.textContent);
+        assert.deepEqual(marcas, ['✅', '⚪']);
+        const titulos = [...contenedor.querySelectorAll('.proyecto-checklist-titulo')].map((t) => t.textContent);
+        assert.deepEqual(titulos, ['Arar', 'Sembrar']);
+    });
+
+    test('paso con tarea:null (borrada) muestra "(tarea eliminada)" sin lanzar', () => {
+        const contenedor = document.createElement('div');
+        const proyecto = proyectoBase({ pasos: [{ tareaId: 'x', orden: 1, tarea: null }], totalPasos: 1, pasosCompletados: 0 });
+        assert.doesNotThrow(() => renderGaleriaProyectos([proyecto], contenedor, () => {}));
+        assert.equal(contenedor.querySelector('.proyecto-checklist-titulo').textContent, '(tarea eliminada)');
+    });
+
+    test('clic en un paso dispara onClickPaso con el paso completo', () => {
+        const contenedor = document.createElement('div');
+        const clicks = [];
+        renderGaleriaProyectos([proyectoBase()], contenedor, (paso) => clicks.push(paso.tareaId));
+
+        contenedor.querySelectorAll('.proyecto-checklist-item')[1].dispatchEvent(new window.Event('click', { bubbles: true }));
+        assert.deepEqual(clicks, ['t2']);
+    });
+
+    test('"+ Agregar paso" solo aparece si esAdmin=true, y dispara onAgregarPaso con el id del proyecto', () => {
+        const contenedorAdmin = document.createElement('div');
+        const llamados = [];
+        renderGaleriaProyectos([proyectoBase()], contenedorAdmin, () => {}, { esAdmin: true, onAgregarPaso: (id) => llamados.push(id) });
+        const boton = contenedorAdmin.querySelector('.proyecto-card button');
+        assert.ok(boton);
+        boton.dispatchEvent(new window.Event('click', { bubbles: true }));
+        assert.deepEqual(llamados, ['p1']);
+
+        const contenedorNoAdmin = document.createElement('div');
+        renderGaleriaProyectos([proyectoBase()], contenedorNoAdmin, () => {}, { esAdmin: false });
+        assert.equal(contenedorNoAdmin.querySelector('.proyecto-card button'), null);
+    });
+
+    test('proyecto sin descripción no pinta el párrafo (sin estado vacío forzado)', () => {
+        const contenedor = document.createElement('div');
+        renderGaleriaProyectos([proyectoBase({ descripcion: '' })], contenedor, () => {});
+        assert.equal(contenedor.querySelector('.proyecto-card-descripcion'), null);
     });
 });

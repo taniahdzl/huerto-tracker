@@ -5,18 +5,15 @@
 // package.json "test" script). mock.module() se llama ANTES del import
 // dinámico de chores.js, a propósito: los bindings de ES modules se
 // resuelven al evaluar el módulo importador por primera vez, así que
-// mockear firebase.js DESPUÉS de que algo ya haya importado chores.js (en
-// este mismo proceso) no tendría efecto — node --test aísla cada archivo
-// de test en su propio proceso, así que esto es seguro dentro de este
-// archivo sin coordinarlo con los demás test/*.test.js.
+// mockear firebase.js/storage.js DESPUÉS de que algo ya haya importado
+// chores.js (en este mismo proceso) no tendría efecto — node --test aísla
+// cada archivo de test en su propio proceso, así que esto es seguro dentro
+// de este archivo sin coordinarlo con los demás test/*.test.js.
 //
-// La rama de completarTarea() que dispara asistencia automática en sábado
-// (`new Date().getDay() === 6`) NO se prueba acá — depende del día real
-// del sistema y el código no acepta una fecha inyectada, así que fijarla
-// requeriría reemplazar el Date global (frágil, con riesgo de romper el
-// resto del test) en vez de mockear un límite real del módulo. Se
-// documenta como excluida a propósito, mismo criterio que otras exclusiones
-// ya documentadas en este proyecto (ver AI_CONTEXT.md).
+// storage.js se mockea aparte de firebase.js (no vía firebaseMock.exports)
+// porque chores.js importa subirEvidenciaTarea directo de './storage.js',
+// no de firebase.js — subirEvidenciaTareaImpl es reasignable por test para
+// simular éxito/fallo de la subida sin tocar el mock de Firestore.
 //
 // Corre con: npm test (equivalente a node --experimental-test-module-mocks --test)
 
@@ -29,14 +26,23 @@ const firebaseUrl = new URL('../js/services/firebase.js', import.meta.url).href;
 const firebaseMock = createFirebaseMock();
 mock.module(firebaseUrl, { namedExports: firebaseMock.exports });
 
+let subirEvidenciaTareaImpl = async (tareaId) => `https://fake-url/${tareaId}.jpg`;
+const storageUrl = new URL('../js/services/storage.js', import.meta.url).href;
+mock.module(storageUrl, {
+    namedExports: {
+        subirEvidenciaTarea: (...args) => subirEvidenciaTareaImpl(...args)
+    }
+});
+
 const {
     obtenerTareas, crearTarea, obtenerTareasAsignadas, asignarEstudiantes,
-    _registrarHoras, registrarAsistencia, obtenerAsistenciasPorFecha, completarTarea
+    _registrarHoras, obtenerAsistenciasPorFecha, completarTarea
 } = await import('../js/services/chores.js');
 
 beforeEach(() => {
     firebaseMock.reset();
     setUsuarioActual(null);
+    subirEvidenciaTareaImpl = async (tareaId) => `https://fake-url/${tareaId}.jpg`;
 });
 
 describe('obtenerTareas', () => {
@@ -57,27 +63,38 @@ describe('obtenerTareas', () => {
 });
 
 describe('crearTarea', () => {
-    test('crea con estado pendiente, asignados por default y fechaCreacion', async () => {
-        const id = await crearTarea({ titulo: 'Cosechar' });
+    test('crea con estado pendiente, asignados por default, horasAOtorgar/fotoEvidenciaUrl en null/0 y fechaCreacion', async () => {
+        const id = await crearTarea({ titulo: 'Cosechar', tipo: 'individual' });
 
         const guardada = firebaseMock.leerDoc('tareas', id);
         assert.equal(guardada.titulo, 'Cosechar');
+        assert.equal(guardada.tipo, 'individual');
         assert.equal(guardada.estado, 'pendiente');
         assert.deepEqual(guardada.asignados, []);
+        assert.equal(guardada.horasAOtorgar, 0);
+        assert.equal(guardada.fotoEvidenciaUrl, null);
         assert.ok(guardada.fechaCreacion);
     });
 
-    test('respeta el array de asignados si viene en los datos', async () => {
-        const id = await crearTarea({ titulo: 'Cosechar', asignados: ['u1', 'u2'] });
-        assert.deepEqual(firebaseMock.leerDoc('tareas', id).asignados, ['u1', 'u2']);
+    test('respeta el array de asignados y horasAOtorgar si vienen en los datos', async () => {
+        const id = await crearTarea({ titulo: 'Cosechar', tipo: 'asistencia', asignados: ['u1', 'u2'], horasAOtorgar: 15 });
+        const guardada = firebaseMock.leerDoc('tareas', id);
+        assert.deepEqual(guardada.asignados, ['u1', 'u2']);
+        assert.equal(guardada.horasAOtorgar, 15);
+    });
+
+    test('rechaza sin un tipo válido — no inventa default', async () => {
+        await assert.rejects(() => crearTarea({ titulo: 'Sin tipo' }));
+        await assert.rejects(() => crearTarea({ titulo: 'Tipo inválido', tipo: 'otro' }));
+        assert.equal(firebaseMock.leerColeccion('tareas').length, 0);
     });
 
     test('registra actividad solo si hay un usuario en sesión', async () => {
-        await crearTarea({ titulo: 'Sin sesión' });
+        await crearTarea({ titulo: 'Sin sesión', tipo: 'individual' });
         assert.equal(firebaseMock.leerColeccion('registro_actividad').length, 0);
 
         setUsuarioActual({ uid: 'admin1', email: 'admin@test.com' });
-        await crearTarea({ titulo: 'Con sesión' });
+        await crearTarea({ titulo: 'Con sesión', tipo: 'individual' });
         const log = firebaseMock.leerColeccion('registro_actividad');
         assert.equal(log.length, 1);
         assert.equal(log[0].tipo, 'CREAR_TAREA');
@@ -158,17 +175,6 @@ describe('_registrarHoras', () => {
     });
 });
 
-describe('registrarAsistencia', () => {
-    test('siempre 15 horas, origen automatica', async () => {
-        firebaseMock.seed('usuarios', { u1: { horasTotales: 0 } });
-        await registrarAsistencia('u1', 'tareaX');
-        assert.equal(firebaseMock.leerDoc('usuarios', 'u1').horasTotales, 15);
-        const [asistencia] = firebaseMock.leerColeccion('asistencias');
-        assert.equal(asistencia.origen, 'automatica');
-        assert.equal(asistencia.tareaId, 'tareaX');
-    });
-});
-
 describe('obtenerAsistenciasPorFecha', () => {
     test('filtra por igualdad exacta de fecha', async () => {
         firebaseMock.seed('asistencias', {
@@ -182,7 +188,7 @@ describe('obtenerAsistenciasPorFecha', () => {
 });
 
 describe('completarTarea', () => {
-    test('marca estado completada y registra actividad (rama de sábado excluida, ver cabecera)', async () => {
+    test('marca estado completada y registra actividad', async () => {
         firebaseMock.seed('tareas', { t1: { titulo: 'X', estado: 'pendiente' } });
         setUsuarioActual({ uid: 'admin1', email: 'admin@test.com' });
 
@@ -190,5 +196,65 @@ describe('completarTarea', () => {
 
         assert.equal(firebaseMock.leerDoc('tareas', 't1').estado, 'completada');
         assert.equal(firebaseMock.leerColeccion('registro_actividad')[0].tipo, 'COMPLETAR_TAREA');
+    });
+
+    test('sin horasAOtorgar (o en 0): no otorga horas a nadie', async () => {
+        firebaseMock.seed('tareas', { t1: { estado: 'pendiente' } });
+        firebaseMock.seed('usuarios', { u1: { horasTotales: 0 } });
+
+        await completarTarea('t1', ['u1']);
+
+        assert.equal(firebaseMock.leerDoc('usuarios', 'u1').horasTotales, 0);
+        assert.equal(firebaseMock.leerColeccion('asistencias').length, 0);
+    });
+
+    test('con horasAOtorgar explícito: otorga esas horas a TODOS los asignados, origen automatica', async () => {
+        firebaseMock.seed('tareas', { t1: { estado: 'pendiente' } });
+        firebaseMock.seed('usuarios', { u1: { horasTotales: 0 }, u2: { horasTotales: 5 } });
+        setUsuarioActual({ uid: 'admin1', email: 'admin@test.com' });
+
+        await completarTarea('t1', ['u1', 'u2'], { horasAOtorgar: 15 });
+
+        assert.equal(firebaseMock.leerDoc('usuarios', 'u1').horasTotales, 15);
+        assert.equal(firebaseMock.leerDoc('usuarios', 'u2').horasTotales, 20);
+        const asistencias = firebaseMock.leerColeccion('asistencias');
+        assert.equal(asistencias.length, 2);
+        assert.ok(asistencias.every((a) => a.origen === 'automatica' && a.tareaId === 't1'));
+    });
+
+    test('sin evidencia (archivoEvidencia null/omitido): no llama a Storage, fotoEvidenciaUrl no se toca', async () => {
+        firebaseMock.seed('tareas', { t1: { estado: 'pendiente', fotoEvidenciaUrl: null } });
+        let llamadas = 0;
+        subirEvidenciaTareaImpl = async () => { llamadas += 1; return 'no-debería-llamarse'; };
+
+        await completarTarea('t1', []);
+
+        assert.equal(llamadas, 0);
+        assert.equal(firebaseMock.leerDoc('tareas', 't1').fotoEvidenciaUrl, null);
+    });
+
+    test('con evidencia: sube la foto y guarda la URL devuelta en fotoEvidenciaUrl', async () => {
+        firebaseMock.seed('tareas', { t1: { estado: 'pendiente', fotoEvidenciaUrl: null } });
+        subirEvidenciaTareaImpl = async (tareaId) => `https://storage.test/${tareaId}.jpg`;
+
+        await completarTarea('t1', [], { archivoEvidencia: { size: 100 } });
+
+        assert.equal(firebaseMock.leerDoc('tareas', 't1').fotoEvidenciaUrl, 'https://storage.test/t1.jpg');
+    });
+
+    test('orden de operaciones: si la subida falla, la tarea NUNCA se marca completada ni se otorgan horas', async () => {
+        firebaseMock.seed('tareas', { t1: { estado: 'pendiente' } });
+        firebaseMock.seed('usuarios', { u1: { horasTotales: 0 } });
+        subirEvidenciaTareaImpl = async () => { throw new Error('falló la subida'); };
+
+        await assert.rejects(
+            () => completarTarea('t1', ['u1'], { horasAOtorgar: 15, archivoEvidencia: { size: 100 } }),
+            /falló la subida/
+        );
+
+        assert.equal(firebaseMock.leerDoc('tareas', 't1').estado, 'pendiente');
+        assert.equal(firebaseMock.leerDoc('usuarios', 'u1').horasTotales, 0);
+        assert.equal(firebaseMock.leerColeccion('asistencias').length, 0);
+        assert.equal(firebaseMock.leerColeccion('registro_actividad').length, 0);
     });
 });

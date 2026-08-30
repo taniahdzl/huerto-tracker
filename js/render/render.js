@@ -110,7 +110,9 @@ export function crearLeyendaCategorias() {
 // 14.6b) las reutiliza para el panel de arrastre de view-gemelo.
 
 // ── Shape de `tareas` ────────────────────────────────────────────
-//   { id, titulo, estado: "pendiente"|"completada", asignados: [uid,...],
+//   { id, titulo, tipo: "asistencia"|"individual",
+//     estado: "pendiente"|"completada", asignados: [uid,...],
+//     horasAOtorgar: number, fotoEvidenciaUrl: string|null,
 //     fechaCreacion, asignadosNombres: [string,...] }
 // `asignadosNombres` es opcional y se denormaliza en main.js (mismo patrón
 // que plantaNombre/plantaTipo en camas) — este módulo no conoce el
@@ -143,6 +145,17 @@ export function renderListaTareas(tareas, contenedor, onCompletarClick, { esAdmi
 
         li.appendChild(info);
 
+        // Miniatura de evidencia: solo si la tarea ya tiene una (se llena
+        // al completar, ver completarTarea en chores.js) — si no existe,
+        // no se fuerza ningún estado vacío/placeholder.
+        if (completada && tarea.fotoEvidenciaUrl) {
+            const foto = document.createElement('img');
+            foto.className = 'chore-item-evidencia';
+            foto.src = tarea.fotoEvidenciaUrl;
+            foto.alt = 'Evidencia de la tarea';
+            li.appendChild(foto);
+        }
+
         // RBAC de cliente: la seguridad real está en firestore.rules
         // (create/update/delete de `tareas` es admin-only) — esto solo
         // evita ofrecer un botón que el backend va a rechazar.
@@ -155,6 +168,133 @@ export function renderListaTareas(tareas, contenedor, onCompletarClick, { esAdmi
         }
 
         fragment.appendChild(li);
+    });
+
+    contenedor.replaceChildren(fragment);
+}
+
+// ── Shape de `proyectos` con progreso ya resuelto (obtenerProyectosConProgreso) ──
+//   { id, nombre, descripcion, fechaObjetivo: 'YYYY-MM-DD'|null,
+//     estado: 'activo'|'completado'|'pausado',
+//     pasos: [ { tareaId, orden, tarea: {..tarea completa..}|null } ] (ordenados por orden),
+//     totalPasos, pasosCompletados }
+// `tarea` es null si la tarea referenciada ya se borró — este módulo no
+// inventa un placeholder de datos, solo decide cómo mostrarlo (título
+// "(tarea eliminada)").
+
+// Umbral de "fecha límite cercana" para el badge rosa — no hay un umbral
+// ya establecido en el proyecto para reusar (confirmado, ver diagnóstico
+// de esta fase), así que se fija acá como constante ajustable.
+const DIAS_FECHA_CERCANA = 7;
+
+// Parte PURA (sin DOM) de la decisión de badge, separada de
+// crearBadgeProyecto — mismo criterio que calcularSugerenciaHoras en
+// vista-tareas.js: `ahora` inyectable (default new Date()) para que la
+// rama de fecha sea testeable sin depender del día real del sistema.
+// Solo un badge por tarjeta, prioridad: fecha cercana (más urgente) >
+// activo (genérico) > nada (proyecto pausado/completado). "sin fecha = sin
+// badge" del diseño aprobado se cumple naturalmente: sin fechaObjetivo, la
+// rama de fecha cercana nunca aplica y cae al badge de activo (o a ninguno
+// si no es activo). Exportada para poder testearla directo, sin jsdom.
+export function calcularBadgeProyecto(proyecto, ahora = new Date()) {
+    if (proyecto.estado === 'activo' && proyecto.fechaObjetivo) {
+        const objetivo = new Date(proyecto.fechaObjetivo + 'T00:00:00');
+        const diasRestantes = Math.ceil((objetivo - ahora) / 86400000);
+        if (diasRestantes <= DIAS_FECHA_CERCANA) {
+            return { tipo: 'fecha', texto: proyecto.fechaObjetivo };
+        }
+    }
+    if (proyecto.estado === 'activo') {
+        return { tipo: 'activo', texto: 'Activo' };
+    }
+    return null;
+}
+
+function crearBadgeProyecto(proyecto) {
+    const info = calcularBadgeProyecto(proyecto);
+    if (!info) return null;
+    const badge = document.createElement('span');
+    badge.className = info.tipo === 'fecha' ? 'proyecto-badge proyecto-badge-fecha' : 'proyecto-badge proyecto-badge-activo';
+    badge.textContent = info.texto;
+    return badge;
+}
+
+export function renderGaleriaProyectos(proyectos, contenedor, onClickPaso, { esAdmin = false, onAgregarPaso } = {}) {
+    const fragment = document.createDocumentFragment();
+
+    proyectos.forEach((proyecto) => {
+        const card = document.createElement('div');
+        card.className = 'proyecto-card';
+        card.dataset.proyectoId = proyecto.id;
+
+        const header = document.createElement('div');
+        header.className = 'proyecto-card-header';
+
+        const nombre = document.createElement('h3');
+        nombre.className = 'proyecto-card-nombre';
+        nombre.textContent = proyecto.nombre || 'Sin nombre';
+        header.appendChild(nombre);
+
+        const badge = crearBadgeProyecto(proyecto);
+        if (badge) header.appendChild(badge);
+        card.appendChild(header);
+
+        if (proyecto.descripcion) {
+            const descripcion = document.createElement('p');
+            descripcion.className = 'proyecto-card-descripcion';
+            descripcion.textContent = proyecto.descripcion;
+            card.appendChild(descripcion);
+        }
+
+        const totalPasos = proyecto.totalPasos ?? proyecto.pasos.length;
+        const pasosCompletados = proyecto.pasosCompletados ?? 0;
+        const porcentaje = totalPasos > 0 ? Math.round((pasosCompletados / totalPasos) * 100) : 0;
+
+        const barra = document.createElement('div');
+        barra.className = 'progress-bar';
+        const relleno = document.createElement('div');
+        relleno.className = 'progress-fill proyecto-progress-fill';
+        relleno.style.width = `${porcentaje}%`;
+        barra.appendChild(relleno);
+        card.appendChild(barra);
+
+        const textoProgreso = document.createElement('p');
+        textoProgreso.className = 'proyecto-card-progreso-texto';
+        textoProgreso.textContent = `${pasosCompletados} de ${totalPasos} pasos completados`;
+        card.appendChild(textoProgreso);
+
+        const checklist = document.createElement('ul');
+        checklist.className = 'proyecto-checklist';
+        proyecto.pasos.forEach((paso) => {
+            const li = document.createElement('li');
+            li.className = 'proyecto-checklist-item';
+            li.dataset.tareaId = paso.tareaId;
+
+            const completado = paso.tarea?.estado === 'completada';
+            const marca = document.createElement('span');
+            marca.className = 'proyecto-checklist-marca';
+            marca.textContent = completado ? '✅' : '⚪';
+            li.appendChild(marca);
+
+            const titulo = document.createElement('span');
+            titulo.className = 'proyecto-checklist-titulo';
+            titulo.textContent = paso.tarea?.titulo || '(tarea eliminada)';
+            li.appendChild(titulo);
+
+            li.addEventListener('click', () => onClickPaso(paso));
+            checklist.appendChild(li);
+        });
+        card.appendChild(checklist);
+
+        if (esAdmin) {
+            const btnAgregarPaso = document.createElement('button');
+            btnAgregarPaso.className = 'chore-complete-btn';
+            btnAgregarPaso.textContent = '+ Agregar paso';
+            btnAgregarPaso.addEventListener('click', () => onAgregarPaso(proyecto.id));
+            card.appendChild(btnAgregarPaso);
+        }
+
+        fragment.appendChild(card);
     });
 
     contenedor.replaceChildren(fragment);

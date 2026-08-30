@@ -11,7 +11,7 @@ import {
     onSnapshot,
     addDoc, updateDoc, deleteDoc, setDoc, getDoc, getDocs,
     query, where, orderBy, limit, serverTimestamp, Timestamp,
-    writeBatch, increment,
+    writeBatch, increment, arrayUnion,
     getCountFromServer
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import {
@@ -21,6 +21,12 @@ import {
     signOut,
     onAuthStateChanged
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+import {
+    getStorage,
+    ref as storageRef,
+    uploadBytes,
+    getDownloadURL
+} from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
 let firebaseConfig;
 try {
@@ -44,8 +50,9 @@ if (!firebaseConfig?.apiKey || firebaseConfig.apiKey.startsWith('REEMPLAZAR_')) 
 const app = initializeApp(firebaseConfig);
 
 // ── Instancias principales ───────────────────────────────────────
-export const db   = getFirestore(app);
-export const auth = getAuth(app);
+export const db      = getFirestore(app);
+export const auth    = getAuth(app);
+export const storage = getStorage(app);
 
 // ── Colecciones (fuente de verdad: Firestore, no Realtime Database) ──
 export const PATHS = {
@@ -58,7 +65,8 @@ export const PATHS = {
     quimicos:    'catalogo_quimicos',
     inventario:  'inventario_general',
     historial:   'historial_cultivo',
-    bitacora:    'bitacora_sesiones'
+    bitacora:    'bitacora_sesiones',
+    proyectos:   'proyectos'
 };
 
 // ── Re-exports de Firestore/Auth ─────────────────────────────────
@@ -69,7 +77,8 @@ export {
     onSnapshot,
     addDoc, updateDoc, deleteDoc, setDoc, getDoc, getDocs,
     query, where, orderBy, limit, serverTimestamp, Timestamp,
-    writeBatch, increment,
+    writeBatch, increment, arrayUnion,
     getCountFromServer,
-    GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged
+    GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
+    storageRef, uploadBytes, getDownloadURL
 };

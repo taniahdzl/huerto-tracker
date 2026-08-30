@@ -13,6 +13,7 @@ import {
     getCountFromServer
 } from './firebase.js';
 import { getUsuarioActual } from './session.js';
+import { subirEvidenciaTarea } from './storage.js';
 
 function _logActividad(tipo, entidad, detalle) {
     const usuario = getUsuarioActual();
@@ -32,16 +33,54 @@ export async function obtenerTareas() {
     return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 }
 
-export async function crearTarea(datos) {
-    const ref = await addDoc(collection(db, PATHS.tareas), {
+// Rediseño de tareas (reemplaza la Regla del Sábado, ver completarTarea):
+// `tipo` decide si la tarea otorga horas de asistencia o es un encargo
+// individual — sin default, mismo criterio "no inventar ante datos
+// faltantes" que el resto del proyecto, así que se rechaza explícito en
+// vez de dejar pasar una tarea sin tipo. `horasAOtorgar` es la cantidad
+// EXPLÍCITA declarada al crear (la UI sugiere 15 si es sábado y
+// tipo:'asistencia', editable — ver calcularSugerenciaHoras en
+// vista-tareas.js) — completarTarea ya no decide horas por el día en que
+// se completa, sino que aplica lo ya declarado aquí. `fotoEvidenciaUrl`
+// nace null y se llena al completar (ver completarTarea), nunca al crear.
+//
+// `proyectoId` (null por default — una tarea suelta no rompe nada) y
+// `fechaLimite` (opcional, string 'YYYY-MM-DD'|null, cualquier tarea, no
+// exclusivo de proyectos) se agregaron en el rediseño de Proyectos —
+// Proyectos ORGANIZA tareas existentes vía este campo, nunca las duplica
+// en su propia colección (ver js/services/proyectos.js).
+//
+// _datosNuevaTarea separado de crearTarea (en vez de un solo bloque
+// inline) porque js/services/proyectos.js.agregarPasoAProyecto() necesita
+// la MISMA forma/validación pero escrita dentro de un writeBatch atómico
+// (junto con el update al array `pasos` del proyecto) — un batch no puede
+// llamar a una función async con su propio addDoc como crearTarea, así
+// que la parte pura (armar el objeto) se separó para reusarse sin duplicar
+// el criterio de validación/shape en dos archivos.
+export function _datosNuevaTarea(datos) {
+    if (datos.tipo !== 'asistencia' && datos.tipo !== 'individual') {
+        throw new Error(`[chores] tipo requerido: 'asistencia'|'individual', recibió: ${datos.tipo}`);
+    }
+    return {
         titulo: datos.titulo,
+        tipo: datos.tipo,
         estado: 'pendiente',
         asignados: datos.asignados || [],
+        horasAOtorgar: datos.horasAOtorgar || 0,
+        fotoEvidenciaUrl: null,
+        proyectoId: datos.proyectoId || null,
+        fechaLimite: datos.fechaLimite || null,
         // Exclusivamente para ordenar por antigüedad (obtenerTareasAsignadas).
         // NO es fecha límite/vencimiento — el huerto no maneja eso, es un
         // backlog que se va completando, ya descartado explícitamente.
+        // (fechaLimite, arriba, es un campo distinto y separado — opcional,
+        // agregado después, ver comentario de la sección de arriba).
         fechaCreacion: serverTimestamp()
-    });
+    };
+}
+
+export async function crearTarea(datos) {
+    const ref = await addDoc(collection(db, PATHS.tareas), _datosNuevaTarea(datos));
     _logActividad('CREAR_TAREA', ref.id, datos.titulo);
     return ref.id;
 }
@@ -135,22 +174,6 @@ export async function _registrarHoras(estudianteId, horas, { tareaId = null, mot
     return asistenciaRef.id;
 }
 
-// LA REGLA DEL SÁBADO: si la tarea se completa en sábado, cada estudiante
-// asignado recibe asistencia automática de 15 horas para esa tarea.
-// Valor tal cual lo especifica la operación real del huerto (no lo ajusto:
-// una fila normal de 2-4h se registra manualmente vía ajustarHoras).
-// autorizadoPor es quien está completando la tarea ahora mismo — siempre
-// un admin, porque las reglas de Firestore ya exigen isAdmin() para
-// escribir en `tareas`.
-export async function registrarAsistencia(estudianteId, tareaId) {
-    const admin = getUsuarioActual();
-    return _registrarHoras(estudianteId, 15, {
-        tareaId,
-        origen: 'automatica',
-        autorizadoPor: admin?.uid ?? null
-    });
-}
-
 // Usada por obtenerSesionConDetalle (db.js) para derivar asistentes/tareas
 // completadas de una fecha de bitácora — asistencias sigue siendo la fuente
 // única, bitacora_sesiones nunca duplica estos datos.
@@ -160,14 +183,34 @@ export async function obtenerAsistenciasPorFecha(fecha) {
     return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 }
 
-export async function completarTarea(tareaId, arrayDeAsignados) {
-    await updateDoc(doc(db, PATHS.tareas, tareaId), { estado: 'completada' });
+// Reemplaza la Regla del Sábado: las horas a otorgar ya se declararon
+// explícitamente al CREAR la tarea (horasAOtorgar, ver crearTarea) — esta
+// función ya no consulta el día en que se completa, solo aplica lo
+// declarado. `archivoEvidencia` es un Blob ya comprimido (o null/undefined
+// si la tarea no lleva foto — tipo:'individual', o tipo:'asistencia' cuya
+// obligatoriedad ya validó el caller antes de llegar aquí, ver
+// vista-tareas.js). Orden de operaciones a propósito: la subida a Storage
+// va PRIMERO y se espera (`await`) antes de tocar Firestore — si falla,
+// la función lanza antes del updateDoc y la tarea se queda en 'pendiente',
+// nunca se marca completada sin la evidencia que se suponía que llevaba.
+export async function completarTarea(tareaId, arrayDeAsignados, { horasAOtorgar = 0, archivoEvidencia = null } = {}) {
+    const fotoEvidenciaUrl = archivoEvidencia
+        ? await subirEvidenciaTarea(tareaId, archivoEvidencia)
+        : null;
+
+    const datosActualizados = { estado: 'completada' };
+    if (fotoEvidenciaUrl) datosActualizados.fotoEvidenciaUrl = fotoEvidenciaUrl;
+    await updateDoc(doc(db, PATHS.tareas, tareaId), datosActualizados);
     _logActividad('COMPLETAR_TAREA', tareaId);
 
-    const esSabado = new Date().getDay() === 6;
-    if (esSabado) {
+    if (horasAOtorgar > 0) {
+        const admin = getUsuarioActual();
         await Promise.all(
-            arrayDeAsignados.map((estudianteId) => registrarAsistencia(estudianteId, tareaId))
+            arrayDeAsignados.map((estudianteId) => _registrarHoras(estudianteId, horasAOtorgar, {
+                tareaId,
+                origen: 'automatica',
+                autorizadoPor: admin?.uid ?? null
+            }))
         );
     }
 }

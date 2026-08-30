@@ -43,6 +43,7 @@
   <nav class="header-nav" id="headerNav">
     <button class="btn" data-vista="view-gemelo">🌱 Camas</button>
     <button class="btn" data-vista="view-tareas">📋 Tareas</button>
+    <button class="btn" data-vista="view-proyectos">🗂 Proyectos</button>
     <button class="btn" data-vista="view-catalogos">📦 Catálogos</button>
     <button class="btn" data-vista="view-perfil">👤 Perfil</button>
     <button class="btn" data-vista="view-bitacora">📓 Bitácora</button>
@@ -202,6 +203,12 @@
     </div>
     <ul class="chore-list" id="tareasListaVista"></ul>
   </section>
+  <section class="view hidden" id="view-proyectos">
+    <div class="view-proyectos-toolbar">
+      <button class="btn btn-primary" id="crearProyectoBtn" style="display:none">+ Nuevo proyecto</button>
+    </div>
+    <div class="proyecto-galeria" id="proyectosGaleria"></div>
+  </section>
   <section class="view hidden" id="view-catalogos">
     <div class="view-catalogos-toolbar">
       <div class="filter-tabs">
@@ -353,10 +360,111 @@
         <input id="crearTareaTitulo" placeholder="Nueva tarea…">
       </div>
       <div class="form-group">
+        <label for="crearTareaTipo">Tipo</label>
+        <select id="crearTareaTipo">
+          <option value="">Selecciona un tipo…</option>
+          <option value="asistencia">Asistencia (otorga horas)</option>
+          <option value="individual">Individual</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="crearTareaHoras">Horas a otorgar (opcional)</label>
+        <input type="number" id="crearTareaHoras" min="0" step="0.5" placeholder="Ej: 15">
+      </div>
+      <div class="form-group">
         <label>Asignar a</label>
         <div id="crearTareaAssignees" class="chore-assignees"></div>
       </div>
       <button class="btn btn-primary" id="crearTareaSaveBtn">Crear</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Completar Tarea (solo admin) — único paso de finalización para
+     AMBOS tipos de tarea; la foto es obligatoria solo si tipo:'asistencia'
+     (ver completarTareaFotoLabel en vista-tareas.js). -->
+<div class="modal-overlay" id="completarTareaModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>✅ Completar Tarea</h3>
+      <button class="modal-close" id="completarTareaModalClose">×</button>
+    </div>
+    <div class="modal-body">
+      <p id="completarTareaTitulo" class="chore-item-titulo"></p>
+      <div class="form-group">
+        <label for="completarTareaFoto" id="completarTareaFotoLabel">Foto de evidencia</label>
+        <input type="file" id="completarTareaFoto" accept="image/*">
+        <img id="completarTareaFotoPreview" class="hidden" alt="Vista previa de la evidencia">
+      </div>
+      <button class="btn btn-primary" id="completarTareaSaveBtn">Completar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Nuevo Proyecto (solo admin) -->
+<div class="modal-overlay" id="crearProyectoModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>+ Nuevo Proyecto</h3>
+      <button class="modal-close" id="crearProyectoModalClose">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label for="crearProyectoNombre">Nombre</label>
+        <input id="crearProyectoNombre" placeholder="Nombre del proyecto…">
+      </div>
+      <div class="form-group">
+        <label for="crearProyectoDescripcion">Descripción</label>
+        <input id="crearProyectoDescripcion" placeholder="Descripción breve…">
+      </div>
+      <div class="form-group">
+        <label for="crearProyectoFecha">Fecha objetivo (opcional)</label>
+        <input type="date" id="crearProyectoFecha">
+      </div>
+      <button class="btn btn-primary" id="crearProyectoSaveBtn">Crear</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Agregar Paso a un Proyecto (solo admin) — crea una tarea con
+     proyectoId ya seteado (agregarPasoAProyecto en proyectos.js), mismos
+     campos tipo/horas/fecha límite que una tarea suelta. -->
+<div class="modal-overlay" id="agregarPasoModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>+ Agregar Paso</h3>
+      <button class="modal-close" id="agregarPasoModalClose">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label for="agregarPasoTitulo">Título</label>
+        <input id="agregarPasoTitulo" placeholder="Nombre del paso…">
+      </div>
+      <div class="form-group">
+        <label for="agregarPasoTipo">Tipo</label>
+        <select id="agregarPasoTipo">
+          <option value="">Selecciona un tipo…</option>
+          <option value="asistencia">Asistencia (otorga horas)</option>
+          <option value="individual">Individual</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="agregarPasoHoras">Horas a otorgar (opcional)</label>
+        <input type="number" id="agregarPasoHoras" min="0" step="0.5" placeholder="Ej: 15">
+      </div>
+      <div class="form-group">
+        <label for="agregarPasoFechaLimite">Fecha límite (opcional)</label>
+        <input type="date" id="agregarPasoFechaLimite">
+      </div>
+      <div class="form-group">
+        <label for="agregarPasoOrden">Orden</label>
+        <input type="number" id="agregarPasoOrden" min="1" step="1">
+      </div>
+      <div class="form-group">
+        <label>Asignar a</label>
+        <div id="agregarPasoAssignees" class="chore-assignees"></div>
+      </div>
+      <button class="btn btn-primary" id="agregarPasoSaveBtn">Agregar</button>
     </div>
   </div>
 </div>
