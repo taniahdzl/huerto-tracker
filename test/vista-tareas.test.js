@@ -33,6 +33,7 @@ function esperar() {
 beforeEach(async () => {
     firebaseMock.reset();
     setEsAdminActual(false);
+    window.confirm = () => true; // jsdom no lo implementa — ver vista-catalogos.test.js
     await firebaseMock.triggerAuthState({ uid: 'u1', email: 'ana@test.com' });
 });
 
@@ -222,6 +223,11 @@ describe('modal Crear Tarea', () => {
         await esperar();
         document.getElementById('crearTareaBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
 
+        // Un no-admin siempre crea 'autoasignada' — el modal pre-marca (no
+        // fuerza) su propio checkbox por conveniencia, así que hay que
+        // desmarcarlo a propósito para ejercitar "ningún asignado".
+        document.querySelector('#crearTareaAssignees input[type="checkbox"]').checked = false;
+
         document.getElementById('crearTareaTitulo').value = 'Nueva tarea';
         document.getElementById('crearTareaTipo').value = 'individual';
         document.getElementById('crearTareaSaveBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
@@ -284,5 +290,174 @@ describe('getEstudiantesActuales / setEstudiantesActuales', () => {
     test('roundtrip simple (caché compartido con vista-admin.js)', () => {
         setEstudiantesActuales([{ id: 'x' }]);
         assert.deepEqual(getEstudiantesActuales(), [{ id: 'x' }]);
+    });
+});
+
+describe('Crear Tarea — autoasignadas (2026-09-06)', () => {
+    test('no-admin no ve crearTareaOrigenGroup y crea origen:autoasignada, pre-marcada su propia asignación', async () => {
+        firebaseMock.seed('tareas', {});
+        firebaseMock.seed('usuarios', { u1: { nombre: 'Ana', rol: 'estudiante' } });
+        irAVistaTareas();
+        await esperar();
+        document.getElementById('crearTareaBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
+
+        assert.equal(document.getElementById('crearTareaOrigenGroup').style.display, 'none');
+        const propio = document.querySelector('#crearTareaAssignees input[value="u1"]');
+        assert.equal(propio.checked, true);
+
+        document.getElementById('crearTareaTitulo').value = 'Regar mi cama';
+        document.getElementById('crearTareaTipo').value = 'individual';
+        document.getElementById('crearTareaSaveBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
+        await esperar();
+
+        const [tarea] = firebaseMock.leerColeccion('tareas');
+        assert.equal(tarea.origen, 'autoasignada');
+        assert.deepEqual(tarea.asignados, ['u1']);
+    });
+
+    test('admin ve crearTareaOrigenGroup y puede elegir "autoasignada" explícitamente', async () => {
+        setEsAdminActual(true);
+        firebaseMock.seed('tareas', {});
+        firebaseMock.seed('usuarios', { u1: { nombre: 'Ana', rol: 'estudiante' }, u2: { nombre: 'Beto', rol: 'estudiante' } });
+        irAVistaTareas();
+        await esperar();
+        document.getElementById('crearTareaBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
+
+        assert.notEqual(document.getElementById('crearTareaOrigenGroup').style.display, 'none');
+
+        const origenSelect = document.getElementById('crearTareaOrigen');
+        origenSelect.value = 'autoasignada';
+        origenSelect.dispatchEvent(new window.Event('change', { bubbles: true }));
+
+        document.getElementById('crearTareaTitulo').value = 'Proponer tarea';
+        document.getElementById('crearTareaTipo').value = 'individual';
+        document.querySelector('input[value="u2"]').checked = true;
+        document.getElementById('crearTareaSaveBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
+        await esperar();
+
+        const [tarea] = firebaseMock.leerColeccion('tareas');
+        assert.equal(tarea.origen, 'autoasignada');
+        assert.ok(tarea.asignados.includes('u2'));
+    });
+
+    test('admin sin cambiar el selector (default "asignada") crea origen:asignada, como siempre', async () => {
+        setEsAdminActual(true);
+        firebaseMock.seed('tareas', {});
+        firebaseMock.seed('usuarios', { u1: { nombre: 'Ana', rol: 'estudiante' } });
+        irAVistaTareas();
+        await esperar();
+        document.getElementById('crearTareaBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
+
+        document.getElementById('crearTareaTitulo').value = 'Asignar a Ana';
+        document.getElementById('crearTareaTipo').value = 'individual';
+        document.querySelector('input[value="u1"]').checked = true;
+        document.getElementById('crearTareaSaveBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
+        await esperar();
+
+        assert.equal(firebaseMock.leerColeccion('tareas')[0].origen, 'asignada');
+    });
+});
+
+describe('Editar/Enviar/Eliminar autoasignada (creador)', () => {
+    test('el creador ve Editar y Eliminar en pendiente; otro asignado del grupo no ve nada', async () => {
+        firebaseMock.seed('tareas', {
+            t1: { titulo: 'Grupal', origen: 'autoasignada', creadorId: 'u1', estado: 'pendiente', asignados: ['u1', 'u2'] }
+        });
+        firebaseMock.seed('usuarios', { u1: { nombre: 'Ana', rol: 'estudiante' }, u2: { nombre: 'Beto', rol: 'estudiante' } });
+        irAVistaTareas();
+        await esperar();
+        document.querySelector('[data-filtro="todas"]').dispatchEvent(new window.Event('click', { bubbles: true }));
+
+        const botones = [...document.querySelectorAll('.chore-complete-btn')].map((b) => b.textContent);
+        assert.deepEqual(botones, ['✏️ Editar', '🗑️ Eliminar']);
+
+        // Mismo dato, visto por el OTRO asignado (no creador): sin botones.
+        await firebaseMock.triggerAuthState({ uid: 'u2', email: 'beto@test.com' });
+        irAVistaTareas();
+        await esperar();
+        document.querySelector('[data-filtro="todas"]').dispatchEvent(new window.Event('click', { bubbles: true }));
+        assert.equal(document.querySelectorAll('.chore-complete-btn').length, 0);
+    });
+
+    test('"Guardar cambios" edita campos sin tocar estado ni pedir evidencia', async () => {
+        firebaseMock.seed('tareas', {
+            t1: { titulo: 'Vieja', tipo: 'individual', origen: 'autoasignada', creadorId: 'u1', estado: 'pendiente', asignados: ['u1'], horasAOtorgar: 0 }
+        });
+        firebaseMock.seed('usuarios', { u1: { nombre: 'Ana', rol: 'estudiante' } });
+        irAVistaTareas();
+        await esperar();
+
+        document.querySelector('.chore-complete-btn').dispatchEvent(new window.Event('click', { bubbles: true }));
+        assert.ok(document.getElementById('editarTareaModal').classList.contains('open'));
+        assert.equal(document.getElementById('editarTareaTitulo').value, 'Vieja');
+
+        document.getElementById('editarTareaTitulo').value = 'Nueva';
+        document.getElementById('editarTareaGuardarBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
+        await esperar();
+
+        assert.equal(firebaseMock.leerDoc('tareas', 't1').titulo, 'Nueva');
+        assert.equal(firebaseMock.leerDoc('tareas', 't1').estado, 'pendiente');
+        assert.equal(document.getElementById('editarTareaModal').classList.contains('open'), false);
+    });
+
+    test('"Guardar y enviar a revisión" sin evidencia se rechaza, la tarea sigue pendiente', async () => {
+        firebaseMock.seed('tareas', {
+            t1: { titulo: 'X', tipo: 'individual', origen: 'autoasignada', creadorId: 'u1', estado: 'pendiente', asignados: ['u1'] }
+        });
+        firebaseMock.seed('usuarios', { u1: { nombre: 'Ana', rol: 'estudiante' } });
+        irAVistaTareas();
+        await esperar();
+
+        document.querySelector('.chore-complete-btn').dispatchEvent(new window.Event('click', { bubbles: true }));
+        document.getElementById('editarTareaEnviarBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
+        await esperar();
+
+        assert.equal(firebaseMock.leerDoc('tareas', 't1').estado, 'pendiente');
+    });
+
+    test('rechazada: solo el botón "Editar y reenviar", muestra motivoRechazo y oculta "Guardar cambios"', async () => {
+        firebaseMock.seed('tareas', {
+            t1: {
+                titulo: 'X', tipo: 'individual', origen: 'autoasignada', creadorId: 'u1',
+                estado: 'rechazada', motivoRechazo: 'Falta la foto', asignados: ['u1']
+            }
+        });
+        irAVistaTareas();
+        await esperar();
+
+        assert.equal(document.querySelector('.chore-complete-btn').textContent, '✏️ Editar y reenviar');
+        document.querySelector('.chore-complete-btn').dispatchEvent(new window.Event('click', { bubbles: true }));
+
+        assert.match(document.getElementById('editarTareaMotivoRechazo').textContent, /Falta la foto/);
+        assert.equal(document.getElementById('editarTareaGuardarBtn').style.display, 'none');
+        assert.equal(document.getElementById('editarTareaEnviarBtn').textContent, 'Reenviar a revisión');
+    });
+
+    test('en_revision: sin botones, ni siquiera para el creador', async () => {
+        firebaseMock.seed('tareas', {
+            t1: { titulo: 'X', origen: 'autoasignada', creadorId: 'u1', estado: 'en_revision', asignados: ['u1'] }
+        });
+        irAVistaTareas();
+        await esperar();
+
+        assert.equal(document.querySelectorAll('.chore-complete-btn').length, 0);
+    });
+
+    test('Eliminar (pendiente): confirm() cancelado no borra; aceptado borra y refresca', async () => {
+        firebaseMock.seed('tareas', {
+            t1: { titulo: 'X', origen: 'autoasignada', creadorId: 'u1', estado: 'pendiente', asignados: ['u1'] }
+        });
+        irAVistaTareas();
+        await esperar();
+
+        window.confirm = () => false;
+        document.querySelector('.catalogo-eliminar-btn').dispatchEvent(new window.Event('click', { bubbles: true }));
+        await esperar();
+        assert.equal(firebaseMock.leerColeccion('tareas').length, 1);
+
+        window.confirm = () => true;
+        document.querySelector('.catalogo-eliminar-btn').dispatchEvent(new window.Event('click', { bubbles: true }));
+        await esperar();
+        assert.equal(firebaseMock.leerColeccion('tareas').length, 0);
     });
 });

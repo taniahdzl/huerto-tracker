@@ -35,7 +35,11 @@ export function mostrarDashboard(user, esAdmin, nombre) {
     loginOverlay.classList.add('hidden');
     setEsAdminActual(esAdmin);
     adminBtn.style.display = esAdmin ? '' : 'none';
-    crearTareaBtn.style.display = esAdmin ? '' : 'none';
+    // "+ Crear tarea" dejó de ser admin-only (rediseño de autoasignadas,
+    // 2026-09-06): cualquier autenticado puede proponerse/auto-asignarse
+    // una tarea — vista-tareas.js decide internamente qué opciones ofrece
+    // según el rol (ver crearTareaOrigenGroup).
+    crearTareaBtn.style.display = '';
     const nombreMostrado = nombreParaMostrar({ email: user.email, nombre });
     dashboardUserEmail.textContent = ` — ${nombreMostrado}`;
 

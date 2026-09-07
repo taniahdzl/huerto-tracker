@@ -43,7 +43,7 @@ describe('mostrarDashboard — layout inmediato (sin esperar cargas async)', () 
         assert.equal(document.getElementById('dashboardUserEmail').textContent, ' — Ana');
     });
 
-    test('admin ve adminBtn/crearTareaBtn, no-admin no', () => {
+    test('adminBtn solo para admin; crearTareaBtn para cualquiera (autoasignadas, 2026-09-06)', () => {
         mostrarDashboard({ uid: 'u1', email: 'a@test.com' }, true, 'Ana');
         assert.equal(getEsAdminActual(), true);
         assert.notEqual(document.getElementById('adminBtn').style.display, 'none');
@@ -52,7 +52,7 @@ describe('mostrarDashboard — layout inmediato (sin esperar cargas async)', () 
         mostrarDashboard({ uid: 'u1', email: 'a@test.com' }, false, 'Ana');
         assert.equal(getEsAdminActual(), false);
         assert.equal(document.getElementById('adminBtn').style.display, 'none');
-        assert.equal(document.getElementById('crearTareaBtn').style.display, 'none');
+        assert.notEqual(document.getElementById('crearTareaBtn').style.display, 'none');
     });
 
     test('sin nombre, usa el fallback de nombreParaMostrar (email)', () => {

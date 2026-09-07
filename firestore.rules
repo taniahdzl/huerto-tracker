@@ -39,9 +39,93 @@ service cloud.firestore {
     }
 
     // ── Inventario, Tareas, Asistencias: todos leen, solo admin escribe ──
+    // Tareas autoasignadas con aprobación de admin (2026-09-06): un
+    // documento sin `origen` es uno creado ANTES de este cambio — se lee
+    // como 'asignada' vía .get('origen','asignada'), mismo default que
+    // _datosNuevaTarea (chores.js), para no romper tareas ya existentes.
     match /tareas/{tareaId} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null && isAdmin();
+
+      allow create: if request.auth != null && (
+        isAdmin() ||
+        (
+          // Cualquier autenticado puede autoasignarse una tarea (incluso
+          // grupal — sin restricción de a quién más incluye en
+          // `asignados`), siempre que se declare como propia creadora y
+          // nazca en 'pendiente' — nunca 'completada'/'rechazada' desde
+          // el cliente.
+          request.resource.data.origen == 'autoasignada' &&
+          request.resource.data.creadorId == request.auth.uid &&
+          request.resource.data.estado == 'pendiente'
+        )
+      );
+
+      allow update: if request.auth != null && (
+        // Flujo 'asignada': sin cambios de comportamiento — admin puede
+        // escribir cualquier cosa (asignarEstudiantes/completarTarea/etc).
+        (isAdmin() && resource.data.get('origen', 'asignada') == 'asignada') ||
+        // Admin resuelve una revisión: 'en_revision' -> 'completada', o
+        // -> 'rechazada' con motivoRechazo obligatorio (sin excepción).
+        // Es la ÚNICA transición que un admin puede hacer sobre una
+        // autoasignada — el resto de su ciclo de vida lo maneja el
+        // creador (rama de abajo); así 'en_revision' queda realmente
+        // congelada para cualquiera que no sea admin resolviéndola.
+        (
+          isAdmin() &&
+          resource.data.get('origen', 'asignada') == 'autoasignada' &&
+          resource.data.estado == 'en_revision' &&
+          (
+            request.resource.data.estado == 'completada' ||
+            (
+              request.resource.data.estado == 'rechazada' &&
+              request.resource.data.motivoRechazo is string &&
+              request.resource.data.motivoRechazo.size() > 0 &&
+              request.resource.data.motivoRechazo.size() <= 2000
+            )
+          )
+        ) ||
+        // El creador edita campos de la suya mientras sigue editable
+        // ('pendiente' o 'rechazada'), SIN tocar estado — separado a
+        // propósito de la rama de abajo (enviar a revisión): si ambas
+        // fueran la misma rama, una sola escritura podría inflar
+        // horasAOtorgar justo al mandar a revisión, sin que quede
+        // señalado como cambio posterior a la creación (encontrado en
+        // auditoría de esta fase, ver firebase-security-rules-auditor).
+        // hasOnly() cierra ese hueco: esta rama no puede tocar estado/
+        // fotoEvidenciaUrl/motivoRechazo/creadorId/origen, solo los 4
+        // campos que edita editarTareaAutoasignada() en chores.js.
+        (
+          resource.data.get('origen', 'asignada') == 'autoasignada' &&
+          resource.data.creadorId == request.auth.uid &&
+          resource.data.estado in ['pendiente', 'rechazada'] &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['titulo', 'tipo', 'horasAOtorgar', 'asignados'])
+        ) ||
+        // El creador envía/reenvía a revisión: 'pendiente'|'rechazada' ->
+        // 'en_revision', con evidencia obligatoria — hasOnly() restringe
+        // esta escritura a EXACTAMENTE los 3 campos que toca
+        // enviarARevision() en chores.js, así no puede colarse un cambio
+        // de horasAOtorgar/asignados/titulo en la misma operación.
+        (
+          resource.data.get('origen', 'asignada') == 'autoasignada' &&
+          resource.data.creadorId == request.auth.uid &&
+          resource.data.estado in ['pendiente', 'rechazada'] &&
+          request.resource.data.estado == 'en_revision' &&
+          request.resource.data.fotoEvidenciaUrl is string &&
+          request.resource.data.fotoEvidenciaUrl.size() > 0 &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['estado', 'fotoEvidenciaUrl', 'motivoRechazo'])
+        )
+      );
+
+      allow delete: if request.auth != null && (
+        isAdmin() ||
+        (
+          resource.data.get('origen', 'asignada') == 'autoasignada' &&
+          resource.data.creadorId == request.auth.uid &&
+          resource.data.estado == 'pendiente'
+        )
+      );
     }
 
     // proyectos: organiza tareas existentes (tareas.proyectoId), no las

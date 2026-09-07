@@ -36,7 +36,9 @@ mock.module(storageUrl, {
 
 const {
     obtenerTareas, crearTarea, obtenerTareasAsignadas, asignarEstudiantes,
-    _registrarHoras, obtenerAsistenciasPorFecha, completarTarea
+    _registrarHoras, obtenerAsistenciasPorFecha, completarTarea,
+    enviarARevision, aprobarTareaAutoasignada, rechazarTareaAutoasignada,
+    editarTareaAutoasignada, eliminarTarea
 } = await import('../js/services/chores.js');
 
 beforeEach(() => {
@@ -74,6 +76,27 @@ describe('crearTarea', () => {
         assert.equal(guardada.horasAOtorgar, 0);
         assert.equal(guardada.fotoEvidenciaUrl, null);
         assert.ok(guardada.fechaCreacion);
+    });
+
+    test('origen por default es "asignada" (no rompe tareas/llamadas viejas); "autoasignada" solo si se pide', async () => {
+        const idViejo = await crearTarea({ titulo: 'X', tipo: 'individual' });
+        assert.equal(firebaseMock.leerDoc('tareas', idViejo).origen, 'asignada');
+
+        const idAuto = await crearTarea({ titulo: 'Y', tipo: 'individual', origen: 'autoasignada' });
+        assert.equal(firebaseMock.leerDoc('tareas', idAuto).origen, 'autoasignada');
+
+        // Cualquier otro valor (o typo) cae también a 'asignada' — no se
+        // inventa un tercer origen silencioso.
+        const idRaro = await crearTarea({ titulo: 'Z', tipo: 'individual', origen: 'otro' });
+        assert.equal(firebaseMock.leerDoc('tareas', idRaro).origen, 'asignada');
+    });
+
+    test('creadorId es el uid en sesión al crear; motivoRechazo nace null', async () => {
+        setUsuarioActual({ uid: 'u1', email: 'ana@test.com' });
+        const id = await crearTarea({ titulo: 'X', tipo: 'individual', origen: 'autoasignada' });
+        const guardada = firebaseMock.leerDoc('tareas', id);
+        assert.equal(guardada.creadorId, 'u1');
+        assert.equal(guardada.motivoRechazo, null);
     });
 
     test('respeta el array de asignados y horasAOtorgar si vienen en los datos', async () => {
@@ -256,5 +279,94 @@ describe('completarTarea', () => {
         assert.equal(firebaseMock.leerDoc('usuarios', 'u1').horasTotales, 0);
         assert.equal(firebaseMock.leerColeccion('asistencias').length, 0);
         assert.equal(firebaseMock.leerColeccion('registro_actividad').length, 0);
+    });
+});
+
+describe('enviarARevision', () => {
+    test('requiere evidencia — rechaza sin archivo, no toca Firestore', async () => {
+        firebaseMock.seed('tareas', { t1: { estado: 'pendiente' } });
+        await assert.rejects(() => enviarARevision('t1', null));
+        assert.equal(firebaseMock.leerDoc('tareas', 't1').estado, 'pendiente');
+    });
+
+    test('sube evidencia, pasa a en_revision y limpia un motivoRechazo anterior', async () => {
+        firebaseMock.seed('tareas', { t1: { estado: 'rechazada', motivoRechazo: 'Falta la foto' } });
+        subirEvidenciaTareaImpl = async (tareaId) => `https://storage.test/${tareaId}.jpg`;
+
+        await enviarARevision('t1', { size: 100 });
+
+        const guardada = firebaseMock.leerDoc('tareas', 't1');
+        assert.equal(guardada.estado, 'en_revision');
+        assert.equal(guardada.fotoEvidenciaUrl, 'https://storage.test/t1.jpg');
+        assert.equal(guardada.motivoRechazo, null);
+    });
+});
+
+describe('aprobarTareaAutoasignada', () => {
+    test('marca completada y otorga horasAOtorgar COMPLETAS a cada asignado (sin repartir)', async () => {
+        firebaseMock.seed('tareas', { t1: { estado: 'en_revision' } });
+        firebaseMock.seed('usuarios', { u1: { horasTotales: 0 }, u2: { horasTotales: 5 } });
+        setUsuarioActual({ uid: 'admin1', email: 'admin@test.com' });
+
+        await aprobarTareaAutoasignada('t1', ['u1', 'u2'], 10);
+
+        assert.equal(firebaseMock.leerDoc('tareas', 't1').estado, 'completada');
+        assert.equal(firebaseMock.leerDoc('usuarios', 'u1').horasTotales, 10);
+        assert.equal(firebaseMock.leerDoc('usuarios', 'u2').horasTotales, 15);
+        assert.equal(firebaseMock.leerColeccion('registro_actividad').some((l) => l.tipo === 'APROBAR_TAREA'), true);
+    });
+
+    test('sin horasAOtorgar (o en 0): no otorga horas a nadie', async () => {
+        firebaseMock.seed('tareas', { t1: { estado: 'en_revision' } });
+        firebaseMock.seed('usuarios', { u1: { horasTotales: 0 } });
+
+        await aprobarTareaAutoasignada('t1', ['u1'], 0);
+
+        assert.equal(firebaseMock.leerDoc('usuarios', 'u1').horasTotales, 0);
+        assert.equal(firebaseMock.leerColeccion('asistencias').length, 0);
+    });
+});
+
+describe('rechazarTareaAutoasignada', () => {
+    test('motivo obligatorio — rechaza sin motivo o con solo espacios', async () => {
+        firebaseMock.seed('tareas', { t1: { estado: 'en_revision' } });
+        await assert.rejects(() => rechazarTareaAutoasignada('t1', ''));
+        await assert.rejects(() => rechazarTareaAutoasignada('t1', '   '));
+        assert.equal(firebaseMock.leerDoc('tareas', 't1').estado, 'en_revision');
+    });
+
+    test('con motivo: pasa a rechazada y guarda el motivo (trim)', async () => {
+        firebaseMock.seed('tareas', { t1: { estado: 'en_revision' } });
+        await rechazarTareaAutoasignada('t1', '  Falta la foto  ');
+        const guardada = firebaseMock.leerDoc('tareas', 't1');
+        assert.equal(guardada.estado, 'rechazada');
+        assert.equal(guardada.motivoRechazo, 'Falta la foto');
+    });
+});
+
+describe('editarTareaAutoasignada', () => {
+    test('actualiza título/tipo/horas/asignados sin tocar estado', async () => {
+        firebaseMock.seed('tareas', { t1: { estado: 'pendiente', titulo: 'Vieja', tipo: 'individual', horasAOtorgar: 0, asignados: ['u1'] } });
+
+        await editarTareaAutoasignada('t1', { titulo: 'Nueva', tipo: 'asistencia', horasAOtorgar: 5, asignados: ['u1', 'u2'] });
+
+        const guardada = firebaseMock.leerDoc('tareas', 't1');
+        assert.equal(guardada.titulo, 'Nueva');
+        assert.equal(guardada.tipo, 'asistencia');
+        assert.equal(guardada.horasAOtorgar, 5);
+        assert.deepEqual(guardada.asignados, ['u1', 'u2']);
+        assert.equal(guardada.estado, 'pendiente');
+    });
+});
+
+describe('eliminarTarea', () => {
+    test('borra el documento y registra actividad', async () => {
+        firebaseMock.seed('tareas', { t1: { titulo: 'X' } });
+        setUsuarioActual({ uid: 'u1', email: 'ana@test.com' });
+
+        await eliminarTarea('t1');
+
+        assert.equal(firebaseMock.leerDoc('tareas', 't1'), null);
+        assert.equal(firebaseMock.leerColeccion('registro_actividad')[0].tipo, 'ELIMINAR_TAREA');
     });
 });

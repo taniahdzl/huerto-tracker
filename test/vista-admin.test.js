@@ -35,6 +35,7 @@ function esperar() {
 beforeEach(() => {
     firebaseMock.reset();
     setUsuarioActual({ uid: 'admin1', email: 'admin@test.com' });
+    window.confirm = () => true; // jsdom no lo implementa — ver vista-catalogos.test.js
 });
 
 describe('modal de ajuste de horas', () => {
@@ -167,5 +168,145 @@ describe('filtros de auditoría', () => {
 
         assert.equal(document.getElementById('auditoriaFiltroTipo').value, '');
         assert.equal(document.querySelectorAll('#registroActividadBody tr').length, 2);
+    });
+});
+
+describe('Panel de revisión — tareas autoasignadas en_revision (2026-09-06)', () => {
+    test('lista solo origen:autoasignada + estado:en_revision, ignora pendientes/completadas/asignadas', async () => {
+        firebaseMock.seed('tareas', {
+            t1: { titulo: 'En revisión', origen: 'autoasignada', estado: 'en_revision', asignados: ['u1'], horasAOtorgar: 5 },
+            t2: { titulo: 'Pendiente', origen: 'autoasignada', estado: 'pendiente', asignados: ['u1'] },
+            t3: { titulo: 'Asignada normal', origen: 'asignada', estado: 'pendiente', asignados: ['u1'] }
+        });
+        firebaseMock.seed('usuarios', { u1: { nombre: 'Ana', rol: 'estudiante' } });
+
+        irAVistaAdmin();
+        await esperar();
+
+        const titulos = [...document.querySelectorAll('#revisionTareasLista .chore-item-titulo')].map((el) => el.textContent);
+        assert.deepEqual(titulos, ['En revisión']);
+        assert.equal(document.getElementById('revisionVacio').style.display, 'none');
+    });
+
+    test('sin tareas en revisión, muestra el estado vacío', async () => {
+        irAVistaAdmin();
+        await esperar();
+        assert.notEqual(document.getElementById('revisionVacio').style.display, 'none');
+    });
+
+    test('"✅ Aprobar" individual: completa y otorga horasAOtorgar completas a cada asignado', async () => {
+        firebaseMock.seed('tareas', {
+            t1: { titulo: 'X', origen: 'autoasignada', estado: 'en_revision', asignados: ['u1', 'u2'], horasAOtorgar: 8 }
+        });
+        firebaseMock.seed('usuarios', { u1: { horasTotales: 0, rol: 'estudiante' }, u2: { horasTotales: 2, rol: 'estudiante' } });
+
+        irAVistaAdmin();
+        await esperar();
+        document.querySelector('#revisionTareasLista .chore-complete-btn').dispatchEvent(new window.Event('click', { bubbles: true }));
+        await esperar();
+
+        assert.equal(firebaseMock.leerDoc('tareas', 't1').estado, 'completada');
+        assert.equal(firebaseMock.leerDoc('usuarios', 'u1').horasTotales, 8);
+        assert.equal(firebaseMock.leerDoc('usuarios', 'u2').horasTotales, 10);
+        assert.equal(document.querySelectorAll('#revisionTareasLista li').length, 0);
+    });
+
+    test('seleccionar 2 + "Aprobar seleccionadas": aprueba solo esas, deja la tercera en revisión', async () => {
+        firebaseMock.seed('tareas', {
+            t1: { titulo: 'A', origen: 'autoasignada', estado: 'en_revision', asignados: ['u1'], horasAOtorgar: 3 },
+            t2: { titulo: 'B', origen: 'autoasignada', estado: 'en_revision', asignados: ['u1'], horasAOtorgar: 2 },
+            t3: { titulo: 'C', origen: 'autoasignada', estado: 'en_revision', asignados: ['u1'], horasAOtorgar: 1 }
+        });
+        firebaseMock.seed('usuarios', { u1: { horasTotales: 0, rol: 'estudiante' } });
+
+        irAVistaAdmin();
+        await esperar();
+
+        const checkboxes = document.querySelectorAll('#revisionTareasLista input[type="checkbox"]');
+        checkboxes[0].checked = true;
+        checkboxes[0].dispatchEvent(new window.Event('change', { bubbles: true }));
+        checkboxes[1].checked = true;
+        checkboxes[1].dispatchEvent(new window.Event('change', { bubbles: true }));
+
+        document.getElementById('revisionAprobarSeleccionadasBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
+        await esperar();
+
+        assert.equal(firebaseMock.leerDoc('tareas', 't1').estado, 'completada');
+        assert.equal(firebaseMock.leerDoc('tareas', 't2').estado, 'completada');
+        assert.equal(firebaseMock.leerDoc('tareas', 't3').estado, 'en_revision');
+        assert.equal(firebaseMock.leerDoc('usuarios', 'u1').horasTotales, 5); // 3 + 2, no la de t3
+    });
+
+    test('"Aprobar seleccionadas" sin nada seleccionado: no hace nada, avisa', async () => {
+        firebaseMock.seed('tareas', {
+            t1: { titulo: 'A', origen: 'autoasignada', estado: 'en_revision', asignados: ['u1'], horasAOtorgar: 3 }
+        });
+        irAVistaAdmin();
+        await esperar();
+
+        document.getElementById('revisionAprobarSeleccionadasBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
+        await esperar();
+
+        assert.equal(firebaseMock.leerDoc('tareas', 't1').estado, 'en_revision');
+    });
+
+    test('"Aprobar todas" aprueba TODAS las en_revision, sin importar la selección', async () => {
+        firebaseMock.seed('tareas', {
+            t1: { titulo: 'A', origen: 'autoasignada', estado: 'en_revision', asignados: ['u1'], horasAOtorgar: 1 },
+            t2: { titulo: 'B', origen: 'autoasignada', estado: 'en_revision', asignados: ['u1'], horasAOtorgar: 1 }
+        });
+        firebaseMock.seed('usuarios', { u1: { horasTotales: 0, rol: 'estudiante' } });
+
+        irAVistaAdmin();
+        await esperar();
+        document.getElementById('revisionAprobarTodasBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
+        await esperar();
+
+        assert.equal(firebaseMock.leerDoc('tareas', 't1').estado, 'completada');
+        assert.equal(firebaseMock.leerDoc('tareas', 't2').estado, 'completada');
+    });
+
+    test('"Aprobar todas" cancelado (confirm=false) no aprueba nada', async () => {
+        firebaseMock.seed('tareas', {
+            t1: { titulo: 'A', origen: 'autoasignada', estado: 'en_revision', asignados: ['u1'], horasAOtorgar: 1 }
+        });
+        window.confirm = () => false;
+
+        irAVistaAdmin();
+        await esperar();
+        document.getElementById('revisionAprobarTodasBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
+        await esperar();
+
+        assert.equal(firebaseMock.leerDoc('tareas', 't1').estado, 'en_revision');
+    });
+
+    test('"❌ Rechazar" abre modal; motivo vacío se rechaza; con motivo pasa a rechazada y NO otorga horas', async () => {
+        firebaseMock.seed('tareas', {
+            t1: { titulo: 'X', origen: 'autoasignada', estado: 'en_revision', asignados: ['u1'], horasAOtorgar: 10 }
+        });
+        firebaseMock.seed('usuarios', { u1: { horasTotales: 0, rol: 'estudiante' } });
+
+        irAVistaAdmin();
+        await esperar();
+        document.querySelector('#revisionTareasLista .catalogo-eliminar-btn').dispatchEvent(new window.Event('click', { bubbles: true }));
+
+        assert.ok(document.getElementById('rechazarTareaModal').classList.contains('open'));
+        assert.equal(document.getElementById('rechazarTareaTitulo').textContent, 'X');
+
+        // sin motivo: se rechaza, el modal sigue abierto
+        document.getElementById('rechazarTareaConfirmarBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
+        await esperar();
+        assert.ok(document.getElementById('rechazarTareaModal').classList.contains('open'));
+        assert.equal(firebaseMock.leerDoc('tareas', 't1').estado, 'en_revision');
+
+        document.getElementById('rechazarTareaMotivo').value = 'Falta la foto';
+        document.getElementById('rechazarTareaConfirmarBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
+        await esperar();
+
+        const guardada = firebaseMock.leerDoc('tareas', 't1');
+        assert.equal(guardada.estado, 'rechazada');
+        assert.equal(guardada.motivoRechazo, 'Falta la foto');
+        assert.equal(firebaseMock.leerDoc('usuarios', 'u1').horasTotales, 0);
+        assert.equal(document.getElementById('rechazarTareaModal').classList.contains('open'), false);
     });
 });

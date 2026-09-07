@@ -7,7 +7,7 @@
 import {
     db, PATHS,
     collection, doc,
-    getDocs, addDoc, updateDoc, serverTimestamp,
+    getDocs, addDoc, updateDoc, deleteDoc, serverTimestamp,
     writeBatch, increment,
     query, where, orderBy, limit,
     getCountFromServer
@@ -50,13 +50,30 @@ export async function obtenerTareas() {
 // Proyectos ORGANIZA tareas existentes vía este campo, nunca las duplica
 // en su propia colección (ver js/services/proyectos.js).
 //
+// Tareas autoasignadas con aprobación de admin (2026-09-06): `origen`
+// decide si la tarea la asignó un admin (flujo de siempre, sin cambios —
+// completarTarea() sigue siendo el único camino de horas para estas) o si
+// la propuso/auto-asignó cualquier autenticado (flujo nuevo, ver
+// enviarARevision/aprobarTareaAutoasignada/rechazarTareaAutoasignada más
+// abajo). Default 'asignada' — un documento viejo sin este campo (creado
+// antes de este cambio) también debe leerse como 'asignada', ver el mismo
+// criterio `|| 'asignada'` en firestore.rules (`.get('origen','asignada')`)
+// y en el consumo de este campo en render.js/vista-tareas.js. `creadorId`
+// es nuevo para AMBOS orígenes (antes no existía) — en 'asignada' queda
+// como metadata sin uso (siempre el admin que la creó), en 'autoasignada'
+// es la identidad que firestore.rules verifica para permitir
+// editar/borrar/reenviar. `motivoRechazo` nace null, solo lo escribe
+// rechazarTareaAutoasignada().
+//
 // _datosNuevaTarea separado de crearTarea (en vez de un solo bloque
 // inline) porque js/services/proyectos.js.agregarPasoAProyecto() necesita
 // la MISMA forma/validación pero escrita dentro de un writeBatch atómico
 // (junto con el update al array `pasos` del proyecto) — un batch no puede
 // llamar a una función async con su propio addDoc como crearTarea, así
 // que la parte pura (armar el objeto) se separó para reusarse sin duplicar
-// el criterio de validación/shape en dos archivos.
+// el criterio de validación/shape en dos archivos. Proyectos nunca pasa
+// `origen` — cae en el default 'asignada', correcto: agregar un paso es
+// coordinación de admin, no autoservicio (ver firestore.rules).
 export function _datosNuevaTarea(datos) {
     if (datos.tipo !== 'asistencia' && datos.tipo !== 'individual') {
         throw new Error(`[chores] tipo requerido: 'asistencia'|'individual', recibió: ${datos.tipo}`);
@@ -64,7 +81,10 @@ export function _datosNuevaTarea(datos) {
     return {
         titulo: datos.titulo,
         tipo: datos.tipo,
+        origen: datos.origen === 'autoasignada' ? 'autoasignada' : 'asignada',
+        creadorId: getUsuarioActual()?.uid ?? null,
         estado: 'pendiente',
+        motivoRechazo: null,
         asignados: datos.asignados || [],
         horasAOtorgar: datos.horasAOtorgar || 0,
         fotoEvidenciaUrl: null,
@@ -213,4 +233,79 @@ export async function completarTarea(tareaId, arrayDeAsignados, { horasAOtorgar 
             }))
         );
     }
+}
+
+// ── Tareas autoasignadas: flujo de aprobación por admin (2026-09-06) ──
+// completarTarea()/crearTarea() de arriba siguen siendo el único camino
+// para tareas origen:'asignada', sin ningún cambio de comportamiento. Las
+// 4 funciones de acá abajo son exclusivas del flujo nuevo — su seguridad
+// real vive en firestore.rules (una autoasignada en 'en_revision' queda
+// congelada ahí incluso si algo llamara estas funciones fuera de orden).
+
+// El creador sube evidencia y pide revisión: 'pendiente'|'rechazada' ->
+// 'en_revision'. A diferencia de completarTarea() (donde la foto solo es
+// obligatoria si tipo:'asistencia'), acá es SIEMPRE obligatoria sin
+// importar tipo — se valida acá Y en firestore.rules
+// (fotoEvidenciaUrl is string). Limpia motivoRechazo de un rechazo
+// anterior: al reenviar, esa observación ya se está atendiendo — que no
+// se siga mostrando como si aplicara a la evidencia nueva.
+export async function enviarARevision(tareaId, archivoEvidencia) {
+    if (!archivoEvidencia) {
+        throw new Error('[chores] enviarARevision requiere una foto de evidencia');
+    }
+    const fotoEvidenciaUrl = await subirEvidenciaTarea(tareaId, archivoEvidencia);
+    await updateDoc(doc(db, PATHS.tareas, tareaId), {
+        estado: 'en_revision',
+        fotoEvidenciaUrl,
+        motivoRechazo: null
+    });
+    _logActividad('ENVIAR_A_REVISION', tareaId);
+}
+
+// Admin aprueba: 'en_revision' -> 'completada'. horasAOtorgar se otorga
+// COMPLETO (sin repartir) a cada uid de asignados — mismo _registrarHoras
+// que completarTarea(), nunca un segundo camino de horas.
+export async function aprobarTareaAutoasignada(tareaId, arrayDeAsignados, horasAOtorgar = 0) {
+    await updateDoc(doc(db, PATHS.tareas, tareaId), { estado: 'completada' });
+    _logActividad('APROBAR_TAREA', tareaId);
+
+    if (horasAOtorgar > 0) {
+        const admin = getUsuarioActual();
+        await Promise.all(
+            arrayDeAsignados.map((estudianteId) => _registrarHoras(estudianteId, horasAOtorgar, {
+                tareaId,
+                origen: 'automatica',
+                autorizadoPor: admin?.uid ?? null
+            }))
+        );
+    }
+}
+
+// Admin rechaza: 'en_revision' -> 'rechazada'. motivoRechazo obligatorio,
+// sin excepción (también forzado en firestore.rules) — es lo único que le
+// dice al creador qué corregir antes de reenviar.
+export async function rechazarTareaAutoasignada(tareaId, motivoRechazo) {
+    const motivo = (motivoRechazo || '').trim();
+    if (!motivo) {
+        throw new Error('[chores] rechazarTareaAutoasignada requiere motivoRechazo');
+    }
+    await updateDoc(doc(db, PATHS.tareas, tareaId), { estado: 'rechazada', motivoRechazo: motivo });
+    _logActividad('RECHAZAR_TAREA', tareaId, motivo);
+}
+
+// El creador edita su autoasignada mientras sigue editable ('pendiente' o
+// 'rechazada' — 'en_revision' está congelada, ver firestore.rules). No
+// toca origen/creadorId/estado/motivoRechazo por este camino, esos los
+// manejan las funciones de arriba.
+export async function editarTareaAutoasignada(tareaId, { titulo, tipo, horasAOtorgar, asignados }) {
+    await updateDoc(doc(db, PATHS.tareas, tareaId), { titulo, tipo, horasAOtorgar, asignados });
+    _logActividad('EDITAR_TAREA', tareaId, titulo);
+}
+
+// El creador borra su autoasignada mientras sigue 'pendiente' (congelada
+// desde 'en_revision' en adelante). Admin sigue pudiendo borrar cualquier
+// tarea en cualquier estado — comportamiento previo, sin cambios.
+export async function eliminarTarea(tareaId) {
+    await deleteDoc(doc(db, PATHS.tareas, tareaId));
+    _logActividad('ELIMINAR_TAREA', tareaId);
 }

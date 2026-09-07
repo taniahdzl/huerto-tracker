@@ -111,18 +111,31 @@ export function crearLeyendaCategorias() {
 
 // ── Shape de `tareas` ────────────────────────────────────────────
 //   { id, titulo, tipo: "asistencia"|"individual",
-//     estado: "pendiente"|"completada", asignados: [uid,...],
+//     origen: "asignada"|"autoasignada", creadorId: uid|null,
+//     estado: "pendiente"|"en_revision"|"completada"|"rechazada",
+//     motivoRechazo: string|null, asignados: [uid,...],
 //     horasAOtorgar: number, fotoEvidenciaUrl: string|null,
 //     fechaCreacion, asignadosNombres: [string,...] }
 // `asignadosNombres` es opcional y se denormaliza en main.js (mismo patrón
 // que plantaNombre/plantaTipo en camas) — este módulo no conoce el
 // directorio de usuarios, solo pinta lo que ya viene resuelto.
+//
+// Tareas autoasignadas con aprobación de admin (2026-09-06): `origen`
+// puede faltar en documentos viejos — se trata como 'asignada', mismo
+// default que _datosNuevaTarea/firestore.rules (ver chores.js). Solo la
+// rama 'autoasignada' conoce estados nuevos ('en_revision'/'rechazada');
+// 'en_revision' está congelada a propósito — no se pinta NINGÚN botón ahí,
+// ni siquiera para admin (esa resolución vive en el panel de revisión de
+// Admin, no en esta lista, ver renderRevisionTareas/vista-admin.js).
 
-export function renderListaTareas(tareas, contenedor, onCompletarClick, { esAdmin = false } = {}) {
+export function renderListaTareas(tareas, contenedor, callbacks, { esAdmin = false, uidActual = null } = {}) {
+    const { onCompletar, onEditar, onEliminar } = callbacks;
     const fragment = document.createDocumentFragment();
 
     tareas.forEach((tarea) => {
+        const origen = tarea.origen === 'autoasignada' ? 'autoasignada' : 'asignada';
         const completada = tarea.estado === 'completada';
+        const esCreador = uidActual != null && tarea.creadorId === uidActual;
 
         const li = document.createElement('li');
         li.className = completada ? 'chore-item completada' : 'chore-item';
@@ -143,11 +156,25 @@ export function renderListaTareas(tareas, contenedor, onCompletarClick, { esAdmi
             : 'Sin asignar';
         info.appendChild(asignados);
 
+        if (origen === 'autoasignada' && tarea.estado === 'en_revision') {
+            const estadoTag = document.createElement('span');
+            estadoTag.className = 'chore-item-asignados';
+            estadoTag.textContent = 'En revisión — esperando aprobación del admin';
+            info.appendChild(estadoTag);
+        }
+
+        if (origen === 'autoasignada' && tarea.estado === 'rechazada' && tarea.motivoRechazo) {
+            const motivo = document.createElement('p');
+            motivo.className = 'admin-auditoria-error';
+            motivo.textContent = `Rechazada: ${tarea.motivoRechazo}`;
+            info.appendChild(motivo);
+        }
+
         li.appendChild(info);
 
         // Miniatura de evidencia: solo si la tarea ya tiene una (se llena
-        // al completar, ver completarTarea en chores.js) — si no existe,
-        // no se fuerza ningún estado vacío/placeholder.
+        // al completar/enviar a revisión) — si no existe, no se fuerza
+        // ningún estado vacío/placeholder.
         if (completada && tarea.fotoEvidenciaUrl) {
             const foto = document.createElement('img');
             foto.className = 'chore-item-evidencia';
@@ -156,16 +183,111 @@ export function renderListaTareas(tareas, contenedor, onCompletarClick, { esAdmi
             li.appendChild(foto);
         }
 
-        // RBAC de cliente: la seguridad real está en firestore.rules
-        // (create/update/delete de `tareas` es admin-only) — esto solo
-        // evita ofrecer un botón que el backend va a rechazar.
-        if (!completada && esAdmin) {
-            const btn = document.createElement('button');
-            btn.className = 'chore-complete-btn';
-            btn.textContent = '✅ Completar';
-            btn.addEventListener('click', () => onCompletarClick(tarea.id));
-            li.appendChild(btn);
+        // RBAC de cliente: la seguridad real está en firestore.rules —
+        // esto solo evita ofrecer un botón que el backend va a rechazar.
+        if (!completada && tarea.estado !== 'en_revision') {
+            if (origen === 'asignada' && esAdmin) {
+                const btn = document.createElement('button');
+                btn.className = 'chore-complete-btn';
+                btn.textContent = '✅ Completar';
+                btn.addEventListener('click', () => onCompletar(tarea.id));
+                li.appendChild(btn);
+            }
+
+            if (origen === 'autoasignada' && esCreador && tarea.estado === 'pendiente') {
+                const editarBtn = document.createElement('button');
+                editarBtn.className = 'chore-complete-btn';
+                editarBtn.textContent = '✏️ Editar';
+                editarBtn.addEventListener('click', () => onEditar(tarea.id));
+                li.appendChild(editarBtn);
+
+                const eliminarBtn = document.createElement('button');
+                eliminarBtn.className = 'chore-complete-btn catalogo-eliminar-btn';
+                eliminarBtn.textContent = '🗑️ Eliminar';
+                eliminarBtn.addEventListener('click', () => onEliminar(tarea.id));
+                li.appendChild(eliminarBtn);
+            }
+
+            if (origen === 'autoasignada' && esCreador && tarea.estado === 'rechazada') {
+                const reenviarBtn = document.createElement('button');
+                reenviarBtn.className = 'chore-complete-btn';
+                reenviarBtn.textContent = '✏️ Editar y reenviar';
+                reenviarBtn.addEventListener('click', () => onEditar(tarea.id));
+                li.appendChild(reenviarBtn);
+            }
         }
+
+        fragment.appendChild(li);
+    });
+
+    contenedor.replaceChildren(fragment);
+}
+
+// ── Panel de revisión de Admin (tareas autoasignadas en 'en_revision') ──
+// Multi-selección: solo alimenta "Aprobar seleccionadas"/"Aprobar todas"
+// (acciones masivas sin pedir texto) — el rechazo se dejó deliberadamente
+// FUERA de la selección múltiple: el motivo debe ser específico de cada
+// tarea (es lo único que le dice al creador qué corregir), así que
+// "rechazar" siempre se dispara fila por fila con su propio textarea, sin
+// un botón "Rechazar seleccionadas" que ofrecería un motivo compartido o
+// N modales en cadena por el mismo costo de clics que ya tiene ir fila por
+// fila. Documentado así por pedido explícito de dejar registrada la
+// decisión de UX (ver diagnóstico de esta fase).
+export function renderRevisionTareas(tareas, contenedor, { seleccionadas, onToggleSeleccion, onAprobar, onRechazar }) {
+    const fragment = document.createDocumentFragment();
+
+    tareas.forEach((tarea) => {
+        const li = document.createElement('li');
+        li.className = 'chore-item';
+        li.dataset.tareaId = tarea.id;
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = seleccionadas.has(tarea.id);
+        checkbox.addEventListener('change', () => onToggleSeleccion(tarea.id, checkbox.checked));
+        li.appendChild(checkbox);
+
+        const info = document.createElement('div');
+        info.className = 'chore-item-info';
+
+        const titulo = document.createElement('span');
+        titulo.className = 'chore-item-titulo';
+        titulo.textContent = tarea.titulo || 'Sin título';
+        info.appendChild(titulo);
+
+        const asignados = document.createElement('span');
+        asignados.className = 'chore-item-asignados';
+        asignados.textContent = (tarea.asignadosNombres && tarea.asignadosNombres.length)
+            ? tarea.asignadosNombres.join(', ')
+            : 'Sin asignar';
+        info.appendChild(asignados);
+
+        const meta = document.createElement('span');
+        meta.className = 'chore-item-asignados';
+        meta.textContent = `${tarea.horasAOtorgar || 0}h a otorgar si se aprueba`;
+        info.appendChild(meta);
+
+        li.appendChild(info);
+
+        if (tarea.fotoEvidenciaUrl) {
+            const foto = document.createElement('img');
+            foto.className = 'chore-item-evidencia';
+            foto.src = tarea.fotoEvidenciaUrl;
+            foto.alt = 'Evidencia de la tarea';
+            li.appendChild(foto);
+        }
+
+        const aprobarBtn = document.createElement('button');
+        aprobarBtn.className = 'chore-complete-btn';
+        aprobarBtn.textContent = '✅ Aprobar';
+        aprobarBtn.addEventListener('click', () => onAprobar(tarea.id));
+        li.appendChild(aprobarBtn);
+
+        const rechazarBtn = document.createElement('button');
+        rechazarBtn.className = 'chore-complete-btn catalogo-eliminar-btn';
+        rechazarBtn.textContent = '❌ Rechazar';
+        rechazarBtn.addEventListener('click', () => onRechazar(tarea.id));
+        li.appendChild(rechazarBtn);
 
         fragment.appendChild(li);
     });

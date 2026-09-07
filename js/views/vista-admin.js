@@ -1,11 +1,12 @@
 // js/views/vista-admin.js
 //
-// Dos secciones históricamente separadas en main.js, fusionadas acá porque
-// están conectadas por un botón real (abrirAjusteHorasBtn dentro de esta
-// misma vista abre el modal de horas) y comparten el mismo gate de rol:
+// Tres secciones históricamente separadas en main.js, fusionadas acá porque
+// comparten el mismo gate de rol (VISTAS_ADMIN, router.js):
 //
 // - "Panel de Admin": el modal de ajuste manual de horas
 //   (poblarSelectorAdmin/abrirAdminModal/handleAdminSave).
+// - "Tareas en Revisión" (2026-09-06): panel de aprobación de autoasignadas
+//   — ver comentario junto a cargarYRenderizarRevision más abajo.
 // - "Vista de Admin" (Fase 13.8): el log de auditoría con sus 4 filtros
 //   (irAVistaAdmin/cargarYRenderizarVistaAdmin/poblarFiltrosAuditoria/
 //   aplicarFiltrosAuditoria/limpiarFiltrosAuditoria).
@@ -18,7 +19,8 @@
 
 import { obtenerDirectorioEstudiantes, obtenerDirectorioCompleto, ajustarHoras } from '../services/usuarios.js';
 import { obtenerRegistroActividad, extraerLinkIndice } from '../services/db.js';
-import { renderRegistroActividad, renderResumenHoras } from '../render/render.js';
+import { obtenerTareas, aprobarTareaAutoasignada, rechazarTareaAutoasignada } from '../services/chores.js';
+import { renderRegistroActividad, renderResumenHoras, renderRevisionTareas } from '../render/render.js';
 import { nombreParaMostrar } from '../services/session.js';
 import { mostrarToast, openModal, closeModal } from '../shared/core-ui.js';
 import { navegarA } from '../shared/router.js';
@@ -33,6 +35,17 @@ const adminSaveBtn       = document.getElementById('adminSaveBtn');
 const abrirAjusteHorasBtn   = document.getElementById('abrirAjusteHorasBtn');
 const resumenHorasBody      = document.getElementById('resumenHorasBody');
 const registroActividadBody = document.getElementById('registroActividadBody');
+
+const revisionTareasLista            = document.getElementById('revisionTareasLista');
+const revisionVacio                  = document.getElementById('revisionVacio');
+const revisionSeleccionarTodasBtn    = document.getElementById('revisionSeleccionarTodasBtn');
+const revisionAprobarSeleccionadasBtn = document.getElementById('revisionAprobarSeleccionadasBtn');
+const revisionAprobarTodasBtn        = document.getElementById('revisionAprobarTodasBtn');
+
+const rechazarTareaModalClose    = document.getElementById('rechazarTareaModalClose');
+const rechazarTareaTitulo        = document.getElementById('rechazarTareaTitulo');
+const rechazarTareaMotivo        = document.getElementById('rechazarTareaMotivo');
+const rechazarTareaConfirmarBtn  = document.getElementById('rechazarTareaConfirmarBtn');
 
 const auditoriaFiltroTipo        = document.getElementById('auditoriaFiltroTipo');
 const auditoriaFiltroPersona     = document.getElementById('auditoriaFiltroPersona');
@@ -126,10 +139,11 @@ let directorioParaFiltroPersona = [];
 
 async function cargarYRenderizarVistaAdmin() {
     try {
-        const [registro, estudiantes, directorioCompleto] = await Promise.all([
+        const [registro, estudiantes, directorioCompleto, tareas] = await Promise.all([
             obtenerRegistroActividad(),
             obtenerDirectorioEstudiantes(),
-            obtenerDirectorioCompleto()
+            obtenerDirectorioCompleto(),
+            obtenerTareas()
         ]);
         renderRegistroActividad(registro, registroActividadBody);
         renderResumenHoras(estudiantes, resumenHorasBody);
@@ -137,11 +151,153 @@ async function cargarYRenderizarVistaAdmin() {
 
         directorioParaFiltroPersona = directorioCompleto;
         poblarFiltrosAuditoria(registro);
+
+        cargarYRenderizarRevision(tareas, directorioCompleto);
     } catch (e) {
         console.error('[vista-admin] Error cargando el panel de Admin:', e);
         mostrarToast('No se pudo cargar el panel de Admin', 'red');
     }
 }
+
+// ── Panel de revisión (tareas autoasignadas en 'en_revision') ───────
+// No es una query aparte (where('estado','==','en_revision')): esta vista
+// ya trae TODAS las tareas para el registro de auditoría/resumen de horas,
+// así que se reusa esa misma lectura y se filtra en cliente — mismo
+// criterio que el filtro "mías"/"todas" de vista-tareas.js, sin agregar un
+// segundo round-trip ni arriesgar un índice compuesto nuevo para una
+// colección que ya se trae completa en esta vista.
+//
+// Multi-selección: alimenta SOLO "Aprobar seleccionadas"/"Aprobar todas"
+// (acciones masivas que no piden texto) — el rechazo se dejó fuera de la
+// selección múltiple a propósito, ver comentario junto a
+// renderRevisionTareas (render.js) para el porqué.
+let tareasEnRevisionActuales = [];
+const revisionSeleccionadas = new Set();
+let tareaEnRechazo = null;
+
+function cargarYRenderizarRevision(tareas, directorioCompleto) {
+    const nombresPorUid = new Map(directorioCompleto.map((u) => [u.id, nombreParaMostrar(u)]));
+    tareasEnRevisionActuales = tareas
+        .filter((t) => (t.origen || 'asignada') === 'autoasignada' && t.estado === 'en_revision')
+        .map((t) => ({ ...t, asignadosNombres: (t.asignados || []).map((uid) => nombresPorUid.get(uid) || uid) }));
+
+    // Descarta de la selección cualquier id que ya se resolvió (aprobada/
+    // rechazada) o ya no existe en esta carga — evita que "Aprobar
+    // seleccionadas" intente reaprobar algo que ya salió de la cola.
+    const idsVigentes = new Set(tareasEnRevisionActuales.map((t) => t.id));
+    [...revisionSeleccionadas].forEach((id) => { if (!idsVigentes.has(id)) revisionSeleccionadas.delete(id); });
+
+    renderizarRevision();
+}
+
+function renderizarRevision() {
+    renderRevisionTareas(tareasEnRevisionActuales, revisionTareasLista, {
+        seleccionadas: revisionSeleccionadas,
+        onToggleSeleccion: (id, marcado) => { marcado ? revisionSeleccionadas.add(id) : revisionSeleccionadas.delete(id); },
+        onAprobar: handleAprobarTarea,
+        onRechazar: abrirRechazarTareaModal
+    });
+    revisionVacio.style.display = tareasEnRevisionActuales.length === 0 ? '' : 'none';
+    revisionSeleccionarTodasBtn.textContent = (revisionSeleccionadas.size > 0 && revisionSeleccionadas.size === tareasEnRevisionActuales.length)
+        ? 'Deseleccionar todas'
+        : 'Seleccionar todas';
+}
+
+async function handleAprobarTarea(tareaId) {
+    const tarea = tareasEnRevisionActuales.find((t) => t.id === tareaId);
+    if (!tarea) return;
+    try {
+        await aprobarTareaAutoasignada(tareaId, tarea.asignados || [], tarea.horasAOtorgar || 0);
+        mostrarToast('Tarea aprobada', 'green');
+        await cargarYRenderizarVistaAdmin();
+    } catch (e) {
+        console.error('[vista-admin] Error aprobando tarea:', e);
+        mostrarToast('No se pudo aprobar la tarea', 'red');
+    }
+}
+
+revisionSeleccionarTodasBtn.addEventListener('click', () => {
+    if (revisionSeleccionadas.size > 0 && revisionSeleccionadas.size === tareasEnRevisionActuales.length) {
+        revisionSeleccionadas.clear();
+    } else {
+        tareasEnRevisionActuales.forEach((t) => revisionSeleccionadas.add(t.id));
+    }
+    renderizarRevision();
+});
+
+revisionAprobarSeleccionadasBtn.addEventListener('click', async () => {
+    if (revisionSeleccionadas.size === 0) {
+        mostrarToast('Selecciona al menos una tarea', 'red');
+        return;
+    }
+    if (!window.confirm(`¿Aprobar ${revisionSeleccionadas.size} tarea(s) seleccionada(s)? Se otorgan las horas completas a cada asignado.`)) return;
+
+    const idsSeleccionados = [...revisionSeleccionadas];
+    try {
+        for (const id of idsSeleccionados) {
+            const tarea = tareasEnRevisionActuales.find((t) => t.id === id);
+            if (tarea) await aprobarTareaAutoasignada(id, tarea.asignados || [], tarea.horasAOtorgar || 0);
+        }
+        mostrarToast('Tareas aprobadas', 'green');
+        await cargarYRenderizarVistaAdmin();
+    } catch (e) {
+        console.error('[vista-admin] Error aprobando tareas seleccionadas:', e);
+        mostrarToast('No se pudieron aprobar todas las tareas seleccionadas', 'red');
+    }
+});
+
+revisionAprobarTodasBtn.addEventListener('click', async () => {
+    if (tareasEnRevisionActuales.length === 0) return;
+    if (!window.confirm(`¿Aprobar TODAS las tareas en revisión (${tareasEnRevisionActuales.length})? Se otorgan las horas completas a cada asignado.`)) return;
+
+    try {
+        for (const tarea of tareasEnRevisionActuales) {
+            await aprobarTareaAutoasignada(tarea.id, tarea.asignados || [], tarea.horasAOtorgar || 0);
+        }
+        mostrarToast('Tareas aprobadas', 'green');
+        await cargarYRenderizarVistaAdmin();
+    } catch (e) {
+        console.error('[vista-admin] Error aprobando todas las tareas:', e);
+        mostrarToast('No se pudieron aprobar todas las tareas', 'red');
+    }
+});
+
+// Rechazo SIEMPRE individual (ver comentario en render.js) — motivo
+// obligatorio, un solo modal reusado fila por fila.
+function abrirRechazarTareaModal(tareaId) {
+    const tarea = tareasEnRevisionActuales.find((t) => t.id === tareaId);
+    if (!tarea) return;
+    tareaEnRechazo = tarea;
+    rechazarTareaTitulo.textContent = tarea.titulo || 'Sin título';
+    rechazarTareaMotivo.value = '';
+    openModal('rechazarTareaModal');
+}
+
+async function handleRechazarTareaConfirmar() {
+    if (!tareaEnRechazo) return;
+    const motivo = rechazarTareaMotivo.value.trim();
+    if (!motivo) {
+        mostrarToast('El motivo es obligatorio', 'red');
+        return;
+    }
+
+    rechazarTareaConfirmarBtn.disabled = true;
+    try {
+        await rechazarTareaAutoasignada(tareaEnRechazo.id, motivo);
+        closeModal('rechazarTareaModal');
+        mostrarToast('Tarea rechazada', 'green');
+        tareaEnRechazo = null;
+        await cargarYRenderizarVistaAdmin();
+    } catch (e) {
+        console.error('[vista-admin] Error rechazando tarea:', e);
+        mostrarToast('No se pudo rechazar la tarea', 'red');
+    } finally {
+        rechazarTareaConfirmarBtn.disabled = false;
+    }
+}
+
+rechazarTareaModalClose.addEventListener('click', () => closeModal('rechazarTareaModal'));
+rechazarTareaConfirmarBtn.addEventListener('click', handleRechazarTareaConfirmar);
 
 // Opciones de los selectores tipo/persona: derivadas de los valores REALES
 // que ya trajo la carga inicial sin filtro — no una lista fija inventada en

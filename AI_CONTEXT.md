@@ -1,6 +1,6 @@
 # Contexto del Proyecto: Huerto Universitario (Gemelo Digital)
 
-_Última actualización: 2026-08-29. Reemplaza la versión anterior, que describía
+_Última actualización: 2026-09-06. Reemplaza la versión anterior, que describía
 un estado del proyecto (monolito en `index.html`, JS vacío, API key en
 `localStorage`) que ya no existe._
 
@@ -268,6 +268,99 @@ un estado del proyecto (monolito en `index.html`, JS vacío, API key en
   nadie confirmó todavía que se vea/sienta bien en un navegador real —
   igual que Storage, esto queda pendiente de una pasada de confirmación
   visual antes de darlo por cerrado en producción.
+- **Tareas autoasignadas con aprobación de admin (2026-09-06).** Extiende
+  `tareas` (NO colección nueva): `origen: 'asignada'|'autoasignada'`
+  (default `'asignada'` — un doc viejo sin este campo se sigue leyendo como
+  `'asignada'`, vía `.get('origen','asignada')` tanto en `firestore.rules`
+  como en `render.js`/`vista-tareas.js`, así que ninguna tarea preexistente
+  cambia de comportamiento), `creadorId` (nuevo para AMBOS orígenes —
+  antes no existía; en `'asignada'` es metadata sin uso), `motivoRechazo`
+  (nace `null`), y dos estados nuevos, `'en_revision'`/`'rechazada'`, junto
+  a los ya existentes `'pendiente'`/`'completada'`. El flujo `'asignada'`
+  (admin crea → admin completa vía `completarTarea()`) sigue exactamente
+  igual, cero cambios de comportamiento — confirmado con el resto de la
+  suite de tests en verde sin tocar sus aserciones (solo 3 tests
+  preexistentes necesitaron actualizarse por la firma nueva de
+  `renderListaTareas()` y por que `crearTareaBtn` dejó de ser admin-only,
+  ver abajo).
+  - **Flujo nuevo (autoasignada):** cualquier autenticado crea una con
+    `origen:'autoasignada'`, pudiendo incluir a otros en `asignados[]`
+    (grupal) — nace `'pendiente'`, editable/borrable libremente por su
+    creador (`editarTareaAutoasignada`/`eliminarTarea`, `chores.js`).
+    Subir evidencia (SIEMPRE obligatoria, a diferencia de
+    `completarTarea()` donde solo aplica a `tipo:'asistencia'`) mueve
+    `'pendiente'|'rechazada'` → `'en_revision'` vía `enviarARevision()` —
+    desde ahí queda CONGELADA para cualquiera que no sea admin resolviendo
+    la revisión. Admin aprueba (`aprobarTareaAutoasignada` → `'completada'`
+    + `_registrarHoras()` por el monto COMPLETO de `horasAOtorgar` a cada
+    uid de `asignados[]`, sin repartir — mismo `_registrarHoras()` de
+    siempre, cero camino de horas alterno) o rechaza
+    (`rechazarTareaAutoasignada` → `'rechazada'`, `motivoRechazo`
+    obligatorio sin excepción). Una tarea rechazada puede reenviarse desde
+    el mismo modal de edición (`editarTareaModal`, `vista-tareas.js`), que
+    muestra el motivo para que el creador sepa qué corregir.
+  - **UI:** `crearTareaModal` ganó `crearTareaOrigenGroup` (solo visible a
+    admin — un no-admin siempre crea `'autoasignada'` sin ver el
+    selector); pre-marca (no fuerza) el checkbox del propio creador en
+    modo autoasignada. `"+ Crear tarea"` (`crearTareaBtn`) dejó de ser
+    admin-only — el viejo toggle centralizado en
+    `mostrarDashboard()`/`vista-dashboard.js` (el patrón legado que la
+    skill `add-feature` ya marcaba como "no replicar" desde la fase de
+    Proyectos) se retiró para este botón, ahora siempre visible tras
+    login. Panel de revisión nuevo dentro de `view-admin`
+    (`vista-admin.js`, sección "Tareas en Revisión") — reusa la MISMA
+    lectura de `obtenerTareas()` que ya traía esa vista para el registro
+    de auditoría/resumen de horas, filtrando en cliente
+    (`origen:'autoasignada' && estado:'en_revision'`), sin query ni índice
+    nuevo. Aprobar admite individual, multi-selección
+    ("Aprobar seleccionadas") y "Aprobar todas" (con `window.confirm`);
+    **rechazar se dejó deliberadamente FUERA de la selección múltiple** —
+    el motivo debe ser específico de cada tarea (es lo único que le dice
+    al creador qué corregir), así que siempre es fila por fila con su
+    propio modal/textarea, documentado así en el código
+    (`renderRevisionTareas`, `render.js`) porque la instrucción original
+    pedía registrar esta decisión de UX explícitamente.
+  - **`firestore.rules`: reescrito el `match /tareas/{tareaId}`**, ya no
+    un `allow write: if isAdmin()` único — separado en
+    `create`/`update`/`delete` con ramas por origen/estado. Auditado con
+    la skill `firebase-security-rules-auditor` antes de cerrarlo: el
+    primer borrador dejaba que el creador cambiara `horasAOtorgar` en la
+    MISMA escritura que enviaba a revisión, sin que quedara señalado como
+    cambio posterior a la creación — se corrigió separando "editar campos"
+    de "enviar a revisión" en 2 ramas de `update`, cada una restringida
+    con `request.resource.data.diff(resource.data).affectedKeys()
+    .hasOnly([...])` a EXACTAMENTE los campos que su función real en
+    `chores.js` toca. `storage.rules` también cambió (fuera del pedido
+    original, que solo mencionaba `firestore.rules` — encontrado al
+    auditar el flujo completo): el creador de la tarea ahora puede subir
+    su propia evidencia (antes `evidencia_tareas/{id}` era admin-only en
+    Storage), resuelto vía `firestore.get()` cross-service contra
+    `tareas/{id}.creadorId`. Tuvo su propio bug encontrado en revisión:
+    el wildcard `{tareaId}` de Storage Rules captura el NOMBRE DE ARCHIVO
+    completo (`<id>.jpg`, un solo segmento de path), no el id solo —
+    `.split('.')[0]` antes de usarlo en el `firestore.get()`, si no ese
+    lookup nunca encuentra el doc y la rama del creador siempre falla.
+  - **NO desplegado a producción todavía.** El intento de
+    `firebase deploy --only firestore:rules --dry-run` devolvió 403 (el
+    caller no tiene permiso para `firebaserules.googleapis.com:test` en
+    `huerto-57477`) — no se pudo validar la compilación de las reglas
+    contra el backend real, solo revisión manual + la skill auditora.
+    Pendiente que el usuario haga el deploy real
+    (`firebase deploy --only firestore:rules,storage:rules`) y confirme
+    permisos en la consola de Firebase si ese 403 se repite.
+  - **Evidencia de autoasignadas depende de Cloud Storage, que sigue
+    bloqueado por el plan Spark** (ver bullet de Storage arriba, sin
+    cambios en ese bloqueo) — mismo estado que el resto del proyecto que
+    usa Storage: código completo, testeado con Storage mockeada
+    (`test/chores.test.js`), pero la subida real (`enviarARevision`) no se
+    puede probar end-to-end hasta activar Blaze.
+  - **Cobertura de tests:** 307 tests en 23 archivos (subió de 275/23 —
+    mismo número de archivos, todos los tests nuevos se agregaron a
+    archivos ya existentes: `chores.test.js`, `render.test.js`,
+    `vista-tareas.test.js`, `vista-admin.test.js`, más 1 test ajustado en
+    `vista-dashboard.test.js` por el cambio de visibilidad de
+    `crearTareaBtn`). No se probó en navegador real — mismo pendiente que
+    Storage/Proyectos.
 
 ## 2. Mapa en espiral (Gemelo) — estado técnico
 
@@ -397,6 +490,20 @@ para ver más plantas vs. arrastrar hacia el mapa" (Fase 18.4).
 - [ ] Nuevo: confirmar en navegador real la vista de Proyectos — completa
       en código y con tests (Firestore mockeado), pero nadie la vio
       renderizada de verdad todavía. Mismo pendiente que Storage.
+- [x] Nuevo: tareas autoasignadas con aprobación de admin (2026-09-06) —
+      `origen`/`creadorId`/`motivoRechazo` + estados `en_revision`/
+      `rechazada` sobre `tareas` existente, panel de revisión en Admin,
+      `firestore.rules`/`storage.rules` reescritos y auditados — ver
+      sección 1, bullet de Tareas autoasignadas.
+- [ ] Nuevo: desplegar `firestore.rules`/`storage.rules` a producción — el
+      dry-run de `firebase deploy --only firestore:rules` dio 403 (permiso
+      insuficiente en `huerto-57477`), nunca se validó contra el backend
+      real. Confirmar permisos en la consola de Firebase con el usuario.
+- [ ] Nuevo: confirmar en navegador real el flujo de autoasignadas
+      (creación, edición, envío a revisión, panel de aprobación/rechazo de
+      Admin) — mismo pendiente que Storage/Proyectos, agravado acá porque
+      la evidencia obligatoria sigue bloqueada por el plan Spark (ver
+      bullet de Storage).
 
 ## 4. Arquitectura de módulos (Fase 19, 2026-07-24 — reorganizado en
    carpetas y `vista-gemelo.js` partido en Fase 22, 2026-07-25)
@@ -457,11 +564,14 @@ NO importa de vuelta a `vista-gemelo.js`; `iniciarHuerto` se le inyecta como
 parámetro (`onSoltar`) desde el único caller, mismo criterio anti-ciclo que
 `router.js`.
 
-`vista-admin.js` fusiona dos secciones que en el `main.js` original tenían
+`vista-admin.js` fusiona secciones que en el `main.js` original tenían
 nombres parecidos pero eran distintas: el modal de ajuste de horas ("Panel
 de Admin") y el log de auditoría con filtros ("Vista de Admin") — se
 fusionaron porque ya estaban conectadas por un botón real
-(`abrirAjusteHorasBtn` abre el modal del otro "sub-módulo").
+(`abrirAjusteHorasBtn` abre el modal del otro "sub-módulo"). El panel de
+revisión de tareas autoasignadas ("Tareas en Revisión", 2026-09-06) se
+sumó como tercera sección al mismo archivo, mismo gate de rol
+(`VISTAS_ADMIN`) — ver sección 1, bullet de Tareas autoasignadas.
 
 Sin cambios en `index.html` — sigue con un solo
 `<script type="module" src="js/main.js">`; el navegador resuelve todo el

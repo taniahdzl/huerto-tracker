@@ -42,6 +42,8 @@ describe('crearLeyendaCategorias', () => {
 });
 
 describe('renderListaTareas', () => {
+    const NOOP = { onCompletar: () => {}, onEditar: () => {}, onEliminar: () => {} };
+
     test('pinta título, asignados y clase completada', () => {
         const contenedor = document.createElement('ul');
         renderListaTareas(
@@ -50,7 +52,7 @@ describe('renderListaTareas', () => {
                 { id: 't2', titulo: 'Podar', estado: 'completada' }
             ],
             contenedor,
-            () => {}
+            NOOP
         );
 
         const items = contenedor.querySelectorAll('li');
@@ -61,7 +63,7 @@ describe('renderListaTareas', () => {
         assert.match(items[1].querySelector('.chore-item-asignados').textContent, /Sin asignar/);
     });
 
-    test('botón "Completar" solo aparece si esAdmin=true y la tarea no está completada', () => {
+    test('botón "Completar" (origen:asignada) solo aparece si esAdmin=true y la tarea no está completada', () => {
         const casos = [
             { esAdmin: true, estado: 'pendiente', esperaBoton: true },
             { esAdmin: false, estado: 'pendiente', esperaBoton: false },
@@ -70,16 +72,21 @@ describe('renderListaTareas', () => {
 
         casos.forEach(({ esAdmin, estado, esperaBoton }) => {
             const contenedor = document.createElement('ul');
-            renderListaTareas([{ id: 't1', titulo: 'X', estado }], contenedor, () => {}, { esAdmin });
+            renderListaTareas([{ id: 't1', titulo: 'X', origen: 'asignada', estado }], contenedor, NOOP, { esAdmin });
             const boton = contenedor.querySelector('.chore-complete-btn');
             assert.equal(!!boton, esperaBoton, `esAdmin=${esAdmin} estado=${estado}`);
         });
     });
 
-    test('el botón Completar dispara onCompletarClick con el id de la tarea', () => {
+    test('el botón Completar dispara onCompletar con el id de la tarea', () => {
         const contenedor = document.createElement('ul');
         const clicks = [];
-        renderListaTareas([{ id: 'tX', titulo: 'X', estado: 'pendiente' }], contenedor, (id) => clicks.push(id), { esAdmin: true });
+        renderListaTareas(
+            [{ id: 'tX', titulo: 'X', origen: 'asignada', estado: 'pendiente' }],
+            contenedor,
+            { ...NOOP, onCompletar: (id) => clicks.push(id) },
+            { esAdmin: true }
+        );
 
         contenedor.querySelector('.chore-complete-btn').dispatchEvent(new window.Event('click', { bubbles: true }));
         assert.deepEqual(clicks, ['tX']);
@@ -87,7 +94,7 @@ describe('renderListaTareas', () => {
 
     test('título sin valor cae a "Sin título"', () => {
         const contenedor = document.createElement('ul');
-        renderListaTareas([{ id: 't1', estado: 'pendiente' }], contenedor, () => {});
+        renderListaTareas([{ id: 't1', estado: 'pendiente' }], contenedor, NOOP);
         assert.equal(contenedor.querySelector('.chore-item-titulo').textContent, 'Sin título');
     });
 
@@ -100,10 +107,51 @@ describe('renderListaTareas', () => {
 
         casos.forEach(({ estado, fotoEvidenciaUrl, esperaFoto }) => {
             const contenedor = document.createElement('ul');
-            renderListaTareas([{ id: 't1', titulo: 'X', estado, fotoEvidenciaUrl }], contenedor, () => {});
+            renderListaTareas([{ id: 't1', titulo: 'X', estado, fotoEvidenciaUrl }], contenedor, NOOP);
             const img = contenedor.querySelector('.chore-item-evidencia');
             assert.equal(!!img, esperaFoto, `estado=${estado} fotoEvidenciaUrl=${fotoEvidenciaUrl}`);
             if (esperaFoto) assert.equal(img.src, 'https://x/foto.jpg');
+        });
+    });
+
+    describe('autoasignadas: creador ve editar/eliminar/reenviar, "en_revision" queda congelada', () => {
+        const base = { id: 't1', titulo: 'X', origen: 'autoasignada', creadorId: 'u1' };
+
+        test('pendiente + esCreador: botones Editar y Eliminar (no Completar)', () => {
+            const contenedor = document.createElement('ul');
+            renderListaTareas([{ ...base, estado: 'pendiente' }], contenedor, NOOP, { esAdmin: true, uidActual: 'u1' });
+            const botones = [...contenedor.querySelectorAll('.chore-complete-btn')].map((b) => b.textContent);
+            assert.deepEqual(botones, ['✏️ Editar', '🗑️ Eliminar']);
+        });
+
+        test('pendiente + NO es creador (otro uid): sin botones', () => {
+            const contenedor = document.createElement('ul');
+            renderListaTareas([{ ...base, estado: 'pendiente' }], contenedor, NOOP, { esAdmin: true, uidActual: 'otro' });
+            assert.equal(contenedor.querySelectorAll('.chore-complete-btn').length, 0);
+        });
+
+        test('rechazada + esCreador: un único botón "Editar y reenviar", muestra motivoRechazo', () => {
+            const contenedor = document.createElement('ul');
+            renderListaTareas(
+                [{ ...base, estado: 'rechazada', motivoRechazo: 'Falta la foto' }],
+                contenedor, NOOP, { uidActual: 'u1' }
+            );
+            const botones = [...contenedor.querySelectorAll('.chore-complete-btn')].map((b) => b.textContent);
+            assert.deepEqual(botones, ['✏️ Editar y reenviar']);
+            assert.match(contenedor.querySelector('.admin-auditoria-error').textContent, /Falta la foto/);
+        });
+
+        test('en_revision: congelada, cero botones incluso para admin/creador', () => {
+            const contenedor = document.createElement('ul');
+            renderListaTareas([{ ...base, estado: 'en_revision' }], contenedor, NOOP, { esAdmin: true, uidActual: 'u1' });
+            assert.equal(contenedor.querySelectorAll('.chore-complete-btn').length, 0);
+            assert.match(contenedor.querySelector('.chore-item-asignados:last-child')?.textContent || '', /En revisión/);
+        });
+
+        test('sin origen (tarea vieja, pre-rediseño) se trata como "asignada"', () => {
+            const contenedor = document.createElement('ul');
+            renderListaTareas([{ id: 't1', titulo: 'X', estado: 'pendiente' }], contenedor, NOOP, { esAdmin: true, uidActual: 'u1' });
+            assert.equal(contenedor.querySelector('.chore-complete-btn').textContent, '✅ Completar');
         });
     });
 });

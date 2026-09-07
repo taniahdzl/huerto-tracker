@@ -250,6 +250,12 @@
   display: flex; align-items: center; justify-content: space-between;
   flex-wrap: wrap; gap: 0.6rem; margin-bottom: var(--space-4);
 }
+/* Panel de revisión (Admin) — mismo .chore-list/.chore-item que Tareas,
+   con un checkbox de selección múltiple agregado al frente de cada fila
+   (ver renderRevisionTareas en render.js). */
+.admin-revision-acciones {
+  display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: var(--space-3);
+}
 .chore-complete-btn {
   padding: 0.3rem 0.6rem; border-radius: 6px;
   border: 1px solid var(--color-primario); background: transparent; color: var(--color-primario);

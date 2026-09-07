@@ -258,6 +258,21 @@
       <button class="btn btn-danger" id="abrirAjusteHorasBtn">Ajustar Horas de un Estudiante</button>
     </div>
 
+    <!-- Panel de revisión (2026-09-06): tareas autoasignadas en
+         'en_revision' — ver renderRevisionTareas (render.js) para el
+         criterio de por qué "Rechazar seleccionadas" no existe como
+         acción masiva (el motivo debe ser específico de cada tarea). -->
+    <div class="dashboard-card" style="max-width:none">
+      <h3>Tareas en Revisión</h3>
+      <div class="admin-revision-acciones">
+        <button class="btn" id="revisionSeleccionarTodasBtn">Seleccionar todas</button>
+        <button class="btn btn-primary" id="revisionAprobarSeleccionadasBtn">Aprobar seleccionadas</button>
+        <button class="btn btn-danger" id="revisionAprobarTodasBtn">Aprobar todas</button>
+      </div>
+      <ul class="chore-list" id="revisionTareasLista"></ul>
+      <p id="revisionVacio" class="dashboard-resumen-vacio" style="display:none">No hay tareas en revisión.</p>
+    </div>
+
     <div class="dashboard-card" style="max-width:none">
       <h3>Resumen de Horas por Estudiante</h3>
       <table class="admin-table">
@@ -347,7 +362,11 @@
   </div>
 </div>
 
-<!-- MODAL: Crear Tarea (solo admin — Tareas en sí es una vista, no modal) -->
+<!-- MODAL: Crear Tarea — visible para cualquier autenticado desde el
+     rediseño de autoasignadas (2026-09-06); crearTareaOrigenGroup solo se
+     muestra a admin (ver vista-tareas.js), quien puede elegir asignarla a
+     alguien más (flujo de siempre) o autoasignarse/proponer una — un
+     no-admin siempre crea origen:'autoasignada', sin ver este selector. -->
 <div class="modal-overlay" id="crearTareaModal">
   <div class="modal">
     <div class="modal-header">
@@ -355,6 +374,13 @@
       <button class="modal-close" id="crearTareaModalClose">×</button>
     </div>
     <div class="modal-body">
+      <div class="form-group" id="crearTareaOrigenGroup">
+        <label for="crearTareaOrigen">Tipo de asignación</label>
+        <select id="crearTareaOrigen">
+          <option value="asignada">Asignar a alguien</option>
+          <option value="autoasignada">Auto-asignarme / proponer tarea</option>
+        </select>
+      </div>
       <div class="form-group">
         <label for="crearTareaTitulo">Título</label>
         <input id="crearTareaTitulo" placeholder="Nueva tarea…">
@@ -376,6 +402,51 @@
         <div id="crearTareaAssignees" class="chore-assignees"></div>
       </div>
       <button class="btn btn-primary" id="crearTareaSaveBtn">Crear</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Editar/Reenviar Tarea Autoasignada — un solo modal para 2 casos
+     (ver vista-tareas.js/renderListaTareas): 'pendiente' muestra ambos
+     botones de guardado (editar sin tocar estado, o enviar a revisión con
+     evidencia); 'rechazada' oculta "Guardar cambios" — la única salida es
+     reenviar, mostrando motivoRechazo para que el creador sepa qué
+     corregir (ver firestore.rules, que exige evidencia en esa transición
+     de todas formas). -->
+<div class="modal-overlay" id="editarTareaModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>✏️ Editar Tarea</h3>
+      <button class="modal-close" id="editarTareaModalClose">×</button>
+    </div>
+    <div class="modal-body">
+      <p id="editarTareaMotivoRechazo" class="admin-auditoria-error" style="display:none"></p>
+      <div class="form-group">
+        <label for="editarTareaTitulo">Título</label>
+        <input id="editarTareaTitulo" placeholder="Título de la tarea…">
+      </div>
+      <div class="form-group">
+        <label for="editarTareaTipo">Tipo</label>
+        <select id="editarTareaTipo">
+          <option value="asistencia">Asistencia (otorga horas)</option>
+          <option value="individual">Individual</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="editarTareaHoras">Horas a otorgar (opcional)</label>
+        <input type="number" id="editarTareaHoras" min="0" step="0.5" placeholder="Ej: 15">
+      </div>
+      <div class="form-group">
+        <label>Asignados</label>
+        <div id="editarTareaAssignees" class="chore-assignees"></div>
+      </div>
+      <div class="form-group">
+        <label for="editarTareaFoto" id="editarTareaFotoLabel">Foto de evidencia (obligatoria para enviar a revisión)</label>
+        <input type="file" id="editarTareaFoto" accept="image/*">
+        <img id="editarTareaFotoPreview" class="hidden" alt="Vista previa de la evidencia">
+      </div>
+      <button class="btn" id="editarTareaGuardarBtn">Guardar cambios</button>
+      <button class="btn btn-primary" id="editarTareaEnviarBtn">Guardar y enviar a revisión</button>
     </div>
   </div>
 </div>
@@ -493,6 +564,26 @@
         <textarea id="adminHoursMotivo" rows="2" placeholder="15 horas de semestre anterior, ver correo del 3/marzo"></textarea>
       </div>
       <button class="btn btn-danger" id="adminSaveBtn">Ajustar Horas</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Rechazar Tarea (panel de revisión de Admin) — motivo SIEMPRE
+     obligatorio (también forzado en firestore.rules), un solo modal
+     reusado fila por fila (ver renderRevisionTareas), nunca en lote. -->
+<div class="modal-overlay" id="rechazarTareaModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>❌ Rechazar Tarea</h3>
+      <button class="modal-close" id="rechazarTareaModalClose">×</button>
+    </div>
+    <div class="modal-body">
+      <p id="rechazarTareaTitulo" class="chore-item-titulo"></p>
+      <div class="form-group">
+        <label for="rechazarTareaMotivo">Motivo (obligatorio)</label>
+        <textarea id="rechazarTareaMotivo" rows="3" placeholder="Qué falta o corregir para volver a enviarla…"></textarea>
+      </div>
+      <button class="btn btn-danger" id="rechazarTareaConfirmarBtn">Rechazar</button>
     </div>
   </div>
 </div>
