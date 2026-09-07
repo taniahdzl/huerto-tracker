@@ -92,14 +92,23 @@ service cloud.firestore {
         // señalado como cambio posterior a la creación (encontrado en
         // auditoría de esta fase, ver firebase-security-rules-auditor).
         // hasOnly() cierra ese hueco: esta rama no puede tocar estado/
-        // fotoEvidenciaUrl/motivoRechazo/creadorId/origen, solo los 4
-        // campos que edita editarTareaAutoasignada() en chores.js.
+        // fotoEvidenciaUrl/motivoRechazo/creadorId/origen.
+        // horasAOtorgar/asignados salieron de esta lista (2026-09-06):
+        // dejarlos editables aquí permitía al creador inflar las horas
+        // DESPUÉS de crear la tarea (incluso después de subir evidencia
+        // real a Storage, que solo valida ser el creador, no el estado),
+        // y esa edición no queda señalada como cambio posterior — la
+        // única rama de esta regla que sí revisa el número es la de
+        // aprobación de admin, y para entonces ya llegaría inflado. Si
+        // el creador se equivoca en horas/asignados, borra (permitido en
+        // 'pendiente') y crea de nuevo — solo 'titulo'/'tipo' quedan
+        // editables aquí.
         (
           resource.data.get('origen', 'asignada') == 'autoasignada' &&
           resource.data.creadorId == request.auth.uid &&
           resource.data.estado in ['pendiente', 'rechazada'] &&
           request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['titulo', 'tipo', 'horasAOtorgar', 'asignados'])
+            .hasOnly(['titulo', 'tipo'])
         ) ||
         // El creador envía/reenvía a revisión: 'pendiente'|'rechazada' ->
         // 'en_revision', con evidencia obligatoria — hasOnly() restringe

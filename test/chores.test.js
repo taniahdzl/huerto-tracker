@@ -19,6 +19,7 @@
 
 import { test, describe, mock, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { createFirebaseMock } from './helpers/firebase-mock.js';
 import { setUsuarioActual } from '../js/services/session.js';
 
@@ -368,5 +369,113 @@ describe('eliminarTarea', () => {
 
         assert.equal(firebaseMock.leerDoc('tareas', 't1'), null);
         assert.equal(firebaseMock.leerColeccion('registro_actividad')[0].tipo, 'ELIMINAR_TAREA');
+    });
+});
+
+// Escenario: horas infladas antes de revisión (fix 2026-09-06)
+//
+// El mock de Firestore (firebase-mock.js) NO simula firestore.rules —
+// updateDoc() del mock escribe lo que le pidan, sin importar qué diga el
+// archivo de reglas. Por eso editarTareaAutoasignada() de chores.js (que
+// tampoco valida nada client-side, ver su código) va a "tener éxito"
+// contra el mock pase lo que pase aquí — el mock por sí solo NO puede
+// demostrar que el hueco de horas infladas está cerrado.
+//
+// Dos tests, cada uno cubriendo lo que el otro no puede:
+//
+// 1) 'la regla en el archivo ya no declara horasAOtorgar/asignados como
+//    editables' lee firestore.rules como texto y confirma que el fix
+//    sigue ahí. Es la alarma si alguien revierte el cambio sin querer:
+//    detecta el texto, no el comportamiento.
+//
+// 2) 'paso 3 (inflar horas) es rechazado por la regla' reimplementa esa
+//    misma rama de la regla como función pura en JS (reglaEdicionCreador,
+//    abajo) y corre la secuencia completa de 4 pasos contra ella. Es una
+//    RÉPLICA manual del texto de firestore.rules, no el motor real de
+//    Firestore (eso solo lo valida el emulador) — si esa rama de la regla
+//    cambia en el futuro, esta función y este test deben actualizarse a
+//    mano, no hay sincronía automática entre ambos. El test (1) es
+//    justamente la red de seguridad para ese riesgo: avisa si el texto
+//    fuente cambia sin que alguien también revise este mirror.
+describe('Escenario: horas infladas antes de revisión (firestore.rules)', () => {
+    let contenidoReglas;
+
+    test('la regla en el archivo ya no declara horasAOtorgar/asignados como editables', async () => {
+        contenidoReglas = await readFile(new URL('../firestore.rules', import.meta.url), 'utf8');
+
+        const marcador = 'El creador edita campos de la suya';
+        const idx = contenidoReglas.indexOf(marcador);
+        assert.notEqual(idx, -1, `no se encontró el comentario "${marcador}" en firestore.rules — ¿se reescribió esta rama de la regla?`);
+
+        const match = contenidoReglas.slice(idx).match(/hasOnly\(\[([^\]]*)\]\)/);
+        assert.ok(match, 'no se encontró un hasOnly([...]) después de ese comentario');
+
+        const campos = match[1].split(',').map((s) => s.trim().replace(/'/g, ''));
+        assert.deepEqual(campos.sort(), ['tipo', 'titulo']);
+    });
+
+    // Mirror manual de la rama "el creador edita campos de la suya" de
+    // firestore.rules (match /tareas/{tareaId} { allow update: ... }).
+    // Mantener en sync a mano con esa rama — ver comentario de arriba.
+    function reglaEdicionCreador({ actual, uid, cambios }) {
+        const origen = actual.origen ?? 'asignada';
+        if (origen !== 'autoasignada') return false;
+        if (actual.creadorId !== uid) return false;
+        if (!['pendiente', 'rechazada'].includes(actual.estado)) return false;
+        const camposPermitidos = ['titulo', 'tipo'];
+        return Object.keys(cambios).every((campo) => camposPermitidos.includes(campo));
+    }
+
+    // Simula lo que pasaría contra Firestore real: si la regla rechaza el
+    // update, lanza (como haría un permission-denied real) ANTES de tocar
+    // el mock — así el mock nunca llega a aplicar un cambio que la regla
+    // real no permitiría.
+    async function intentarEditarComoCreador(tareaId, actual, uid, cambios) {
+        if (!reglaEdicionCreador({ actual, uid, cambios })) {
+            throw new Error('PERMISSION_DENIED (simulado): firestore.rules rechaza este update');
+        }
+        return editarTareaAutoasignada(tareaId, {
+            titulo: actual.titulo,
+            tipo: actual.tipo,
+            horasAOtorgar: cambios.horasAOtorgar ?? actual.horasAOtorgar,
+            asignados: cambios.asignados ?? actual.asignados
+        });
+    }
+
+    test('paso 3 (inflar horas) es rechazado por la regla, y nunca llega inflado a revisión', async () => {
+        setUsuarioActual({ uid: 'u1', email: 'ana@test.com' });
+
+        // Paso 1: crear tarea autoasignada con horasAOtorgar: 1, pendiente.
+        const id = await crearTarea({ titulo: 'Regar', tipo: 'individual', origen: 'autoasignada', horasAOtorgar: 1 });
+        const tarea = firebaseMock.leerDoc('tareas', id);
+        assert.equal(tarea.estado, 'pendiente');
+        assert.equal(tarea.horasAOtorgar, 1);
+        assert.equal(tarea.creadorId, 'u1');
+
+        // Control: la misma regla SÍ permite editar solo título/tipo —
+        // así el test de abajo no es una regla vacía que rechaza todo.
+        assert.equal(reglaEdicionCreador({ actual: tarea, uid: 'u1', cambios: { titulo: 'Regar plantas' } }), true);
+
+        // Paso 2: subir evidencia real a Storage — permitido, es el creador.
+        subirEvidenciaTareaImpl = async (tareaId) => `https://storage.test/${tareaId}.jpg`;
+        const urlEvidencia = await subirEvidenciaTareaImpl(id, { size: 100 });
+        assert.equal(urlEvidencia, `https://storage.test/${id}.jpg`);
+
+        // Paso 3: intentar editar horasAOtorgar a 999 — debe ser RECHAZADO.
+        await assert.rejects(
+            () => intentarEditarComoCreador(id, tarea, 'u1', { horasAOtorgar: 999 }),
+            /PERMISSION_DENIED/
+        );
+
+        // El rechazo del paso 3 pasó ANTES de tocar el mock: horasAOtorgar
+        // sigue en 1, no en 999.
+        assert.equal(firebaseMock.leerDoc('tareas', id).horasAOtorgar, 1);
+
+        // Paso 4: como el paso 3 falló, enviar a revisión ahora nunca
+        // carga un número inflado — sigue siendo 1, el declarado al crear.
+        await enviarARevision(id, { size: 100 });
+        const enRevision = firebaseMock.leerDoc('tareas', id);
+        assert.equal(enRevision.estado, 'en_revision');
+        assert.equal(enRevision.horasAOtorgar, 1);
     });
 });
