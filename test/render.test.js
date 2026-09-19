@@ -472,7 +472,9 @@ describe('renderGaleriaProyectos', () => {
         assert.deepEqual(clicks, ['t2']);
     });
 
-    test('"+ Agregar paso" solo aparece si esAdmin=true, y dispara onAgregarPaso con el id del proyecto', () => {
+    // "+ Agregar paso" dejó de ser admin-only (2026-09-19, autonomía en
+    // pasos de Proyectos) — mismo criterio que "+ Crear tarea" en Tareas.
+    test('"+ Agregar paso" aparece para admin Y no-admin en un proyecto activo, y dispara onAgregarPaso con el id del proyecto', () => {
         const contenedorAdmin = document.createElement('div');
         const llamados = [];
         renderGaleriaProyectos([proyectoBase()], contenedorAdmin, () => {}, { esAdmin: true, onAgregarPaso: (id) => llamados.push(id) });
@@ -482,8 +484,19 @@ describe('renderGaleriaProyectos', () => {
         assert.deepEqual(llamados, ['p1']);
 
         const contenedorNoAdmin = document.createElement('div');
-        renderGaleriaProyectos([proyectoBase()], contenedorNoAdmin, () => {}, { esAdmin: false });
-        assert.equal(contenedorNoAdmin.querySelector('.proyecto-card button'), null);
+        const llamadosNoAdmin = [];
+        renderGaleriaProyectos([proyectoBase()], contenedorNoAdmin, () => {}, { esAdmin: false, onAgregarPaso: (id) => llamadosNoAdmin.push(id) });
+        const botonNoAdmin = contenedorNoAdmin.querySelector('.proyecto-card button');
+        assert.ok(botonNoAdmin);
+        botonNoAdmin.dispatchEvent(new window.Event('click', { bubbles: true }));
+        assert.deepEqual(llamadosNoAdmin, ['p1']);
+    });
+
+    test('"+ Agregar paso" NO aparece en un proyecto concluido, ni para admin ni para no-admin', () => {
+        const contenedor = document.createElement('div');
+        renderGaleriaProyectos([proyectoBase({ estado: 'completado' })], contenedor, () => {}, { esAdmin: true, onReactivar: () => {}, onEliminar: () => {} });
+        const botones = [...contenedor.querySelectorAll('.proyecto-card-acciones button')].map((b) => b.textContent);
+        assert.ok(!botones.includes('+ Agregar paso'));
     });
 
     // Gestión de proyectos (2026-09-19): Concluir/Reactivar/Eliminar.
@@ -527,10 +540,13 @@ describe('renderGaleriaProyectos', () => {
             assert.deepEqual(eliminados, ['p1']);
         });
 
-        test('no-admin: sin ninguno de estos botones', () => {
+        // No-admin SÍ ve "+ Agregar paso" (autonomía, 2026-09-19) pero
+        // ninguno de los 3 botones de gestión del proyecto completo.
+        test('no-admin: ve "+ Agregar paso" pero no Concluir/Reactivar/Eliminar', () => {
             const contenedor = document.createElement('div');
-            renderGaleriaProyectos([proyectoBase()], contenedor, () => {}, { esAdmin: false });
-            assert.equal(contenedor.querySelector('.proyecto-card-acciones'), null);
+            renderGaleriaProyectos([proyectoBase()], contenedor, () => {}, { esAdmin: false, onAgregarPaso: () => {} });
+            const botones = [...contenedor.querySelectorAll('.proyecto-card-acciones button')].map((b) => b.textContent);
+            assert.deepEqual(botones, ['+ Agregar paso']);
         });
     });
 

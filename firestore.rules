@@ -140,6 +140,19 @@ service cloud.firestore {
     // proyectos: organiza tareas existentes (tareas.proyectoId), no las
     // duplica — mismo criterio de permisos que tareas, crear/editar
     // proyectos y asignar pasos es coordinación, no autoservicio.
+    //
+    // Autonomía en pasos (2026-09-19): un paso autoasignado NUNCA escribe
+    // en /proyectos — se crea como una tarea normal (crearTarea(), ya
+    // permitido para cualquier autenticado) con `proyectoId` seteado, y
+    // obtenerProyectosConProgreso() la recoge vía query por proyectoId,
+    // no vía el array `pasos`. Se descartó a propósito la alternativa de
+    // permitir un update parcial de `pasos` a un no-admin — un primer
+    // borrador de esa regla (hasOnly(['pasos']) + size+1) resultó
+    // explotable: nada ataba el elemento agregado a una tarea real/propia,
+    // así que cualquier autenticado podía inyectar referencias falsas sin
+    // pasar por ninguna tarea real (ver auditoría de esta fase). Este
+    // diseño evita el problema de raíz: /proyectos sigue exactamente
+    // admin-only, sin excepciones.
     match /proyectos/{proyectoId} {
       allow read: if request.auth != null;
       allow write: if request.auth != null && isAdmin();

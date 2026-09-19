@@ -593,6 +593,17 @@
       <button class="modal-close" id="agregarPasoModalClose">×</button>
     </div>
     <div class="modal-body">
+      <!-- Autonomía en pasos de Proyectos (2026-09-19): visible SOLO a
+           admin, mismo patrón que crearTareaOrigenGroup en
+           vista-tareas.js — un no-admin siempre crea 'autoasignada' sin
+           ver este selector (ver abrirAgregarPasoModal). -->
+      <div class="form-group" id="agregarPasoOrigenGroup">
+        <label for="agregarPasoOrigen">¿Quién la hace?</label>
+        <select id="agregarPasoOrigen">
+          <option value="asignada">Asignar a alguien (yo decido)</option>
+          <option value="autoasignada">Autoasignarse (y opcionalmente a otros)</option>
+        </select>
+      </div>
       <div class="form-group">
         <label for="agregarPasoTitulo">Título</label>
         <input id="agregarPasoTitulo" placeholder="Nombre del paso…">
@@ -628,7 +639,10 @@
         <label for="agregarPasoFechaRealizada">Fecha en que se hizo/hará</label>
         <input type="date" id="agregarPasoFechaRealizada">
       </div>
-      <div class="form-group">
+      <!-- Solo admin (2026-09-19) — un paso autoasignado (no-admin) no
+           participa del array `pasos` con orden manual, ver
+           agregarPasoPropio (proyectos.js): se ordena por fechaCreacion. -->
+      <div class="form-group" id="agregarPasoOrdenGroup">
         <label for="agregarPasoOrden">Orden</label>
         <input type="number" id="agregarPasoOrden" min="1" step="1">
       </div>
