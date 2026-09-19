@@ -632,6 +632,18 @@ un estado del proyecto (monolito en `index.html`, JS vacío, API key en
 probaron en teléfono real — se ven bien, incluido el gesto de "deslizar
 para ver más plantas vs. arrastrar hacia el mapa" (Fase 18.4).
 
+**Limpieza chica post-revisión manual (2026-09-19):**
+- Se quitó "(otorga horas)" del `<option value="asistencia">` en los 3
+  modales que lo repetían (Crear Tarea, Editar Tarea, Agregar Paso) — solo
+  copy, sin cambio de comportamiento.
+- Se retiró el botón "⚙ Configurar" del header y todo `#configModal` —
+  era HTML 100% muerto desde antes de esta fase: `openConfig()`/
+  `saveConfig()` nunca existieron como funciones JS (clic tiraba
+  ReferenceError en consola), y su contenido documentaba un estado del
+  proyecto ya retirado hace varias fases (Realtime Database, Gemini key en
+  un input de UI, grid de columnas/filas de camas 'rectangular'). Sin
+  reemplazo — Perfil ya es alcanzable desde `headerNav`.
+
 ## 3. Roadmap de Saneamiento (revisado)
 
 - [x] ~~Paso 1: Consolidación~~ — completo: JS en `js/`, CSS en `css/`.
