@@ -311,7 +311,7 @@ describe('crearCheckboxesCarreras', () => {
         contenedor.appendChild(crearCheckboxesCarreras(['Economía']));
         const checkboxes = [...contenedor.querySelectorAll('input[type="checkbox"]')];
 
-        assert.equal(checkboxes.length, 15);
+        assert.equal(checkboxes.length, 16);
         assert.equal(checkboxes.filter((cb) => cb.checked).length, 1);
         assert.equal(checkboxes.find((cb) => cb.value === 'Economía').checked, true);
     });

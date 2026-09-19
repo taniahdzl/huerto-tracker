@@ -8,7 +8,8 @@
 //
 // Lista confirmada con la usuaria 2026-09-18 (incluye la corrección de
 // "Ingeniería en Computación", con typo en la lista original, y el alta
-// posterior de "Matemáticas Aplicadas") — orden alfabético para que el
+// posterior de "Matemáticas Aplicadas") + "Ingeniería en Negocios"
+// (2026-09-19, se le había quedado fuera) — orden alfabético para que el
 // checklist de carreras se lea fácil, no el orden en que se dictaron.
 export const CARRERAS = [
     'Actuaría',
@@ -22,6 +23,7 @@ export const CARRERAS = [
     'Economía',
     'Ingeniería en Computación',
     'Ingeniería en Mecatrónica',
+    'Ingeniería en Negocios',
     'Ingeniería Industrial',
     'Inteligencia Artificial',
     'Matemáticas Aplicadas',

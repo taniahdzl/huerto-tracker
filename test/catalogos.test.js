@@ -11,14 +11,15 @@ import assert from 'node:assert/strict';
 import { CARRERAS, HORAS_OBJETIVO_POR_CARRERA, calcularHorasObjetivo } from '../js/shared/catalogos.js';
 
 describe('CARRERAS', () => {
-    test('15 carreras, sin duplicados', () => {
-        assert.equal(CARRERAS.length, 15);
-        assert.equal(new Set(CARRERAS).size, 15);
+    test('16 carreras, sin duplicados', () => {
+        assert.equal(CARRERAS.length, 16);
+        assert.equal(new Set(CARRERAS).size, 16);
     });
 
-    test('incluye las confirmadas con la usuaria (2026-09-18)', () => {
+    test('incluye las confirmadas con la usuaria (2026-09-18/19)', () => {
         assert.ok(CARRERAS.includes('Matemáticas Aplicadas'));
         assert.ok(CARRERAS.includes('Ingeniería en Computación'));
+        assert.ok(CARRERAS.includes('Ingeniería en Negocios'));
     });
 });
 
