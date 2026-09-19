@@ -146,7 +146,17 @@ async function cargarYRenderizarVistaAdmin() {
             obtenerTareas()
         ]);
         renderRegistroActividad(registro, registroActividadBody);
-        renderResumenHoras(estudiantes, resumenHorasBody);
+
+        // TEMPORAL (2026-09-19): incluir también a la admin monicalira9377@gmail.com
+        // en el resumen de horas mientras termina de registrar las suyas — sin tocar
+        // obtenerDirectorioEstudiantes(), que a propósito sigue siendo estudiantes-only
+        // (ver comentario arriba de directorioParaFiltroPersona). Quitar este bloque
+        // cuando ya no haga falta.
+        const miAdmin = directorioCompleto.find((u) => u.email === 'monicalira9377@gmail.com');
+        const estudiantesConAdmin = miAdmin && !estudiantes.some((e) => e.id === miAdmin.id)
+            ? [...estudiantes, miAdmin]
+            : estudiantes;
+        renderResumenHoras(estudiantesConAdmin, resumenHorasBody);
         auditoriaVacio.style.display = registro.length === 0 ? '' : 'none';
 
         directorioParaFiltroPersona = directorioCompleto;

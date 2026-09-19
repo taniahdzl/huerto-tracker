@@ -321,6 +321,14 @@
 }
 
 /* ── PROYECTOS (galería, organiza tareas existentes vía proyectoId) ── */
+/* view-proyectos-toolbar nunca tuvo su propia regla (a diferencia de
+   .view-catalogos-toolbar, línea ~356) — sin esto, "+ Nuevo proyecto"
+   quedaba en flujo normal debajo de .filter-tabs sin separación de
+   .proyecto-galeria, encimándose visualmente con la primera tarjeta. */
+.view-proyectos-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 0.6rem; margin-bottom: var(--space-4);
+}
 .proyecto-galeria {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: var(--space-4);
