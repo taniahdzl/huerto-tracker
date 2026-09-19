@@ -27,7 +27,6 @@
     <div class="status-dot" id="statusDot"></div>
     <span id="statusText">Conectando…</span>
   </div>
-  <button class="btn" onclick="openConfig()">⚙ Configurar</button>
   <!-- Fase 16: barra de navegación persistente — reemplaza los botones
        sueltos por vista (openChoresBtn/adminBtn independientes) y el
        "Volver al Dashboard" inyectado por JS en cada vista interna. Mismos
@@ -368,48 +367,15 @@
 <!-- bedModal (Nueva/Editar Mesa de Cultivo, camas tipo 'rectangular')
      retirado por completo en Fase 15 — ver diagnóstico. -->
 
-<!-- MODAL: Config -->
-<div class="modal-overlay" id="configModal">
-  <div class="modal">
-    <div class="modal-header">
-      <h3>⚙ Configuración</h3>
-      <button class="modal-close" onclick="closeModal('configModal')">×</button>
-    </div>
-    <div class="modal-body">
-      <p class="section-title" style="margin-bottom:0.8rem">Firebase Realtime Database</p>
-      <div class="form-group">
-        <label>Firebase Database URL</label>
-        <input id="cfgFirebaseUrl" placeholder="https://tu-proyecto-default-rtdb.firebaseio.com">
-      </div>
-      <p style="font-size:0.72rem;color:#888;margin:-0.4rem 0 var(--space-4)">Obtén esto en Firebase Console → Realtime Database</p>
-      <p class="section-title" style="margin-bottom:0.8rem">Gemini API</p>
-      <div class="form-group">
-        <label>Gemini API Key</label>
-        <input id="cfgGeminiKey" type="password" placeholder="AIza…">
-      </div>
-      <p style="font-size:0.72rem;color:#888;margin:-0.4rem 0 var(--space-4)">Consigue tu key en <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:var(--color-primario)">Google AI Studio</a></p>
-      <p class="section-title" style="margin-bottom:0.8rem">Diseño del Huerto</p>
-      <div class="form-row">
-        <div class="form-group">
-          <label>Columnas del grid</label>
-          <input id="cfgCols" type="number" min="1" max="10" value="4">
-        </div>
-        <div class="form-group">
-          <label>Filas del grid</label>
-          <input id="cfgRows" type="number" min="1" max="10" value="3">
-        </div>
-      </div>
-      <p class="section-title" style="margin-bottom:0.8rem">Nombre del Huerto</p>
-      <div class="form-group">
-        <input id="cfgName" placeholder="Huerto Universitario">
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn" onclick="closeModal('configModal')">Cancelar</button>
-      <button class="btn btn-primary" onclick="saveConfig()">Guardar Configuración</button>
-    </div>
-  </div>
-</div>
+<!-- MODAL: Config — retirado por completo (2026-09-19). Era HTML muerto
+     desde antes de esta fase: openConfig()/saveConfig() nunca existieron
+     como funciones JS (el botón que lo abría tiraba un ReferenceError en
+     consola), y su contenido (Realtime Database, Gemini API Key en un
+     input de la UI, grid de columnas/filas) documentaba un estado del
+     proyecto que ya no existe — Firestore, config.js gitignored, y las
+     camas tipo 'rectangular' se retiraron todos en fases anteriores (ver
+     AI_CONTEXT.md). Sin botón que lo abra, no hace falta reemplazarlo por
+     nada — Perfil ya es alcanzable desde headerNav. -->
 
 <!-- MODAL: Crear Tarea — visible para cualquier autenticado desde el
      rediseño de autoasignadas (2026-09-06); crearTareaOrigenGroup solo se
@@ -438,7 +404,7 @@
         <label for="crearTareaTipo">Tipo</label>
         <select id="crearTareaTipo">
           <option value="">Selecciona un tipo…</option>
-          <option value="asistencia">Asistencia (otorga horas)</option>
+          <option value="asistencia">Asistencia</option>
           <option value="individual">Individual</option>
         </select>
       </div>
@@ -477,7 +443,7 @@
       <div class="form-group">
         <label for="editarTareaTipo">Tipo</label>
         <select id="editarTareaTipo">
-          <option value="asistencia">Asistencia (otorga horas)</option>
+          <option value="asistencia">Asistencia</option>
           <option value="individual">Individual</option>
         </select>
       </div>
@@ -564,7 +530,7 @@
         <label for="agregarPasoTipo">Tipo</label>
         <select id="agregarPasoTipo">
           <option value="">Selecciona un tipo…</option>
-          <option value="asistencia">Asistencia (otorga horas)</option>
+          <option value="asistencia">Asistencia</option>
           <option value="individual">Individual</option>
         </select>
       </div>
@@ -771,7 +737,9 @@
      Fase 16.5: notas/plagas pasan de solo-lectura a editables — mismo
      patrón de form-group + botón suelto dentro de modal-body que
      semillaModal/quimicoModal/herramientaModal usan (NO modal-footer: ese
-     patrón es exclusivo de configModal en este proyecto, no el más común).
+     ese patrón de modal-footer no lo usa ningún otro modal vigente en
+     este proyecto — solo lo tenía el viejo configModal, retirado
+     2026-09-19).
      No es un formulario completo de cama (tipo/anillo/indiceSegmento no
      son editables aquí) — solo estos dos campos, mismo criterio ya
      confirmado. -->

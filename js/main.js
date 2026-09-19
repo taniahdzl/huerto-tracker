@@ -22,9 +22,10 @@
 // (Fase 13) porque el contrato del evento exige `rol` resuelto en el
 // payload; sigue sin tocar el DOM salvo dispatchEvent.
 //
-// TODO (fuera de alcance): cálculo de alertas de cosecha/riego, y el modal
-// de Configuración (openConfig / configModal) — sigue sin implementar, y
-// NO es una vista (VISTAS_ADMIN no lo incluye). El Asistente IA (botón +
+// TODO (fuera de alcance): cálculo de alertas de cosecha/riego. El botón
+// "⚙ Configurar" + configModal (HTML muerto, openConfig()/saveConfig()
+// nunca existieron) se retiró por completo el 2026-09-19 — ver index.html.
+// El Asistente IA (botón +
 // panel + toggleAI/agregarMensajeAI/handleSendAI/handleAiOverview) se
 // borró por completo en Fase 19 — estaba desconectado desde Fase 15 (DOM
 // retirado, listeners comentados) y la división en módulos era un punto
