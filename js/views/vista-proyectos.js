@@ -33,7 +33,7 @@ import { nombreParaMostrar } from '../services/session.js';
 import { mostrarToast, openModal, closeModal } from '../shared/core-ui.js';
 import { navegarA } from '../shared/router.js';
 import { getEsAdminActual } from '../shared/estado-app.js';
-import { abrirModalCompletarTarea, calcularSugerenciaHoras } from './vista-tareas.js';
+import { abrirModalCompletarTarea, calcularSugerenciaHorasEfectivas, textoPreviewHoras } from './vista-tareas.js';
 
 const proyectosGaleria = document.getElementById('proyectosGaleria');
 const proyectosVacio   = document.getElementById('proyectosVacio');
@@ -50,6 +50,7 @@ const agregarPasoModalClose  = document.getElementById('agregarPasoModalClose');
 const agregarPasoTitulo      = document.getElementById('agregarPasoTitulo');
 const agregarPasoTipo        = document.getElementById('agregarPasoTipo');
 const agregarPasoHoras       = document.getElementById('agregarPasoHoras');
+const agregarPasoHorasPreview = document.getElementById('agregarPasoHorasPreview');
 const agregarPasoFechaLimite = document.getElementById('agregarPasoFechaLimite');
 const agregarPasoOrden       = document.getElementById('agregarPasoOrden');
 const agregarPasoAssignees   = document.getElementById('agregarPasoAssignees');
@@ -191,6 +192,7 @@ function abrirAgregarPasoModal(proyectoId) {
     agregarPasoTitulo.value = '';
     agregarPasoTipo.value = '';
     agregarPasoHoras.value = '';
+    agregarPasoHorasPreview.textContent = '';
     agregarPasoFechaLimite.value = '';
     // Siguiente número libre como sugerencia — orden es informativo, no
     // bloqueante (confirmado en requisitos), el admin puede cambiarlo.
@@ -199,12 +201,19 @@ function abrirAgregarPasoModal(proyectoId) {
     openModal('agregarPasoModal');
 }
 
-// Misma sugerencia de horas que crearTareaModal — la regla ("15h si es
-// sábado y tipo:'asistencia'") no es exclusiva del formulario de Tareas,
-// aplica a cualquier formulario que cree una tarea.
+function actualizarPreviewAgregarPaso() {
+    agregarPasoHorasPreview.textContent = textoPreviewHoras(agregarPasoTipo.value, Number(agregarPasoHoras.value));
+}
+
+// Misma sugerencia de horas EFECTIVAS que crearTareaModal (2026-09-19) —
+// la regla ("4h efectivas si es sábado y tipo:'trabajo_fisico'") no es
+// exclusiva del formulario de Tareas, aplica a cualquier formulario que
+// cree una tarea.
 agregarPasoTipo.addEventListener('change', () => {
-    agregarPasoHoras.value = calcularSugerenciaHoras(agregarPasoTipo.value);
+    agregarPasoHoras.value = calcularSugerenciaHorasEfectivas(agregarPasoTipo.value);
+    actualizarPreviewAgregarPaso();
 });
+agregarPasoHoras.addEventListener('input', actualizarPreviewAgregarPaso);
 
 async function handleAgregarPasoGuardar() {
     if (!proyectoEnEdicion) return;
@@ -228,13 +237,15 @@ async function handleAgregarPasoGuardar() {
         return;
     }
 
-    const horasAOtorgar = agregarPasoHoras.value ? Number(agregarPasoHoras.value) : 0;
+    // horasEfectivas, no horasAOtorgar (2026-09-19) — ver comentario en
+    // handleCrearTareaGuardar (vista-tareas.js).
+    const horasEfectivas = agregarPasoHoras.value ? Number(agregarPasoHoras.value) : 0;
     const fechaLimite = agregarPasoFechaLimite.value || null;
     const orden = agregarPasoOrden.value ? Number(agregarPasoOrden.value) : 1;
 
     agregarPasoSaveBtn.disabled = true;
     try {
-        await agregarPasoAProyecto(proyectoEnEdicion, { titulo, tipo, asignados, horasAOtorgar, fechaLimite }, orden);
+        await agregarPasoAProyecto(proyectoEnEdicion, { titulo, tipo, asignados, horasEfectivas, fechaLimite }, orden);
         closeModal('agregarPasoModal');
         mostrarToast('Paso agregado', 'green');
         proyectoEnEdicion = null;
