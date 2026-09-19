@@ -109,7 +109,7 @@ describe('modal Agregar Paso (admin-only)', () => {
         setEsAdminActual(false);
         irAVistaProyectos();
         await esperar();
-        assert.equal(document.querySelector('.proyecto-card button'), null);
+        assert.equal(document.querySelector('.proyecto-card > button'), null);
     });
 
     test('abrir el modal puebla checkboxes de estudiantes y sugiere el siguiente orden', async () => {
@@ -120,7 +120,7 @@ describe('modal Agregar Paso (admin-only)', () => {
         irAVistaProyectos();
         await esperar();
 
-        document.querySelector('.proyecto-card button').dispatchEvent(new window.Event('click', { bubbles: true }));
+        document.querySelector('.proyecto-card > button').dispatchEvent(new window.Event('click', { bubbles: true }));
 
         assert.equal(document.querySelectorAll('#agregarPasoAssignees input[type="checkbox"]').length, 1);
         assert.equal(document.getElementById('agregarPasoOrden').value, '2'); // 1 paso existente + 1
@@ -134,7 +134,7 @@ describe('modal Agregar Paso (admin-only)', () => {
         irAVistaProyectos();
         await esperar();
 
-        document.querySelector('.proyecto-card button').dispatchEvent(new window.Event('click', { bubbles: true }));
+        document.querySelector('.proyecto-card > button').dispatchEvent(new window.Event('click', { bubbles: true }));
         document.getElementById('agregarPasoTitulo').value = 'Nuevo paso';
         document.querySelector('#agregarPasoAssignees input[type="checkbox"]').checked = true;
         document.getElementById('agregarPasoSaveBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
@@ -150,7 +150,7 @@ describe('modal Agregar Paso (admin-only)', () => {
         irAVistaProyectos();
         await esperar();
 
-        document.querySelector('.proyecto-card button').dispatchEvent(new window.Event('click', { bubbles: true }));
+        document.querySelector('.proyecto-card > button').dispatchEvent(new window.Event('click', { bubbles: true }));
         document.getElementById('agregarPasoTitulo').value = 'Regar cama 3';
         document.getElementById('agregarPasoTipo').value = 'individual';
         document.querySelector('#agregarPasoAssignees input[type="checkbox"]').checked = true;
@@ -162,6 +162,69 @@ describe('modal Agregar Paso (admin-only)', () => {
         assert.equal(tarea.proyectoId, 'p1');
         assert.equal(document.getElementById('agregarPasoModal').classList.contains('open'), false);
         assert.equal(document.querySelector('.proyecto-checklist-titulo').textContent, 'Regar cama 3');
+    });
+});
+
+// Editar un paso (2026-09-19) — reusa agregarPasoModal en modo edición, ver
+// abrirEditarPasoModal/handleAgregarPasoGuardar (vista-proyectos.js).
+describe('Editar un paso (reusa agregarPasoModal)', () => {
+    test('clic en el lápiz precarga título/tipo/horas/fecha/asignados, oculta "Orden" y cambia el botón a "Guardar cambios"', async () => {
+        firebaseMock.seed('proyectos', { p1: { nombre: 'X', estado: 'activo', pasos: [{ tareaId: 't1', orden: 1 }] } });
+        firebaseMock.seed('tareas', { t1: { titulo: 'Regar', tipo: 'individual', estado: 'pendiente', horasAOtorgar: 3, asignados: ['u1'], fechaLimite: '2026-10-01' } });
+        firebaseMock.seed('usuarios', { u1: { nombre: 'Ana', rol: 'estudiante' } });
+        setEsAdminActual(true);
+        irAVistaProyectos();
+        await esperar();
+
+        document.querySelector('.proyecto-checklist-editar').dispatchEvent(new window.Event('click', { bubbles: true }));
+
+        assert.equal(document.getElementById('agregarPasoModalTitulo').textContent, 'Editar Paso');
+        assert.equal(document.getElementById('agregarPasoSaveBtn').textContent, 'Guardar cambios');
+        assert.equal(document.getElementById('agregarPasoOrdenGroup').style.display, 'none');
+        assert.equal(document.getElementById('agregarPasoTitulo').value, 'Regar');
+        assert.equal(document.getElementById('agregarPasoTipo').value, 'individual');
+        assert.equal(document.getElementById('agregarPasoHoras').value, '3');
+        assert.equal(document.getElementById('agregarPasoFechaLimite').value, '2026-10-01');
+        assert.equal(document.querySelector('#agregarPasoAssignees input[type="checkbox"]').checked, true);
+        assert.ok(document.getElementById('agregarPasoModal').classList.contains('open'));
+    });
+
+    test('guardar cambios llama a editarTarea (no agregarPasoAProyecto), refleja el nuevo título en la galería y restaura el modal a modo "crear" la próxima vez', async () => {
+        firebaseMock.seed('proyectos', { p1: { nombre: 'X', estado: 'activo', pasos: [{ tareaId: 't1', orden: 1 }] } });
+        firebaseMock.seed('tareas', { t1: { titulo: 'Regar', tipo: 'individual', estado: 'pendiente', horasAOtorgar: 3, asignados: ['u1'] } });
+        firebaseMock.seed('usuarios', { u1: { nombre: 'Ana', rol: 'estudiante' } });
+        setEsAdminActual(true);
+        irAVistaProyectos();
+        await esperar();
+
+        document.querySelector('.proyecto-checklist-editar').dispatchEvent(new window.Event('click', { bubbles: true }));
+        document.getElementById('agregarPasoTitulo').value = 'Regar cama 5';
+        document.getElementById('agregarPasoHoras').value = '8';
+        document.getElementById('agregarPasoSaveBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
+        await esperar();
+
+        assert.equal(firebaseMock.leerColeccion('tareas').length, 1); // no se creó una tarea nueva
+        const tarea = firebaseMock.leerDoc('tareas', 't1');
+        assert.equal(tarea.titulo, 'Regar cama 5');
+        assert.equal(tarea.horasAOtorgar, 8);
+        assert.equal(document.getElementById('agregarPasoModal').classList.contains('open'), false);
+        assert.equal(document.querySelector('.proyecto-checklist-titulo').textContent, 'Regar cama 5');
+
+        // proyectoEnEdicion/pasoEnEdicion deben quedar excluyentes tras
+        // guardar — reabrir "+ Agregar paso" no debe seguir en modo edición.
+        document.querySelector('.proyecto-card > button').dispatchEvent(new window.Event('click', { bubbles: true }));
+        assert.equal(document.getElementById('agregarPasoModalTitulo').textContent, '+ Agregar Paso');
+        assert.equal(document.getElementById('agregarPasoOrdenGroup').style.display, '');
+    });
+
+    test('un paso ya completado no tiene lápiz — no hay forma de editarlo', async () => {
+        firebaseMock.seed('proyectos', { p1: { nombre: 'X', estado: 'activo', pasos: [{ tareaId: 't1', orden: 1 }] } });
+        firebaseMock.seed('tareas', { t1: { titulo: 'Regar', estado: 'completada' } });
+        setEsAdminActual(true);
+        irAVistaProyectos();
+        await esperar();
+
+        assert.equal(document.querySelector('.proyecto-checklist-editar'), null);
     });
 });
 

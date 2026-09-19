@@ -39,7 +39,7 @@ const {
     obtenerTareas, crearTarea, obtenerTareasAsignadas, asignarEstudiantes,
     _registrarHoras, obtenerAsistenciasPorFecha, completarTarea,
     enviarARevision, aprobarTareaAutoasignada, rechazarTareaAutoasignada,
-    editarTareaAutoasignada, eliminarTarea
+    editarTareaAutoasignada, editarTarea, eliminarTarea
 } = await import('../js/services/chores.js');
 
 beforeEach(() => {
@@ -357,6 +357,38 @@ describe('editarTareaAutoasignada', () => {
         assert.equal(guardada.horasAOtorgar, 5);
         assert.deepEqual(guardada.asignados, ['u1', 'u2']);
         assert.equal(guardada.estado, 'pendiente');
+    });
+});
+
+// 2026-09-19: el admin edita una tarea 'asignada' (típicamente un paso de
+// Proyectos, que siempre nace 'asignada' — ver _datosNuevaTarea) que hasta
+// ahora solo se podía completar o borrar, no corregir.
+describe('editarTarea', () => {
+    test('actualiza título/tipo/horas/asignados/fechaLimite de una tarea asignada', async () => {
+        firebaseMock.seed('tareas', {
+            t1: { origen: 'asignada', titulo: 'Vieja', tipo: 'individual', horasAOtorgar: 0, asignados: ['u1'], fechaLimite: null }
+        });
+
+        await editarTarea('t1', { titulo: 'Nueva', tipo: 'asistencia', horasAOtorgar: 5, asignados: ['u1', 'u2'], fechaLimite: '2026-10-01' });
+
+        const guardada = firebaseMock.leerDoc('tareas', 't1');
+        assert.equal(guardada.titulo, 'Nueva');
+        assert.equal(guardada.tipo, 'asistencia');
+        assert.equal(guardada.horasAOtorgar, 5);
+        assert.deepEqual(guardada.asignados, ['u1', 'u2']);
+        assert.equal(guardada.fechaLimite, '2026-10-01');
+        assert.equal(guardada.origen, 'asignada'); // intacto — updateDoc es merge parcial
+    });
+
+    test('registra en el log de actividad como EDITAR_TAREA_ASIGNADA', async () => {
+        firebaseMock.seed('tareas', { t1: { titulo: 'Vieja' } });
+        setUsuarioActual({ uid: 'admin1', email: 'admin@test.com' });
+
+        await editarTarea('t1', { titulo: 'Nueva', tipo: 'individual', horasAOtorgar: 0, asignados: ['u1'], fechaLimite: null });
+
+        const [entrada] = firebaseMock.leerColeccion('registro_actividad');
+        assert.equal(entrada.tipo, 'EDITAR_TAREA_ASIGNADA');
+        assert.equal(entrada.detalle, 'Nueva');
     });
 });
 

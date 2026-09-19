@@ -302,6 +302,23 @@ export async function editarTareaAutoasignada(tareaId, { titulo, tipo, horasAOto
     _logActividad('EDITAR_TAREA', tareaId, titulo);
 }
 
+// El admin edita una tarea 'asignada' (creada por admin para otros, no
+// autoservicio) — sin restricción de campos a nivel de reglas
+// (isAdmin() && origen=='asignada' es unrestricted en firestore.rules), a
+// diferencia de editarTareaAutoasignada (creador, campos limitados a
+// titulo/tipo). Pensada sobre todo para los pasos de Proyectos
+// (agregarPasoAProyecto siempre crea con origen:'asignada', ver
+// _datosNuevaTarea) — un proyecto grupal cambia de alcance/horas/
+// asignados después de creado, y hasta 2026-09-19 no había forma de
+// corregir eso sin borrar y recrear el paso. `orden` NO se edita por
+// aquí — vive en el array `pasos` del proyecto (proyectos.js), no en el
+// documento de la tarea; reordenar pasos queda fuera de alcance de este
+// cambio.
+export async function editarTarea(tareaId, { titulo, tipo, horasAOtorgar, asignados, fechaLimite }) {
+    await updateDoc(doc(db, PATHS.tareas, tareaId), { titulo, tipo, horasAOtorgar, asignados, fechaLimite });
+    _logActividad('EDITAR_TAREA_ASIGNADA', tareaId, titulo);
+}
+
 // El creador borra su autoasignada mientras sigue 'pendiente' (congelada
 // desde 'en_revision' en adelante). Admin sigue pudiendo borrar cualquier
 // tarea en cualquier estado — comportamiento previo, sin cambios.

@@ -342,7 +342,7 @@ function crearBadgeProyecto(proyecto) {
     return badge;
 }
 
-export function renderGaleriaProyectos(proyectos, contenedor, onClickPaso, { esAdmin = false, onAgregarPaso } = {}) {
+export function renderGaleriaProyectos(proyectos, contenedor, onClickPaso, { esAdmin = false, onAgregarPaso, onEditarPaso } = {}) {
     const fragment = document.createDocumentFragment();
 
     proyectos.forEach((proyecto) => {
@@ -403,6 +403,24 @@ export function renderGaleriaProyectos(proyectos, contenedor, onClickPaso, { esA
             titulo.className = 'proyecto-checklist-titulo';
             titulo.textContent = paso.tarea?.titulo || '(tarea eliminada)';
             li.appendChild(titulo);
+
+            // Editar paso (2026-09-19): solo admin, solo si la tarea sigue
+            // existiendo y no se completó todavía (ya no tiene sentido
+            // cambiar horas/asignados de algo que ya otorgó horas vía
+            // completarTarea/_registrarHoras). e.stopPropagation() evita
+            // que este clic también dispare onClickPaso (que abriría el
+            // modal de completar en el mismo gesto).
+            if (esAdmin && paso.tarea && !completado) {
+                const editarBtn = document.createElement('button');
+                editarBtn.className = 'proyecto-checklist-editar';
+                editarBtn.textContent = '✏️';
+                editarBtn.setAttribute('aria-label', 'Editar paso');
+                editarBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    onEditarPaso(paso);
+                });
+                li.appendChild(editarBtn);
+            }
 
             li.addEventListener('click', () => onClickPaso(paso));
             checklist.appendChild(li);

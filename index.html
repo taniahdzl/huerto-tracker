@@ -552,7 +552,7 @@
 <div class="modal-overlay" id="agregarPasoModal">
   <div class="modal">
     <div class="modal-header">
-      <h3>+ Agregar Paso</h3>
+      <h3 id="agregarPasoModalTitulo">+ Agregar Paso</h3>
       <button class="modal-close" id="agregarPasoModalClose">×</button>
     </div>
     <div class="modal-body">
@@ -576,7 +576,10 @@
         <label for="agregarPasoFechaLimite">Fecha límite (opcional)</label>
         <input type="date" id="agregarPasoFechaLimite">
       </div>
-      <div class="form-group">
+      <!-- "Orden" vive en proyectos.pasos, no en la tarea — no aplica al
+           editar un paso ya creado (ver editarTarea, chores.js). Oculto
+           por JS (agregarPasoOrdenGroup) al abrir el modal en modo edición. -->
+      <div class="form-group" id="agregarPasoOrdenGroup">
         <label for="agregarPasoOrden">Orden</label>
         <input type="number" id="agregarPasoOrden" min="1" step="1">
       </div>

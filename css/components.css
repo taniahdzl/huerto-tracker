@@ -327,6 +327,14 @@
 }
 .proyecto-checklist-item:hover { background: var(--color-borde); }
 .proyecto-checklist-marca { font-size: 0.85rem; }
+.proyecto-checklist-titulo { flex: 1; }
+.proyecto-checklist-editar {
+  margin-left: auto; flex-shrink: 0;
+  background: none; border: none; cursor: pointer;
+  font-size: 0.8rem; padding: 0.1rem 0.3rem; border-radius: 4px;
+  opacity: 0.6;
+}
+.proyecto-checklist-editar:hover { opacity: 1; background: white; }
 
 /* ── CATÁLOGOS (Fase 13.6b) ── */
 #view-catalogos .view-catalogos-toolbar {

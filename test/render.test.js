@@ -418,14 +418,45 @@ describe('renderGaleriaProyectos', () => {
         const contenedorAdmin = document.createElement('div');
         const llamados = [];
         renderGaleriaProyectos([proyectoBase()], contenedorAdmin, () => {}, { esAdmin: true, onAgregarPaso: (id) => llamados.push(id) });
-        const boton = contenedorAdmin.querySelector('.proyecto-card button');
+        const boton = contenedorAdmin.querySelector('.proyecto-card > button');
         assert.ok(boton);
         boton.dispatchEvent(new window.Event('click', { bubbles: true }));
         assert.deepEqual(llamados, ['p1']);
 
         const contenedorNoAdmin = document.createElement('div');
         renderGaleriaProyectos([proyectoBase()], contenedorNoAdmin, () => {}, { esAdmin: false });
-        assert.equal(contenedorNoAdmin.querySelector('.proyecto-card button'), null);
+        assert.equal(contenedorNoAdmin.querySelector('.proyecto-card > button'), null);
+    });
+
+    // Botón de editar por paso (2026-09-19) — admin, solo si paso.tarea
+    // existe y no está completado (ya otorgó horas si lo estaba). Vive
+    // DENTRO de cada .proyecto-checklist-item, no como hijo directo de
+    // .proyecto-card (por eso los tests de "+ Agregar paso" de arriba usan
+    // el selector '> button', para no matchear este botón por accidente).
+    test('botón de editar: solo en pasos con tarea existente y no completada, solo si esAdmin', () => {
+        const contenedor = document.createElement('div');
+        renderGaleriaProyectos([proyectoBase()], contenedor, () => {}, { esAdmin: true, onEditarPaso: () => {} });
+
+        const items = contenedor.querySelectorAll('.proyecto-checklist-item');
+        assert.equal(items[0].querySelector('.proyecto-checklist-editar'), null); // t1: completada
+        assert.ok(items[1].querySelector('.proyecto-checklist-editar')); // t2: pendiente
+
+        const contenedorNoAdmin = document.createElement('div');
+        renderGaleriaProyectos([proyectoBase()], contenedorNoAdmin, () => {}, { esAdmin: false });
+        assert.equal(contenedorNoAdmin.querySelector('.proyecto-checklist-editar'), null);
+    });
+
+    test('clic en el botón de editar dispara onEditarPaso con el paso completo, SIN disparar onClickPaso (stopPropagation)', () => {
+        const contenedor = document.createElement('div');
+        const clicksPaso = [];
+        const clicksEditar = [];
+        renderGaleriaProyectos([proyectoBase()], contenedor, (paso) => clicksPaso.push(paso.tareaId), {
+            esAdmin: true, onEditarPaso: (paso) => clicksEditar.push(paso.tareaId)
+        });
+
+        contenedor.querySelector('.proyecto-checklist-editar').dispatchEvent(new window.Event('click', { bubbles: true }));
+        assert.deepEqual(clicksEditar, ['t2']);
+        assert.deepEqual(clicksPaso, []);
     });
 
     test('proyecto sin descripción no pinta el párrafo (sin estado vacío forzado)', () => {
