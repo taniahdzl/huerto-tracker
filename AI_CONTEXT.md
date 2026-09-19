@@ -1,6 +1,6 @@
 # Contexto del Proyecto: Huerto Universitario (Gemelo Digital)
 
-_Última actualización: 2026-09-06. Reemplaza la versión anterior, que describía
+_Última actualización: 2026-09-19. Reemplaza la versión anterior, que describía
 un estado del proyecto (monolito en `index.html`, JS vacío, API key en
 `localStorage`) que ya no existe._
 
@@ -567,6 +567,94 @@ un estado del proyecto (monolito en `index.html`, JS vacío, API key en
   - Cobertura vía tests con Firestore mockeado (`test/tipos-tarea.test.js`
     nuevo, módulo puro); mismo pendiente de confirmación visual que el
     resto de Tareas/Proyectos.
+- **Dos fixes chicos (2026-09-18):** `_logActividad` recibía un objeto en
+  `actualizarCarrerasYClavePropia` (`usuarios.js`) — el registro de
+  actividad se veía como "[object Object]" en el log de Admin, porque
+  `renderRegistroActividad` hace `.textContent = entrada.detalle` directo,
+  sin serializar. Se corrigió a un string formateado
+  (`"Economía, Derecho (clave 123456)"`), con test de regresión. Y el
+  panel de revisión de Admin ("Tareas en Revisión") ganó un thumbnail más
+  grande (`chore-item-evidencia-grande`) envuelto en un link a la foto
+  completa en pestaña nueva — antes solo tenía un thumbnail de 40x40
+  (`chore-item-evidencia`), insuficiente para juzgar la evidencia antes de
+  aprobar/rechazar sin entrar a la consola de Firebase Storage. Mismo
+  tratamiento que después se reusó para la evidencia visible en
+  `en_revision` dentro de Tareas (ver bullet de arriba).
+- **Botón "⚙ Configurar" y copy "(otorga horas)" retirados (2026-09-19).**
+  El modal `configModal`/`openConfig()`/`saveConfig()` era HTML muerto
+  desde antes de esta fase — esas funciones nunca existieron en JS (el
+  botón tiraba un `ReferenceError` en consola) y su contenido describía un
+  estado del proyecto ya retirado hace varias fases (Realtime Database,
+  Gemini API key en un input de la UI, grid de camas `'rectangular'`). Sin
+  reemplazo — Perfil ya es alcanzable desde `headerNav`. El copy
+  "(otorga horas)" en el dropdown de tipo (`asistencia`) se quitó por
+  redundante; quedó completamente obsoleto al día siguiente con el
+  rediseño de multiplicadores (ver bullet arriba), que reemplazó ese
+  `<select>` entero.
+- **Admin incluida temporalmente en el Resumen de Horas + fix de overlap
+  en Proyectos (2026-09-19).** `cargarYRenderizarVistaAdmin()`
+  (`vista-admin.js`) agrega a mano, por email
+  (`monicalira9377@gmail.com`), a la admin actual a la lista que se le
+  pasa a `renderResumenHoras()` — sin tocar `obtenerDirectorioEstudiantes()`
+  (que sigue filtrando `rol==='estudiante'` a propósito para sus otros dos
+  usos, ver comentario junto a `directorioParaFiltroPersona`). Marcado
+  explícitamente como `TEMPORAL` en el código — quitar cuando ya no haga
+  falta que la admin aparezca ahí. Aparte, `.view-proyectos-toolbar`
+  (el contenedor de "+ Nuevo proyecto" + el toggle Activos/Concluidos)
+  nunca tuvo su propia regla CSS (a diferencia de `.view-catalogos-toolbar`)
+  — sin `display:flex`/`margin-bottom`, el botón caía en flujo normal
+  pegado a la galería, encimándose visualmente con la primera tarjeta. Fix
+  en `css/components.css`, mismo patrón que Catálogos.
+- **Generar Reporte de Horas por periodo (2026-09-19, primer reporte a la
+  universidad).** Nuevo dentro de `view-admin`: dos selectores de fecha
+  libres (sin default de "mes") + botón que pinta dos tablas — "Mesa
+  Directiva" (`rol==='admin'`) y "Prestadores de Servicio" (el resto) —
+  con Nombre/Clave Única/Carrera(s)/Horas previas al periodo/Horas del
+  periodo/Horas totales.
+  - **`obtenerHorasPorPeriodo(estudianteId, fechaInicio, fechaFin)`**
+    (`chores.js`, nuevo): suma `horasTrabajadas` de `asistencias` en rango
+    `[fechaInicio, fechaFin]` inclusive, comparando los strings
+    `'YYYY-MM-DD'` directo (mismo padding = mismo orden que fechas reales,
+    sin convertir a `Date`). `asistencias.fecha` es SIEMPRE la fecha en
+    que `_registrarHoras()` escribió el documento — cuándo el admin
+    aprobó/completó la tarea o hizo un ajuste manual — NUNCA
+    `tareas.fechaRealizada` (que es cuándo la persona dice que trabajó);
+    para un reporte de periodo esto es lo correcto, es el corte real de
+    cuándo esas horas quedaron oficialmente otorgadas. Requiere un índice
+    compuesto (`estudianteId` + `fecha`) que probablemente no existe
+    todavía — mismo criterio del proyecto de no adivinar índices, se
+    agrega desde el link de error real la primera vez que truene en
+    producción.
+  - **"Horas previas al periodo"** = `horasTotales - horasPeriodo`
+    (`renderReporteHoras`, `render.js`) — sin query aparte. Existe para
+    ajustes históricos/de migración de semestres anteriores: backdatear la
+    `fecha` de esos ajustes a antes del `fechaInicio` del reporte hace que
+    SÍ sumen a `horasTotales` (el `increment()` no depende de la fecha)
+    pero queden fuera de "Horas del periodo" — la resta los recupera
+    automáticamente como "previas". Asume que no hay asistencias con
+    fecha posterior al `fechaFin` del reporte (razonable si se genera
+    hasta "hoy" o cerca) — si las hubiera, se mezclarían en "previas"
+    también, aceptado para este primer reporte.
+  - **`ajustarHoras(estudianteId, horas, motivo, fecha = null)`**
+    (`usuarios.js`) y `_registrarHoras(...)` (`chores.js`) ganaron un
+    parámetro `fecha` opcional (default hoy, comportamiento sin cambios si
+    no se pasa) — es lo que permite backdatear un ajuste histórico. El
+    modal "Ajustar Horas" (Admin) ganó un campo de fecha (default hoy,
+    editable) con nota explicando el caso de uso.
+  - **Aviso de pendientes:** cuenta TODAS las autoasignadas en
+    `estado:'en_revision'` ahorita mismo (sin filtrar por fecha —
+    cualquiera pendiente contamina el reporte sin importar cuándo se
+    reportó), reusando `tareasEnRevisionActuales` (ya calculado por el
+    panel de revisión, mismo filtro, para no tener dos criterios de "qué
+    es una pendiente" que puedan desalinearse) — con link que hace scroll
+    a "Tareas en Revisión". No bloquea generar el reporte, solo advierte.
+  - Compilación de evidencia y exportación a Word/PDF quedan
+    explícitamente FUERA de alcance para este primer reporte — se arma a
+    mano por fuera de la app; el reporte solo pinta tablas en pantalla,
+    listas para copiar. No se probó contra datos reales de producción —
+    no hay credenciales de Firebase Admin ni script local para eso en el
+    repo; pendiente de una pasada en el panel de Admin real con el rango
+    real (fin de mayo a 27 de septiembre).
 
 ## 2. Mapa en espiral (Gemelo) — estado técnico
 
@@ -762,6 +850,22 @@ para ver más plantas vs. arrastrar hacia el mapa" (Fase 18.4).
       Proyectos (crear/editar/enviar a revisión un paso propio, que el
       panel de revisión de Admin lo apruebe igual que una autoasignada
       suelta). Mismo pendiente que el resto de Proyectos.
+- [x] Nuevo: fix de `_logActividad` recibiendo un objeto ("[object
+      Object]" en el log de Admin) y preview de evidencia más grande/
+      clicable en el panel de revisión (2026-09-18) — ver sección 1.
+- [x] Nuevo: retirar el botón "⚙ Configurar"/`configModal` (HTML muerto) y
+      el copy redundante "(otorga horas)" (2026-09-19) — ver sección 1.
+- [x] Nuevo: Generar Reporte de Horas por periodo — Mesa Directiva/
+      Prestadores de Servicio, horas previas/del periodo/totales,
+      backdatear ajustes históricos (2026-09-19) — ver sección 1, bullet
+      correspondiente.
+- [ ] Nuevo: validar el Reporte de Horas contra datos reales de
+      producción (rango real, fin de mayo a 27 de septiembre) — nadie lo
+      generó todavía fuera de los tests con Firestore mockeado. Confirmar
+      también que la primera consulta de `obtenerHorasPorPeriodo` no
+      truena por falta de índice compuesto (si truena, agregar el índice
+      desde el link de error real). Mismo pendiente que el resto de
+      Tareas/Proyectos.
 
 ## 4. Arquitectura de módulos (Fase 19, 2026-07-24 — reorganizado en
    carpetas y `vista-gemelo.js` partido en Fase 22, 2026-07-25)
@@ -888,3 +992,16 @@ NO se probó en un navegador real — ver pendiente en la sección 3.
   concuerden en género con quien lee ("Bienvenido" → "Te damos la
   bienvenida"); palabras de estado del sistema invariantes ("Conectado",
   gerundios) no cuentan, no hace falta tocarlas.
+- **Commits pusheados a una branch DESPUÉS de que su PR ya se mergeó
+  quedan huérfanos — no se re-mergean solos (lección real, 2026-09-19).**
+  `feat/autonomia-pasos-proyecto` (PR #8) y
+  `fix/log-actividad-y-preview-evidencia` (PR #7) tuvieron cada una un
+  commit adicional pusheado horas después de que su PR ya estaba
+  mergeado — esos commits nunca llegaron a `main` hasta que se detectó
+  (`git merge-base --is-ancestor <tip-de-la-branch> main` daba `false`
+  pese a que el PR aparecía como mergeado en el log) y se mergearon a
+  mano. Si una branch ya mergeada recibe un commit nuevo, hace falta un
+  PR/merge NUEVO — el PR original no "adopta" retroactivamente lo que se
+  pushea después. Antes de asumir que una feature está en producción
+  porque su PR se ve mergeado, vale la pena confirmar con
+  `git merge-base --is-ancestor <branch> main`.

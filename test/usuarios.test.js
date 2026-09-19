@@ -200,4 +200,23 @@ describe('ajustarHoras', () => {
         await ajustarHoras('u1', 1, 'motivo');
         assert.equal(firebaseMock.leerColeccion('asistencias')[0].autorizadoPor, null);
     });
+
+    // Migración histórica (2026-09-19): backdatear para que quede fuera del
+    // rango de un reporte de horas por periodo, sin dejar de sumar a
+    // horasTotales — ver comentario de _registrarHoras (chores.js).
+    test('con fecha explícita, la asistencia queda backdateada (no la fecha de hoy)', async () => {
+        firebaseMock.seed('usuarios', { u1: { horasTotales: 0 } });
+        await ajustarHoras('u1', 15, 'semestre anterior', '2026-01-15');
+
+        assert.equal(firebaseMock.leerColeccion('asistencias')[0].fecha, '2026-01-15');
+        assert.equal(firebaseMock.leerDoc('usuarios', 'u1').horasTotales, 15); // sigue sumando igual
+    });
+
+    test('sin fecha explícita, cae al default de hoy de siempre', async () => {
+        firebaseMock.seed('usuarios', { u1: { horasTotales: 0 } });
+        await ajustarHoras('u1', 3, 'ajuste normal');
+
+        const hoy = new Date().toISOString().slice(0, 10);
+        assert.equal(firebaseMock.leerColeccion('asistencias')[0].fecha, hoy);
+    });
 });

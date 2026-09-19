@@ -345,6 +345,38 @@
       </table>
     </div>
 
+    <!-- Generar Reporte (2026-09-19, primer reporte a la universidad):
+         rango libre de fechas, sin default de "mes" — ver
+         obtenerHorasPorPeriodo (chores.js). El aviso de pendientes se
+         actualiza en cada carga de esta vista (cargarYRenderizarVistaAdmin),
+         no solo al generar, para que sea visible ANTES de decidir generar. -->
+    <div class="dashboard-card" style="max-width:none">
+      <h3>Generar Reporte de Horas</h3>
+      <p id="reportePendientesAviso" class="admin-auditoria-error" style="display:none"></p>
+      <div class="admin-auditoria-filtros">
+        <label class="admin-auditoria-filtro-fecha">Desde
+          <input type="date" id="reporteFechaInicio">
+        </label>
+        <label class="admin-auditoria-filtro-fecha">Hasta
+          <input type="date" id="reporteFechaFin">
+        </label>
+        <button class="btn btn-primary" id="reporteGenerarBtn">Generar reporte</button>
+      </div>
+
+      <p class="section-title" style="margin-top:var(--space-4)">Mesa Directiva</p>
+      <table class="admin-table">
+        <thead><tr><th>Nombre</th><th>Clave Única</th><th>Carrera(s)</th><th>Horas previas al periodo</th><th>Horas del periodo</th><th>Horas totales</th></tr></thead>
+        <tbody id="reporteMesaDirectivaBody"></tbody>
+      </table>
+
+      <p class="section-title" style="margin-top:var(--space-4)">Prestadores de Servicio</p>
+      <table class="admin-table">
+        <thead><tr><th>Nombre</th><th>Clave Única</th><th>Carrera(s)</th><th>Horas previas al periodo</th><th>Horas del periodo</th><th>Horas totales</th></tr></thead>
+        <tbody id="reportePrestadoresBody"></tbody>
+      </table>
+      <p id="reporteVacio" class="dashboard-resumen-vacio">Elige un rango de fechas y genera el reporte.</p>
+    </div>
+
     <div class="dashboard-card" style="max-width:none">
       <h3>Registro de Actividad (últimas 50 que cumplen los filtros)</h3>
       <div class="admin-auditoria-filtros">
@@ -643,6 +675,11 @@
       <div class="form-group">
         <label for="adminHoursMotivo">Motivo</label>
         <textarea id="adminHoursMotivo" rows="2" placeholder="15 horas de semestre anterior, ver correo del 3/marzo"></textarea>
+      </div>
+      <div class="form-group">
+        <label for="adminHoursFecha">Fecha</label>
+        <input type="date" id="adminHoursFecha">
+        <p style="font-size:0.72rem;color:#888;margin:0.3rem 0 0">Para una migración histórica, pon la fecha real de esas horas (o cualquier fecha antes del periodo que vayas a reportar) — así no se cuentan de más en "Horas del periodo" de un reporte futuro, pero sí suman a Horas Totales.</p>
       </div>
       <button class="btn btn-danger" id="adminSaveBtn">Ajustar Horas</button>
     </div>

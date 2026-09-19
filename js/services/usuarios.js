@@ -158,7 +158,13 @@ export async function actualizarCarrerasYClavePropia(uid, carreras, claveUnica) 
 // (horas ad-hoc o migración de semestre anterior). El motivo es
 // obligatorio y se valida aquí, no solo en la UI — main.js valida antes
 // de llamar por UX, pero este es el guardia real.
-export async function ajustarHoras(estudianteId, horas, motivo) {
+//
+// `fecha` (2026-09-19, opcional): para una migración histórica, el admin
+// debe poder poner la fecha real de esas horas (o cualquier fecha antes del
+// periodo que vaya a reportar) en vez de la fecha de hoy — ver comentario
+// de _registrarHoras (chores.js) sobre por qué esto importa para
+// obtenerHorasPorPeriodo(). Sin valor, cae al default de hoy de siempre.
+export async function ajustarHoras(estudianteId, horas, motivo, fecha = null) {
     if (!motivo || !motivo.trim()) {
         throw new Error('El motivo es obligatorio para ajustar horas.');
     }
@@ -166,6 +172,7 @@ export async function ajustarHoras(estudianteId, horas, motivo) {
     return _registrarHoras(estudianteId, horas, {
         motivo: motivo.trim(),
         origen: 'manual',
-        autorizadoPor: admin?.uid ?? null
+        autorizadoPor: admin?.uid ?? null,
+        fecha
     });
 }

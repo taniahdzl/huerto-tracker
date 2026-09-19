@@ -189,13 +189,19 @@ export async function asignarEstudiantes(tareaId, arrayDeIds) {
 // atómica, origen distinto). El prefijo `_` señala "no la llames desde
 // main.js directamente", no "privada a este módulo" — es la única
 // función de chores.js que otro módulo de datos importa.
-export async function _registrarHoras(estudianteId, horas, { tareaId = null, motivo = null, origen, autorizadoPor }) {
+// `fecha` (2026-09-19): opcional, default hoy. Existe para ajustes
+// históricos/de migración (ver ajustarHoras, usuarios.js) — un admin
+// registrando HOY horas que en realidad son de un semestre anterior debe
+// poder backdatear ese documento, para que obtenerHorasPorPeriodo() (que
+// suma por este mismo campo) las excluya del periodo del reporte aunque sí
+// sumen a horasTotales (el increment de abajo no depende de la fecha).
+export async function _registrarHoras(estudianteId, horas, { tareaId = null, motivo = null, origen, autorizadoPor, fecha = null }) {
     const batch = writeBatch(db);
 
     const asistenciaRef = doc(collection(db, PATHS.asistencias));
     batch.set(asistenciaRef, {
         estudianteId,
-        fecha: new Date().toISOString().slice(0, 10),
+        fecha: fecha || new Date().toISOString().slice(0, 10),
         horasTrabajadas: horas,
         tareaId,
         origen,
@@ -225,6 +231,34 @@ export async function obtenerAsistenciasPorFecha(fecha) {
     const q = query(collection(db, PATHS.asistencias), where('fecha', '==', fecha));
     const snapshot = await getDocs(q);
     return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
+
+// Reporte de horas por rango (2026-09-19, primer reporte a la universidad):
+// suma horasTrabajadas de asistencias en [fechaInicio, fechaFin] (ambos
+// 'YYYY-MM-DD', inclusive). `fecha` en asistencias es SIEMPRE la fecha en
+// que _registrarHoras() escribió el documento — es decir, cuándo el admin
+// aprobó/completó la tarea (o hizo un ajuste manual), NUNCA la fechaRealizada
+// de la tarea (que es cuándo la persona dice que hizo el trabajo). Para un
+// reporte de periodo esto es lo correcto: es el corte real de cuándo esas
+// horas quedaron oficialmente otorgadas.
+//
+// Comparación lexicográfica de strings 'YYYY-MM-DD' (mismo padding, mismo
+// formato) es equivalente a comparación cronológica — where('fecha','>=',...)
+// / '<=' funciona directo en Firestore, sin convertir a Date.
+//
+// Requiere un índice compuesto (igualdad en estudianteId + rango en fecha)
+// que todavía no existe — mismo criterio del proyecto de no adivinar
+// índices: se deja que la primera consulta real falle con el link de
+// creación y se agrega desde ahí a firestore.indexes.json.
+export async function obtenerHorasPorPeriodo(estudianteId, fechaInicio, fechaFin) {
+    const q = query(
+        collection(db, PATHS.asistencias),
+        where('estudianteId', '==', estudianteId),
+        where('fecha', '>=', fechaInicio),
+        where('fecha', '<=', fechaFin)
+    );
+    const snapshot = await getDocs(q);
+    return snapshot.docs.reduce((total, doc) => total + (doc.data().horasTrabajadas || 0), 0);
 }
 
 // Reemplaza la Regla del Sábado: las horas a otorgar ya se declararon

@@ -19,17 +19,18 @@
 
 import { obtenerDirectorioEstudiantes, obtenerDirectorioCompleto, ajustarHoras } from '../services/usuarios.js';
 import { obtenerRegistroActividad, extraerLinkIndice } from '../services/db.js';
-import { obtenerTareas, aprobarTareaAutoasignada, rechazarTareaAutoasignada } from '../services/chores.js';
-import { renderRegistroActividad, renderResumenHoras, renderRevisionTareas } from '../render/render.js';
+import { obtenerTareas, aprobarTareaAutoasignada, rechazarTareaAutoasignada, obtenerHorasPorPeriodo } from '../services/chores.js';
+import { renderRegistroActividad, renderResumenHoras, renderRevisionTareas, renderReporteHoras } from '../render/render.js';
 import { nombreParaMostrar } from '../services/session.js';
 import { mostrarToast, openModal, closeModal } from '../shared/core-ui.js';
 import { navegarA } from '../shared/router.js';
-import { getEstudiantesActuales, setEstudiantesActuales } from './vista-tareas.js';
+import { getEstudiantesActuales, setEstudiantesActuales, fechaHoyLocal } from './vista-tareas.js';
 
 const adminModalClose    = document.getElementById('adminModalClose');
 const adminStudentSelect = document.getElementById('adminStudentSelect');
 const adminHoursInput    = document.getElementById('adminHoursInput');
 const adminHoursMotivo   = document.getElementById('adminHoursMotivo');
+const adminHoursFecha    = document.getElementById('adminHoursFecha');
 const adminSaveBtn       = document.getElementById('adminSaveBtn');
 
 const abrirAjusteHorasBtn   = document.getElementById('abrirAjusteHorasBtn');
@@ -54,6 +55,14 @@ const auditoriaFiltroHasta       = document.getElementById('auditoriaFiltroHasta
 const auditoriaLimpiarFiltrosBtn = document.getElementById('auditoriaLimpiarFiltrosBtn');
 const auditoriaErrorIndice       = document.getElementById('auditoriaErrorIndice');
 const auditoriaVacio             = document.getElementById('auditoriaVacio');
+
+const reportePendientesAviso  = document.getElementById('reportePendientesAviso');
+const reporteFechaInicio      = document.getElementById('reporteFechaInicio');
+const reporteFechaFin         = document.getElementById('reporteFechaFin');
+const reporteGenerarBtn       = document.getElementById('reporteGenerarBtn');
+const reporteMesaDirectivaBody = document.getElementById('reporteMesaDirectivaBody');
+const reportePrestadoresBody  = document.getElementById('reportePrestadoresBody');
+const reporteVacio            = document.getElementById('reporteVacio');
 
 // ── Panel de Admin (modal de horas) ─────────────────────────────────
 
@@ -81,6 +90,9 @@ async function abrirAdminModal() {
     poblarSelectorAdmin();
     adminHoursInput.value = '';
     adminHoursMotivo.value = '';
+    // Default hoy, editable — backdatear es para migraciones históricas
+    // (ver comentario junto a adminHoursFecha en index.html).
+    adminHoursFecha.value = fechaHoyLocal();
     openModal('adminModal');
 }
 
@@ -88,6 +100,7 @@ async function handleAdminSave() {
     const uid = adminStudentSelect.value;
     const horas = parseInt(adminHoursInput.value, 10);
     const motivo = adminHoursMotivo.value.trim();
+    const fecha = adminHoursFecha.value || null;
 
     if (!uid) {
         mostrarToast('Selecciona un estudiante', 'red');
@@ -104,7 +117,7 @@ async function handleAdminSave() {
 
     adminSaveBtn.disabled = true;
     try {
-        await ajustarHoras(uid, horas, motivo);
+        await ajustarHoras(uid, horas, motivo, fecha);
         closeModal('adminModal');
         mostrarToast('Horas ajustadas', 'green');
     } catch (e) {
@@ -163,6 +176,7 @@ async function cargarYRenderizarVistaAdmin() {
         poblarFiltrosAuditoria(registro);
 
         cargarYRenderizarRevision(tareas, directorioCompleto);
+        renderizarAvisoPendientes();
     } catch (e) {
         console.error('[vista-admin] Error cargando el panel de Admin:', e);
         mostrarToast('No se pudo cargar el panel de Admin', 'red');
@@ -305,6 +319,82 @@ async function handleRechazarTareaConfirmar() {
         rechazarTareaConfirmarBtn.disabled = false;
     }
 }
+
+// Aviso de pendientes (2026-09-19, primer reporte a la universidad):
+// cuenta TODAS las autoasignadas en 'en_revision' ahorita mismo, sin
+// filtrar por fecha — cualquiera pendiente contamina el reporte sin
+// importar cuándo se reportó. Lee tareasEnRevisionActuales (ya calculado
+// por cargarYRenderizarRevision, mismo filtro) en vez de recalcularlo, para
+// no tener dos criterios de "qué es una pendiente" que puedan desalinearse.
+function renderizarAvisoPendientes() {
+    const n = tareasEnRevisionActuales.length;
+    if (n === 0) {
+        reportePendientesAviso.replaceChildren();
+        reportePendientesAviso.style.display = 'none';
+        return;
+    }
+    const texto = document.createTextNode(
+        `Tienes ${n} tarea${n === 1 ? '' : 's'} esperando aprobación. Apruébalas o recházalas antes de generar el reporte, o las horas de esas personas van a salir incompletas. `
+    );
+    const link = document.createElement('a');
+    link.href = '#revisionTareasLista';
+    link.textContent = 'Ir a Tareas en Revisión';
+    link.addEventListener('click', (e) => {
+        e.preventDefault();
+        revisionTareasLista.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+    reportePendientesAviso.replaceChildren(texto, link);
+    reportePendientesAviso.style.display = '';
+}
+
+// Generar Reporte (2026-09-19): rango libre, sin default de "mes". No
+// bloquea la generación aunque haya pendientes (renderizarAvisoPendientes ya
+// lo advirtió) — el admin decide si sigue de todos modos. Reusa
+// directorioParaFiltroPersona (ya cargado por cargarYRenderizarVistaAdmin,
+// mismo directorio completo que el filtro de auditoría) en vez de una query
+// nueva. Split Mesa Directiva/Prestadores por rol==='admin', no por
+// obtenerDirectorioEstudiantes() (esa es estudiantes-only y dejaría fuera a
+// 'externo').
+//
+// Compilación de evidencia y exportación a Word/PDF quedan FUERA de
+// alcance a propósito para este primer reporte — se arma a mano por fuera
+// de la app; esto solo pinta las tablas en pantalla, listas para copiar.
+async function handleGenerarReporte() {
+    const fechaInicio = reporteFechaInicio.value;
+    const fechaFin = reporteFechaFin.value;
+    if (!fechaInicio || !fechaFin) {
+        mostrarToast('Elige ambas fechas', 'red');
+        return;
+    }
+    if (fechaInicio > fechaFin) {
+        mostrarToast('"Desde" no puede ser posterior a "Hasta"', 'red');
+        return;
+    }
+
+    reporteGenerarBtn.disabled = true;
+    try {
+        const conHorasPeriodo = await Promise.all(
+            directorioParaFiltroPersona.map(async (persona) => ({
+                ...persona,
+                horasPeriodo: await obtenerHorasPorPeriodo(persona.id, fechaInicio, fechaFin)
+            }))
+        );
+
+        const mesaDirectiva = conHorasPeriodo.filter((p) => p.rol === 'admin');
+        const prestadores = conHorasPeriodo.filter((p) => p.rol !== 'admin');
+
+        renderReporteHoras(mesaDirectiva, reporteMesaDirectivaBody);
+        renderReporteHoras(prestadores, reportePrestadoresBody);
+        reporteVacio.style.display = 'none';
+    } catch (e) {
+        console.error('[vista-admin] Error generando el reporte de horas:', e);
+        mostrarToast('No se pudo generar el reporte', 'red');
+    } finally {
+        reporteGenerarBtn.disabled = false;
+    }
+}
+
+reporteGenerarBtn.addEventListener('click', handleGenerarReporte);
 
 rechazarTareaModalClose.addEventListener('click', () => closeModal('rechazarTareaModal'));
 rechazarTareaConfirmarBtn.addEventListener('click', handleRechazarTareaConfirmar);

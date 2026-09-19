@@ -37,7 +37,7 @@ mock.module(storageUrl, {
 
 const {
     obtenerTareas, crearTarea, obtenerTareasAsignadas, asignarEstudiantes,
-    _registrarHoras, obtenerAsistenciasPorFecha, completarTarea,
+    _registrarHoras, obtenerAsistenciasPorFecha, obtenerHorasPorPeriodo, completarTarea,
     enviarARevision, aprobarTareaAutoasignada, rechazarTareaAutoasignada,
     editarTareaAutoasignada, eliminarTarea
 } = await import('../js/services/chores.js');
@@ -211,6 +211,12 @@ describe('_registrarHoras', () => {
         assert.equal(firebaseMock.leerDoc('usuarios', 'u1').horasTotales, 6);
     });
 
+    test('con fecha explícita, la asistencia queda backdateada (no la fecha de hoy)', async () => {
+        firebaseMock.seed('usuarios', { u1: { horasTotales: 0 } });
+        const asistenciaId = await _registrarHoras('u1', 10, { origen: 'manual', motivo: 'migración', autorizadoPor: 'admin1', fecha: '2026-01-15' });
+        assert.equal(firebaseMock.leerDoc('asistencias', asistenciaId).fecha, '2026-01-15');
+    });
+
     test('tipo de log depende de origen: automatica -> REGISTRAR_ASISTENCIA, manual -> AJUSTE_HORAS_MANUAL', async () => {
         firebaseMock.seed('usuarios', { u1: { horasTotales: 0 }, u2: { horasTotales: 0 } });
         setUsuarioActual({ uid: 'admin1', email: 'admin@test.com' });
@@ -232,6 +238,26 @@ describe('obtenerAsistenciasPorFecha', () => {
         const resultado = await obtenerAsistenciasPorFecha('2026-07-26');
         assert.equal(resultado.length, 1);
         assert.equal(resultado[0].estudianteId, 'u2');
+    });
+});
+
+describe('obtenerHorasPorPeriodo', () => {
+    test('suma horasTrabajadas dentro del rango [fechaInicio, fechaFin], ambos inclusive', async () => {
+        firebaseMock.seed('asistencias', {
+            a1: { estudianteId: 'u1', fecha: '2026-05-31', horasTrabajadas: 10 }, // borde inicial, incluido
+            a2: { estudianteId: 'u1', fecha: '2026-07-15', horasTrabajadas: 5 },
+            a3: { estudianteId: 'u1', fecha: '2026-09-27', horasTrabajadas: 8 }, // borde final, incluido
+            a4: { estudianteId: 'u1', fecha: '2026-09-28', horasTrabajadas: 100 }, // fuera de rango
+            a5: { estudianteId: 'u2', fecha: '2026-07-15', horasTrabajadas: 100 } // otro estudiante
+        });
+
+        const total = await obtenerHorasPorPeriodo('u1', '2026-05-31', '2026-09-27');
+        assert.equal(total, 23);
+    });
+
+    test('sin asistencias en el rango, devuelve 0 (no undefined/NaN)', async () => {
+        const total = await obtenerHorasPorPeriodo('u-sin-horas', '2026-01-01', '2026-12-31');
+        assert.equal(total, 0);
     });
 });
 

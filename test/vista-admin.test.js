@@ -27,6 +27,7 @@ const firebaseMock = createFirebaseMock();
 mock.module(firebaseUrl, { namedExports: firebaseMock.exports });
 
 const { irAVistaAdmin } = await import('../js/views/vista-admin.js');
+const { ajustarHoras } = await import('../js/services/usuarios.js');
 
 function esperar() {
     return new Promise((resolve) => setTimeout(resolve, 0));
@@ -93,6 +94,27 @@ describe('modal de ajuste de horas', () => {
 
         assert.equal(firebaseMock.leerDoc('usuarios', 'u1').horasTotales, 8);
         assert.equal(document.getElementById('adminModal').classList.contains('open'), false);
+    });
+
+    // Fecha backdateable (2026-09-19, migraciones históricas) — ver
+    // comentario junto a adminHoursFecha en index.html.
+    test('el campo de fecha arranca en hoy, pero es editable a una fecha pasada', async () => {
+        firebaseMock.seed('usuarios', { u1: { nombre: 'Ana', rol: 'estudiante', horasTotales: 0 } });
+        document.getElementById('abrirAjusteHorasBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
+        await esperar();
+
+        const hoy = new Date().toISOString().slice(0, 10);
+        assert.equal(document.getElementById('adminHoursFecha').value, hoy);
+
+        document.getElementById('adminStudentSelect').value = 'u1';
+        document.getElementById('adminHoursInput').value = '15';
+        document.getElementById('adminHoursMotivo').value = 'migración semestre anterior';
+        document.getElementById('adminHoursFecha').value = '2026-01-10';
+        document.getElementById('adminSaveBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
+        await esperar();
+
+        assert.equal(firebaseMock.leerColeccion('asistencias')[0].fecha, '2026-01-10');
+        assert.equal(firebaseMock.leerDoc('usuarios', 'u1').horasTotales, 15);
     });
 });
 
@@ -308,5 +330,125 @@ describe('Panel de revisión — tareas autoasignadas en_revision (2026-09-06)',
         assert.equal(guardada.motivoRechazo, 'Falta la foto');
         assert.equal(firebaseMock.leerDoc('usuarios', 'u1').horasTotales, 0);
         assert.equal(document.getElementById('rechazarTareaModal').classList.contains('open'), false);
+    });
+});
+
+// Reporte de horas por periodo (2026-09-19, primer reporte a la universidad)
+describe('Aviso de pendientes de aprobación', () => {
+    test('con autoasignadas en_revision, muestra el conteo y el link a la revisión', async () => {
+        firebaseMock.seed('tareas', {
+            t1: { titulo: 'A', origen: 'autoasignada', estado: 'en_revision', asignados: ['u1'] },
+            t2: { titulo: 'B', origen: 'autoasignada', estado: 'en_revision', asignados: ['u1'] },
+            t3: { titulo: 'C', origen: 'asignada', estado: 'en_revision', asignados: ['u1'] } // no cuenta: no es autoasignada
+        });
+
+        irAVistaAdmin();
+        await esperar();
+
+        const aviso = document.getElementById('reportePendientesAviso');
+        assert.notEqual(aviso.style.display, 'none');
+        assert.match(aviso.textContent, /2 tareas esperando aprobación/);
+        assert.equal(aviso.querySelector('a').textContent, 'Ir a Tareas en Revisión');
+    });
+
+    test('sin pendientes, el aviso queda oculto', async () => {
+        irAVistaAdmin();
+        await esperar();
+        assert.equal(document.getElementById('reportePendientesAviso').style.display, 'none');
+    });
+
+    test('tras aprobar la única pendiente, el aviso se oculta (se recalcula en cada recarga)', async () => {
+        firebaseMock.seed('tareas', {
+            t1: { titulo: 'A', origen: 'autoasignada', estado: 'en_revision', asignados: ['u1'], horasAOtorgar: 3 }
+        });
+        firebaseMock.seed('usuarios', { u1: { horasTotales: 0, rol: 'estudiante' } });
+
+        irAVistaAdmin();
+        await esperar();
+        assert.notEqual(document.getElementById('reportePendientesAviso').style.display, 'none');
+
+        document.querySelector('#revisionTareasLista .chore-complete-btn').dispatchEvent(new window.Event('click', { bubbles: true }));
+        await esperar();
+
+        assert.equal(document.getElementById('reportePendientesAviso').style.display, 'none');
+    });
+});
+
+describe('Generar Reporte de Horas', () => {
+    test('exige ambas fechas antes de consultar nada', async () => {
+        irAVistaAdmin();
+        await esperar();
+
+        document.getElementById('reporteFechaInicio').value = '';
+        document.getElementById('reporteFechaFin').value = '2026-09-27';
+        document.getElementById('reporteGenerarBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
+        await esperar();
+
+        assert.equal(document.querySelectorAll('#reporteMesaDirectivaBody tr').length, 0);
+        assert.equal(document.querySelectorAll('#reportePrestadoresBody tr').length, 0);
+    });
+
+    test('rechaza un rango invertido (Desde posterior a Hasta)', async () => {
+        irAVistaAdmin();
+        await esperar();
+
+        document.getElementById('reporteFechaInicio').value = '2026-09-27';
+        document.getElementById('reporteFechaFin').value = '2026-05-31';
+        document.getElementById('reporteGenerarBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
+        await esperar();
+
+        assert.equal(document.querySelectorAll('#reporteMesaDirectivaBody tr').length, 0);
+    });
+
+    test('divide Mesa Directiva (rol:admin) de Prestadores de servicio (el resto), con horas previas/del periodo/totales', async () => {
+        firebaseMock.seed('usuarios', {
+            admin1: { nombre: 'Admin Uno', rol: 'admin', horasTotales: 20, claveUnica: 'A1', carreras: [] },
+            u1: { nombre: 'Ana', rol: 'estudiante', horasTotales: 15, claveUnica: 'E1', carreras: ['Ing. en Sistemas'] },
+            u2: { nombre: 'Beto', rol: 'externo', horasTotales: 5, claveUnica: 'E2', carreras: [] }
+        });
+        firebaseMock.seed('asistencias', {
+            a1: { estudianteId: 'admin1', fecha: '2026-06-01', horasTrabajadas: 10 },
+            a2: { estudianteId: 'u1', fecha: '2026-06-01', horasTrabajadas: 6 },
+            a3: { estudianteId: 'u1', fecha: '2026-01-01', horasTrabajadas: 100 }, // fuera de rango
+            a4: { estudianteId: 'u2', fecha: '2026-08-01', horasTrabajadas: 4 }
+        });
+
+        irAVistaAdmin();
+        await esperar();
+
+        document.getElementById('reporteFechaInicio').value = '2026-05-31';
+        document.getElementById('reporteFechaFin').value = '2026-09-27';
+        document.getElementById('reporteGenerarBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
+        await esperar();
+
+        const filaMesa = document.querySelector('#reporteMesaDirectivaBody tr');
+        assert.ok(filaMesa);
+        const celdasMesa = [...filaMesa.querySelectorAll('td')].map((td) => td.textContent);
+        assert.deepEqual(celdasMesa, ['Admin Uno', 'A1', '—', '10', '10', '20']); // previas=10, periodo=10, totales=20
+
+        const filasPrestadores = [...document.querySelectorAll('#reportePrestadoresBody tr')];
+        assert.equal(filasPrestadores.length, 2); // Ana (estudiante) + Beto (externo) — "el resto"
+
+        const filaAna = filasPrestadores.find((tr) => tr.textContent.includes('Ana'));
+        const celdasAna = [...filaAna.querySelectorAll('td')].map((td) => td.textContent);
+        assert.deepEqual(celdasAna, ['Ana', 'E1', 'Ing. en Sistemas', '9', '6', '15']); // previas=9 (15-6), el a3 fuera de rango no suma al periodo
+    });
+
+    test('un ajuste histórico backdateado antes del periodo suma a "Horas previas", no a "Horas del periodo"', async () => {
+        firebaseMock.seed('usuarios', { u1: { nombre: 'Ana', rol: 'estudiante', horasTotales: 0, claveUnica: 'E1', carreras: [] } });
+
+        await ajustarHoras('u1', 15, 'migración semestre anterior', '2026-01-10');
+
+        irAVistaAdmin();
+        await esperar();
+
+        document.getElementById('reporteFechaInicio').value = '2026-05-31';
+        document.getElementById('reporteFechaFin').value = '2026-09-27';
+        document.getElementById('reporteGenerarBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
+        await esperar();
+
+        const fila = document.querySelector('#reportePrestadoresBody tr');
+        const celdas = [...fila.querySelectorAll('td')].map((td) => td.textContent);
+        assert.deepEqual(celdas, ['Ana', 'E1', '—', '15', '0', '15']); // previas=15, periodo=0, totales=15
     });
 });

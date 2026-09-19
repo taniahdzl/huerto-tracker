@@ -703,6 +703,60 @@ export function renderResumenHoras(estudiantes, contenedor) {
     contenedor.replaceChildren(fragment);
 }
 
+// Reporte de horas por periodo (2026-09-19, primer reporte a la
+// universidad) — mismo shape de fila que renderResumenHoras + "Horas del
+// periodo" (obtenerHorasPorPeriodo, chores.js) y "Horas previas al
+// periodo", ya resueltas por el caller antes de llamar acá (esta función
+// solo pinta, no consulta Firestore). `lista` trae objetos { ...usuario,
+// horasPeriodo }.
+//
+// "Horas previas al periodo" = horasTotales - horasPeriodo — cubre ajustes
+// históricos/de migración backdateados antes del fechaInicio del reporte
+// (ver comentario de _registrarHoras, chores.js): esas horas SÍ suman a
+// horasTotales pero quedan fuera del rango, así que la resta las recupera
+// sin una query aparte. Asume que no hay asistencias con fecha posterior a
+// fechaFin (razonable si el reporte se genera hasta "hoy" o cerca) — si
+// las hubiera, quedarían mezcladas aquí también, aceptado para este primer
+// reporte.
+export function renderReporteHoras(lista, contenedor) {
+    const fragment = document.createDocumentFragment();
+    const ordenados = [...lista].sort((a, b) => (b.horasTotales ?? 0) - (a.horasTotales ?? 0));
+
+    ordenados.forEach((persona) => {
+        const tr = document.createElement('tr');
+        const horasPeriodo = persona.horasPeriodo ?? 0;
+        const horasTotales = persona.horasTotales ?? 0;
+
+        const nombre = document.createElement('td');
+        nombre.textContent = nombreParaMostrar(persona);
+        tr.appendChild(nombre);
+
+        const claveTd = document.createElement('td');
+        claveTd.textContent = persona.claveUnica || '—';
+        tr.appendChild(claveTd);
+
+        const carrerasTd = document.createElement('td');
+        carrerasTd.textContent = persona.carreras?.length ? persona.carreras.join(', ') : '—';
+        tr.appendChild(carrerasTd);
+
+        const horasPreviasTd = document.createElement('td');
+        horasPreviasTd.textContent = horasTotales - horasPeriodo;
+        tr.appendChild(horasPreviasTd);
+
+        const horasPeriodoTd = document.createElement('td');
+        horasPeriodoTd.textContent = horasPeriodo;
+        tr.appendChild(horasPeriodoTd);
+
+        const horasTotalesTd = document.createElement('td');
+        horasTotalesTd.textContent = horasTotales;
+        tr.appendChild(horasTotalesTd);
+
+        fragment.appendChild(tr);
+    });
+
+    contenedor.replaceChildren(fragment);
+}
+
 // Perfil (propio) y Resumen de Horas (Admin/reportes) — misma barra en
 // ambos lugares, ver AI_CONTEXT.md. El ancho se limita a 100% aunque el
 // objetivo ya se haya superado (evita que el relleno se vea "roto" o

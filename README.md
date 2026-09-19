@@ -10,17 +10,17 @@ Aplicación web (SPA) para el seguimiento colaborativo del huerto urbano univers
 
 - **Dashboard** — resumen del estado general del huerto y banner de bitácora reciente
 - **Gemelo digital** — mapa del huerto en espiral (SVG dibujado a mano, sin `innerHTML`), con pan/zoom (rueda, pellizco, botones) y drag&drop de plantas desde el catálogo, mobile-first con Pointer Events
-- **Tareas** — asignación y seguimiento de tareas por estudiante. Cada tarea es `tipo:'asistencia'` (otorga horas, foto de evidencia obligatoria al completar) o `tipo:'individual'` (foto opcional, horas opcionales). Las horas a otorgar se declaran explícitas al crear la tarea — el formulario sugiere 15h si se crea en sábado, editable — ya no dependen del día en que se completa
-- **Proyectos** — galería de tarjetas que *organiza* tareas existentes en pasos ordenados, sin duplicarlas (`tareas.proyectoId`, opcional). El progreso de cada tarjeta (barra + "N de M pasos") se recalcula siempre desde el estado real de las tareas referenciadas — nunca un contador aparte. Completar un paso reusa el mismo flujo/modal de Tareas, así que otorga horas exactamente igual (sin camino alterno)
+- **Tareas** — cualquier autenticado puede crear una tarea propia (autoasignada, con aprobación de admin) o, si es admin, asignarla a otros. Cada tarea declara un tipo de actividad (Riego, Trabajo físico/sábados, Redes, Comunidad, Investigación, Hoyos/composta), cada uno con su propio multiplicador de horas — la persona declara horas *efectivas* (trabajo real) y las horas a acreditar se calculan solas (efectivas × multiplicador, redondeado) y quedan congeladas en la tarea. Foto de evidencia siempre obligatoria al completar. Toggle Abiertas/Cerradas, y un campo de fecha para registrar trabajo pasado (el riego de ayer, por ejemplo)
+- **Proyectos** — galería de tarjetas que *organiza* tareas existentes en pasos ordenados, sin duplicarlas (`tareas.proyectoId`, opcional). El progreso de cada tarjeta (barra + "N de M pasos") se recalcula siempre desde el estado real de las tareas referenciadas — nunca un contador aparte. Completar un paso reusa el mismo flujo/modal de Tareas, así que otorga horas exactamente igual (sin camino alterno). Admin puede concluir/reactivar/eliminar un proyecto (eliminar nunca borra sus tareas) y alternar entre Activos/Concluidos; cualquier autenticado puede agregar y editar su propio paso, con la misma autonomía/aprobación que una tarea suelta
 - **Catálogos** — catálogo de semillas/plantas y camas de cosecha
 - **Bitácora** — registro de sesiones de trabajo
-- **Perfil** — cada usuario gestiona su propio rol (`estudiante`/`externo`) y ve sus horas
-- **Admin** — panel de ajuste de horas + log de auditoría de actividad con filtros (solo rol `admin`)
+- **Perfil** — cada usuario declara su carrera(s) (1-2) y clave única (para automatizar reportes), gestiona su propio rol (`estudiante`/`externo`) y ve una barra de progreso de horas hacia su objetivo (480h por carrera, 960h si son dos)
+- **Admin** — panel de ajuste de horas (con fecha backdateable para migraciones históricas), aprobación de tareas autoasignadas, generación de reportes de horas por periodo (Mesa Directiva/Prestadores de Servicio), y log de auditoría de actividad con filtros (solo rol `admin`)
 - **RBAC real** vía Firebase Auth + Firestore: reglas de seguridad distinguen `admin` de `estudiante`/`externo`, y ningún usuario puede autoasignarse `admin`
 
 > El asistente de IA (`js/services/ai.js`) es un **stub sin conectar** — GitHub Pages/Vercel es hosting estático, así que no hay dónde esconder una API key de Gemini sin una Cloud Function intermedia. No implementar la llamada real hasta que exista ese backend.
 
-> **Proyectos está completo en código y con tests (Firestore mockeado), pero sin confirmar en un navegador real** — mismo estado pendiente que la foto de evidencia de Storage (ver más abajo). Antes de darlo por cerrado, alguien necesita entrar y confirmar que la galería, los badges y el checklist se ven/sienten bien de verdad.
+> **La mayoría de las features de 2026-08/09 (Storage, Proyectos, tareas autoasignadas, multiplicadores de horas, gestión/autonomía de Proyectos, reporte de horas) están completas en código y con tests (Firestore mockeado), pero sin confirmar todavía en un navegador real de punta a punta.** Ver `AI_CONTEXT.md`, sección 3, para el checklist detallado de qué falta confirmar en cada una.
 
 ---
 
@@ -28,7 +28,7 @@ Aplicación web (SPA) para el seguimiento colaborativo del huerto urbano univers
 
 ```
 huerto-tracker/
-├── index.html              # Shell de la SPA (~555 líneas) — solo HTML de vistas
+├── index.html              # Shell de la SPA — solo HTML de vistas y modales
 ├── css/
 │   ├── variables.css        # Design tokens
 │   ├── main.css              # Esqueleto de página (reset, header, mecánica de vistas)
