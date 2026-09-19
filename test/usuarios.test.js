@@ -19,7 +19,8 @@ mock.module(firebaseUrl, { namedExports: firebaseMock.exports });
 
 const {
     obtenerUsuario, obtenerDirectorioEstudiantes, obtenerDirectorioCompleto,
-    registrarUsuario, actualizarRolPropio, actualizarNombrePropio, ajustarHoras
+    registrarUsuario, actualizarRolPropio, actualizarNombrePropio,
+    actualizarCarrerasYClavePropia, ajustarHoras
 } = await import('../js/services/usuarios.js');
 
 beforeEach(() => {
@@ -56,18 +57,42 @@ describe('obtenerDirectorioEstudiantes / obtenerDirectorioCompleto', () => {
 });
 
 describe('registrarUsuario', () => {
-    test('crea el perfil con horasTotales en 0 y nombre recortado', async () => {
-        await registrarUsuario('u1', 'ana@test.com', 'estudiante', '  Ana  ');
+    test('crea el perfil con horasTotales en 0, nombre recortado, y carreras/claveUnica', async () => {
+        await registrarUsuario('u1', 'ana@test.com', 'estudiante', '  Ana  ', ['Economía'], '123456');
 
         const perfil = firebaseMock.leerDoc('usuarios', 'u1');
         assert.equal(perfil.email, 'ana@test.com');
         assert.equal(perfil.rol, 'estudiante');
         assert.equal(perfil.nombre, 'Ana');
         assert.equal(perfil.horasTotales, 0);
+        assert.deepEqual(perfil.carreras, ['Economía']);
+        assert.equal(perfil.claveUnica, '123456');
+    });
+
+    test('acepta 2 carreras válidas', async () => {
+        await registrarUsuario('u1', 'a@test.com', 'estudiante', 'Ana', ['Economía', 'Derecho'], '123456');
+        assert.deepEqual(firebaseMock.leerDoc('usuarios', 'u1').carreras, ['Economía', 'Derecho']);
     });
 
     test('rechaza nombre vacío o solo espacios, sin escribir nada', async () => {
-        await assert.rejects(() => registrarUsuario('u1', 'a@test.com', 'estudiante', '   '));
+        await assert.rejects(() => registrarUsuario('u1', 'a@test.com', 'estudiante', '   ', ['Economía'], '123456'));
+        assert.equal(firebaseMock.leerDoc('usuarios', 'u1'), null);
+    });
+
+    test('rechaza 0 o más de 2 carreras, sin escribir nada', async () => {
+        await assert.rejects(() => registrarUsuario('u1', 'a@test.com', 'estudiante', 'Ana', [], '123456'));
+        await assert.rejects(() => registrarUsuario('u1', 'a@test.com', 'estudiante', 'Ana', ['Economía', 'Derecho', 'Actuaría'], '123456'));
+        assert.equal(firebaseMock.leerDoc('usuarios', 'u1'), null);
+    });
+
+    test('rechaza una carrera fuera del catálogo', async () => {
+        await assert.rejects(() => registrarUsuario('u1', 'a@test.com', 'estudiante', 'Ana', ['Astrología'], '123456'));
+        assert.equal(firebaseMock.leerDoc('usuarios', 'u1'), null);
+    });
+
+    test('rechaza clave única que no sea de exactamente 6 dígitos', async () => {
+        await assert.rejects(() => registrarUsuario('u1', 'a@test.com', 'estudiante', 'Ana', ['Economía'], '12345'));
+        await assert.rejects(() => registrarUsuario('u1', 'a@test.com', 'estudiante', 'Ana', ['Economía'], 'abcdef'));
         assert.equal(firebaseMock.leerDoc('usuarios', 'u1'), null);
     });
 
@@ -77,8 +102,30 @@ describe('registrarUsuario', () => {
         // _logActividad exige getUsuarioActual() no-null. Documentado tal
         // cual está hoy: sin sesión seteada, no queda log (mismo criterio
         // que crearTarea sin sesión).
-        await registrarUsuario('u1', 'a@test.com', 'estudiante', 'Ana');
+        await registrarUsuario('u1', 'a@test.com', 'estudiante', 'Ana', ['Economía'], '123456');
         assert.equal(firebaseMock.leerColeccion('registro_actividad').length, 0);
+    });
+});
+
+describe('actualizarCarrerasYClavePropia', () => {
+    test('actualiza solo carreras/claveUnica, sin tocar el resto del perfil', async () => {
+        firebaseMock.seed('usuarios', { u1: { nombre: 'Ana', rol: 'estudiante', horasTotales: 12 } });
+        await actualizarCarrerasYClavePropia('u1', ['Economía', 'Derecho'], '123456');
+
+        const perfil = firebaseMock.leerDoc('usuarios', 'u1');
+        assert.deepEqual(perfil.carreras, ['Economía', 'Derecho']);
+        assert.equal(perfil.claveUnica, '123456');
+        assert.equal(perfil.nombre, 'Ana');
+        assert.equal(perfil.horasTotales, 12); // intacto — updateDoc es merge parcial
+    });
+
+    test('rechaza carrera fuera de catálogo o clave con formato inválido, sin escribir nada', async () => {
+        firebaseMock.seed('usuarios', { u1: { carreras: ['Economía'], claveUnica: '111111' } });
+        await assert.rejects(() => actualizarCarrerasYClavePropia('u1', ['Astrología'], '123456'));
+        await assert.rejects(() => actualizarCarrerasYClavePropia('u1', ['Economía'], '12'));
+        const perfil = firebaseMock.leerDoc('usuarios', 'u1');
+        assert.deepEqual(perfil.carreras, ['Economía']); // sin cambios
+        assert.equal(perfil.claveUnica, '111111');
     });
 });
 

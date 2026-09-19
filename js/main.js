@@ -6,11 +6,12 @@
 // acá si muestra #login-overlay o navega a una vista.
 //
 // Este archivo es intencionalmente delgado: solo el bootstrap de sesión y
-// el listener delegado de headerNav (que dispatcha a las 5 rutas con carga
-// de datos propia) viven acá. Cada vista real vive en su propio
+// el listener delegado de headerNav (que dispatcha a las 6 rutas con carga
+// de datos propia — Proyectos sumada en el rediseño de tareas/proyectos,
+// 2026-08-29) viven acá. Cada vista real vive en su propio
 // js/vista-*.js; router.js/core-ui.js/estado-app.js son los módulos hoja
 // que todas las vistas comparten. El único motivo por el que ESTE archivo
-// conoce a las 5 vistas (import directo de cada irAVistaX) es que
+// conoce a las 6 vistas (import directo de cada irAVistaX) es que
 // router.js, a propósito, NO las conoce — si lo hiciera, cada vista
 // tendría que importar de vuelta navegarA() desde router.js, un ciclo
 // entre 6+ archivos. main.js es el único módulo al que le toca ser la raíz
@@ -39,8 +40,10 @@ import { marcarStatusSinSesion } from './shared/core-ui.js';
 import { navegarA, ocultarTodasLasVistas } from './shared/router.js';
 import { setEsAdminActual } from './shared/estado-app.js';
 import { mostrarErrorLogin, mostrarErrorSetup, actualizarGatingSetup } from './views/vista-login.js';
+import { mostrarCompletarPerfil } from './views/vista-completar-perfil.js';
 import { mostrarDashboard } from './views/vista-dashboard.js';
 import { irAVistaTareas } from './views/vista-tareas.js';
+import { irAVistaProyectos } from './views/vista-proyectos.js';
 import { irAVistaCatalogos } from './views/vista-catalogos.js';
 import { irAVistaPerfil } from './views/vista-perfil.js';
 import { irAVistaAdmin } from './views/vista-admin.js';
@@ -52,6 +55,8 @@ const crearTareaBtn  = document.getElementById('crearTareaBtn');
 const googleLoginBtn = document.getElementById('googleLoginBtn');
 const loginOverlay   = document.getElementById('login-overlay');
 const newUserNombreInput = document.getElementById('newUserNombre');
+const newUserCarrerasGroup = document.getElementById('newUserCarrerasGroup');
+const newUserClaveInput = document.getElementById('newUserClaveInput');
 
 // ── Barra de navegación persistente del header (Fase 16) ────────────
 
@@ -60,6 +65,10 @@ headerNav.addEventListener('click', (e) => {
     if (!btn) return;
     if (btn.dataset.vista === 'view-tareas') {
         irAVistaTareas();
+        return;
+    }
+    if (btn.dataset.vista === 'view-proyectos') {
+        irAVistaProyectos();
         return;
     }
     if (btn.dataset.vista === 'view-catalogos') {
@@ -87,10 +96,13 @@ headerNav.addEventListener('click', (e) => {
 // payload completo (user, rol, error) y este listener decide a dónde ir.
 // Los 4 casos del contrato, en el mismo orden que están documentados en
 // auth.js: sin sesión / con sesión sin perfil / con sesión con perfil /
-// error consultando el perfil.
+// error consultando el perfil. Un 5º caso propio de ESTE archivo (no del
+// contrato de auth.js — ver comentario junto al "Caso 2b" abajo): con
+// sesión y perfil resuelto, pero sin carrera(s)/clave única todavía
+// (2026-09-18) — manda a view-completar-perfil en vez del Dashboard.
 
 document.addEventListener('auth:resuelto', (e) => {
-    const { user, rol, nombre, error } = e.detail;
+    const { user, rol, nombre, carreras, claveUnica, error } = e.detail;
 
     // Caso 1: sin sesión. `rol` viene null pero NO significa "falta
     // Setup" — se distingue del caso 2 únicamente por `user` ser null.
@@ -127,9 +139,24 @@ document.addEventListener('auth:resuelto', (e) => {
     if (rol === null) {
         mostrarErrorSetup('');
         newUserNombreInput.value = '';
+        newUserClaveInput.value = '';
+        newUserCarrerasGroup.querySelectorAll('input:checked').forEach((cb) => { cb.checked = false; });
         actualizarGatingSetup();
         loginOverlay.classList.add('hidden');
         navegarA('view-setup');
+        return;
+    }
+
+    // Caso 2b (2026-09-18): con sesión, con perfil, pero falta completar
+    // carrera(s)/clave única — cualquier perfil creado ANTES de este cambio
+    // cae acá (auth.js normaliza esos campos a null si el documento no los
+    // tiene). Se resuelve con la MISMA lectura de perfil que ya trae el
+    // evento, sin una consulta extra. Debe ir DESPUÉS del caso 2 (rol===
+    // null) — un perfil que ni siquiera existe no tiene este problema, tiene
+    // el otro.
+    if (!carreras || carreras.length === 0 || !claveUnica) {
+        loginOverlay.classList.add('hidden');
+        mostrarCompletarPerfil(user, rol, nombre);
         return;
     }
 

@@ -143,6 +143,15 @@
 .progress-bar { height: 6px; border-radius: 3px; background: #eee; overflow: hidden; margin-top: 0.3rem; }
 .progress-fill { height: 100%; border-radius: 3px; transition: width 0.5s; }
 
+/* Barra de horas vs. objetivo (Perfil + Resumen de Horas de Admin,
+   2026-09-18) — mismo .progress-bar/.progress-fill genérico de arriba,
+   solo el color de relleno es propio (mismo verde primario que
+   .proyecto-progress-fill, sin reusar esa clase por ser de otra
+   feature). Ver crearBarraProgresoHoras en render.js. */
+.horas-progreso { min-width: 160px; }
+.horas-progress-fill { background: var(--color-primario); }
+.horas-progreso-texto { font-size: 0.7rem; color: var(--color-texto); opacity: 0.6; margin: 0.2rem 0 0; }
+
 .nutrient-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: var(--space-2); margin-bottom: var(--space-4); }
 .nutrient-item { background: var(--color-fondo); border-radius: 6px; padding: var(--space-2); text-align: center; }
 .nutrient-item .n-label { font-size: 0.6rem; font-family: var(--font-mono); color: #888; display: block; }
@@ -230,6 +239,23 @@
 }
 .chore-assignee-chip:hover { border-color: var(--color-primario); }
 .chore-assignee-chip input[type="checkbox"] { cursor: pointer; margin: 0; }
+
+/* Carrera(s) — Setup, view-completar-perfil, Perfil (2026-09-18). Mismo
+   look que .chore-assignee-chip, con el estado disabled propio de
+   aplicarLimiteCheckboxes (core-ui.js): checkbox opacado sin ocultarse,
+   para que se vea claro que ya se alcanzó el máx. de 2 sin que la lista
+   cambie de tamaño. */
+.carreras-checkboxes { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.carrera-checkbox-chip {
+  display: flex; align-items: center; gap: 0.3rem;
+  padding: var(--space-1) 0.6rem; border-radius: 20px;
+  border: 1px solid var(--color-borde); background: var(--color-fondo);
+  font-size: 0.72rem; cursor: pointer; user-select: none;
+}
+.carrera-checkbox-chip:hover { border-color: var(--color-primario); }
+.carrera-checkbox-chip input[type="checkbox"] { cursor: pointer; margin: 0; }
+.carrera-checkbox-chip input[type="checkbox"]:disabled { cursor: not-allowed; }
+.carrera-checkbox-chip:has(input:disabled) { opacity: 0.45; }
 .chore-list { list-style: none; display: flex; flex-direction: column; gap: var(--space-2); }
 .chore-item {
   display: flex; align-items: center; gap: 0.7rem;
@@ -250,12 +276,57 @@
   display: flex; align-items: center; justify-content: space-between;
   flex-wrap: wrap; gap: 0.6rem; margin-bottom: var(--space-4);
 }
+/* Panel de revisión (Admin) — mismo .chore-list/.chore-item que Tareas,
+   con un checkbox de selección múltiple agregado al frente de cada fila
+   (ver renderRevisionTareas en render.js). */
+.admin-revision-acciones {
+  display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: var(--space-3);
+}
 .chore-complete-btn {
   padding: 0.3rem 0.6rem; border-radius: 6px;
   border: 1px solid var(--color-primario); background: transparent; color: var(--color-primario);
   font-size: 0.75rem; cursor: pointer; white-space: nowrap;
 }
 .chore-complete-btn:hover { background: var(--color-primario); color: white; }
+.chore-item-evidencia {
+  width: 40px; height: 40px; object-fit: cover;
+  border-radius: 6px; border: 1px solid var(--color-borde);
+}
+#completarTareaFotoPreview {
+  width: 100%; max-height: 200px; object-fit: contain;
+  margin-top: var(--space-2); border-radius: 6px; border: 1px solid var(--color-borde);
+}
+
+/* ── PROYECTOS (galería, organiza tareas existentes vía proyectoId) ── */
+.proyecto-galeria {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-4);
+}
+.proyecto-card {
+  display: flex; flex-direction: column; gap: 0.4rem;
+  padding: var(--space-4); border-radius: 10px;
+  background: var(--color-fondo); border: 1px solid var(--color-borde);
+}
+.proyecto-card-header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.proyecto-card-nombre { font-family: var(--font-display); font-size: 1.05rem; margin: 0; }
+.proyecto-card-descripcion { font-size: 0.8rem; color: var(--color-texto); opacity: 0.75; margin: 0; }
+.proyecto-badge {
+  font-size: 0.68rem; font-family: var(--font-mono); font-weight: 600;
+  padding: 0.15rem 0.5rem; border-radius: 20px; white-space: nowrap;
+}
+.proyecto-badge-activo { background: var(--color-primario); color: white; }
+/* Mismo par bg-cosecha/color-error que .admin-auditoria-error — ya
+   establecido en el proyecto como "alerta/urgencia" sobre fondo rosa. */
+.proyecto-badge-fecha { background: var(--bg-cosecha); color: var(--color-error); }
+.proyecto-progress-fill { background: var(--color-primario); }
+.proyecto-card-progreso-texto { font-size: 0.7rem; color: var(--color-texto); opacity: 0.6; margin: 0; }
+.proyecto-checklist { list-style: none; display: flex; flex-direction: column; gap: 0.25rem; margin: 0.2rem 0; padding: 0; }
+.proyecto-checklist-item {
+  display: flex; align-items: center; gap: 0.4rem;
+  font-size: 0.78rem; cursor: pointer; padding: 0.2rem 0; border-radius: 4px;
+}
+.proyecto-checklist-item:hover { background: var(--color-borde); }
+.proyecto-checklist-marca { font-size: 0.85rem; }
 
 /* ── CATÁLOGOS (Fase 13.6b) ── */
 #view-catalogos .view-catalogos-toolbar {

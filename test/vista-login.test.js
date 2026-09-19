@@ -89,8 +89,18 @@ describe('login con Google', () => {
     });
 });
 
+// Helper compartido por los tests de Setup de acá abajo — marca N carreras
+// (por defecto 1, "Economía") en #newUserCarrerasGroup y llena la clave.
+function completarCarrerasYClave({ carreras = ['Economía'], clave = '123456' } = {}) {
+    const grupo = document.getElementById('newUserCarrerasGroup');
+    grupo.querySelectorAll('input').forEach((cb) => { cb.checked = carreras.includes(cb.value); });
+    grupo.dispatchEvent(new window.Event('change', { bubbles: true }));
+    document.getElementById('newUserClaveInput').value = clave;
+    document.getElementById('newUserClaveInput').dispatchEvent(new window.Event('input', { bubbles: true }));
+}
+
 describe('Setup — gating del botón', () => {
-    test('actualizarGatingSetup habilita el botón solo con nombre no vacío', () => {
+    test('actualizarGatingSetup habilita el botón solo con nombre + 1-2 carreras + clave de 6 dígitos', () => {
         const input = document.getElementById('newUserNombre');
         const btn = document.getElementById('completeRegistroBtn');
 
@@ -100,14 +110,32 @@ describe('Setup — gating del botón', () => {
 
         input.value = 'Ana';
         actualizarGatingSetup();
+        assert.equal(btn.disabled, true); // nombre solo no basta — faltan carrera(s)/clave
+
+        completarCarrerasYClave();
+        actualizarGatingSetup();
         assert.equal(btn.disabled, false);
     });
 
     test('escribir en el input de nombre dispara el gating automáticamente', () => {
+        completarCarrerasYClave();
         const input = document.getElementById('newUserNombre');
         input.value = 'Ana';
         input.dispatchEvent(new window.Event('input', { bubbles: true }));
         assert.equal(document.getElementById('completeRegistroBtn').disabled, false);
+    });
+
+    test('clave con formato inválido (no 6 dígitos) mantiene el botón deshabilitado', () => {
+        document.getElementById('newUserNombre').value = 'Ana';
+        completarCarrerasYClave({ clave: '12' });
+        assert.equal(document.getElementById('completeRegistroBtn').disabled, true);
+    });
+
+    test('marcar una 3ª carrera la deja disabled — máx. 2 (aplicarLimiteCheckboxes)', () => {
+        completarCarrerasYClave({ carreras: ['Economía', 'Derecho'] });
+        const checkboxes = [...document.querySelectorAll('#newUserCarrerasGroup input')];
+        const sinMarcar = checkboxes.find((cb) => !cb.checked);
+        assert.equal(sinMarcar.disabled, true);
     });
 });
 
@@ -124,6 +152,7 @@ describe('Setup — completar registro', () => {
         await firebaseMock.triggerAuthState({ uid: 'u1', email: 'nuevo@test.com' });
         document.getElementById('newUserNombre').value = 'Ana Nueva';
         document.getElementById('newUserRole').value = 'estudiante';
+        completarCarrerasYClave({ carreras: ['Economía', 'Derecho'], clave: '654321' });
 
         document.getElementById('completeRegistroBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
         await esperar();
@@ -131,6 +160,11 @@ describe('Setup — completar registro', () => {
         const perfil = firebaseMock.leerDoc('usuarios', 'u1');
         assert.equal(perfil.nombre, 'Ana Nueva');
         assert.equal(perfil.rol, 'estudiante');
+        // El orden viene de leer los checkboxes marcados en orden del DOM
+        // (alfabético del catálogo, ver crearCheckboxesCarreras) — no del
+        // orden en que se marcaron: "Derecho" antes que "Economía".
+        assert.deepEqual(perfil.carreras, ['Derecho', 'Economía']);
+        assert.equal(perfil.claveUnica, '654321');
         assert.equal(document.getElementById('view-dashboard').classList.contains('hidden'), false);
     });
 

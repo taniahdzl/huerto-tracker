@@ -147,16 +147,31 @@ export function createFirebaseMock() {
     }
 
     // ── Escrituras ───────────────────────────────────────────────────
+    // Resuelve los sentinels que updateDoc puede recibir en vez de un
+    // valor literal — increment() y arrayUnion() (agregado para
+    // proyectos.js.agregarPasoAProyecto). arrayUnion dedupea por
+    // IGUALDAD DE VALOR (JSON.stringify), mismo criterio que el Firestore
+    // real para arrays de objetos — agregar el mismo paso dos veces no
+    // duplica la entrada.
     function aplicarIncrementos(existente, datos) {
         const resultado = { ...existente };
         Object.entries(datos).forEach(([campo, valor]) => {
             if (valor && typeof valor === 'object' && '__increment' in valor) {
                 resultado[campo] = (existente?.[campo] || 0) + valor.__increment;
+            } else if (valor && typeof valor === 'object' && '__arrayUnion' in valor) {
+                const actual = existente?.[campo] || [];
+                const existentesJSON = actual.map((v) => JSON.stringify(v));
+                const nuevos = valor.__arrayUnion.filter((v) => !existentesJSON.includes(JSON.stringify(v)));
+                resultado[campo] = [...actual, ...nuevos];
             } else {
                 resultado[campo] = valor;
             }
         });
         return resultado;
+    }
+
+    function arrayUnion(...valores) {
+        return { __arrayUnion: valores };
     }
 
     async function addDoc(collectionRef, datos) {
@@ -223,6 +238,30 @@ export function createFirebaseMock() {
         return () => {};
     }
 
+    // ── Storage ──────────────────────────────────────────────────────
+    // Subconjunto usado por storage.js: storageRef/uploadBytes/
+    // getDownloadURL. path (string) -> blob subido. getDownloadURL sobre
+    // un path nunca subido lanza, mismo criterio "no inventar" que el
+    // resto del mock (ver updateDoc sobre doc inexistente arriba).
+    const archivosStorage = new Map();
+    const storage = { __tipo: 'storage' };
+
+    function storageRef(_storage, path) {
+        return { __tipo: 'storageRef', path };
+    }
+
+    async function uploadBytes(ref, blob) {
+        archivosStorage.set(ref.path, blob);
+        return { ref };
+    }
+
+    async function getDownloadURL(ref) {
+        if (!archivosStorage.has(ref.path)) {
+            throw new Error(`[firebase-mock] getDownloadURL sobre archivo inexistente: ${ref.path}`);
+        }
+        return `mock://storage/${ref.path}`;
+    }
+
     // ── Auth ─────────────────────────────────────────────────────────
     const authState = { currentUser: null, callback: null };
     let signInResultado = null;
@@ -258,7 +297,8 @@ export function createFirebaseMock() {
         quimicos:    'catalogo_quimicos',
         inventario:  'inventario_general',
         historial:   'historial_cultivo',
-        bitacora:    'bitacora_sesiones'
+        bitacora:    'bitacora_sesiones',
+        proyectos:   'proyectos'
     };
 
     return {
@@ -269,10 +309,11 @@ export function createFirebaseMock() {
             onSnapshot,
             addDoc, updateDoc, deleteDoc, setDoc, getDoc, getDocs,
             query, where, orderBy, limit, serverTimestamp, Timestamp,
-            writeBatch, increment,
+            writeBatch, increment, arrayUnion,
             getCountFromServer,
             GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
-            auth
+            auth,
+            storage, storageRef, uploadBytes, getDownloadURL
         },
 
         // ── Controles para los tests ─────────────────────────────────
@@ -291,6 +332,7 @@ export function createFirebaseMock() {
             authState.currentUser = null;
             signInResultado = null;
             signInError = null;
+            archivosStorage.clear();
         },
         leerColeccion(path) {
             return leerTodos(path).map(({ id, datos }) => ({ id, ...clonar(datos) }));

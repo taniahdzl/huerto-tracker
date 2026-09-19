@@ -9,6 +9,7 @@
 // (Fase 14.1) para no duplicar el fallback nombre→email→id aquí.
 
 import { nombreParaMostrar } from '../services/session.js';
+import { CARRERAS, calcularHorasObjetivo } from '../shared/catalogos.js';
 
 // ── Shape de `plantas` (catalogo_semillas) ─────────────────────────
 // Verificado contra scripts/upload.js (única fuente real de estos datos):
@@ -110,17 +111,32 @@ export function crearLeyendaCategorias() {
 // 14.6b) las reutiliza para el panel de arrastre de view-gemelo.
 
 // ── Shape de `tareas` ────────────────────────────────────────────
-//   { id, titulo, estado: "pendiente"|"completada", asignados: [uid,...],
+//   { id, titulo, tipo: "asistencia"|"individual",
+//     origen: "asignada"|"autoasignada", creadorId: uid|null,
+//     estado: "pendiente"|"en_revision"|"completada"|"rechazada",
+//     motivoRechazo: string|null, asignados: [uid,...],
+//     horasAOtorgar: number, fotoEvidenciaUrl: string|null,
 //     fechaCreacion, asignadosNombres: [string,...] }
 // `asignadosNombres` es opcional y se denormaliza en main.js (mismo patrón
 // que plantaNombre/plantaTipo en camas) — este módulo no conoce el
 // directorio de usuarios, solo pinta lo que ya viene resuelto.
+//
+// Tareas autoasignadas con aprobación de admin (2026-09-06): `origen`
+// puede faltar en documentos viejos — se trata como 'asignada', mismo
+// default que _datosNuevaTarea/firestore.rules (ver chores.js). Solo la
+// rama 'autoasignada' conoce estados nuevos ('en_revision'/'rechazada');
+// 'en_revision' está congelada a propósito — no se pinta NINGÚN botón ahí,
+// ni siquiera para admin (esa resolución vive en el panel de revisión de
+// Admin, no en esta lista, ver renderRevisionTareas/vista-admin.js).
 
-export function renderListaTareas(tareas, contenedor, onCompletarClick, { esAdmin = false } = {}) {
+export function renderListaTareas(tareas, contenedor, callbacks, { esAdmin = false, uidActual = null } = {}) {
+    const { onCompletar, onEditar, onEliminar } = callbacks;
     const fragment = document.createDocumentFragment();
 
     tareas.forEach((tarea) => {
+        const origen = tarea.origen === 'autoasignada' ? 'autoasignada' : 'asignada';
         const completada = tarea.estado === 'completada';
+        const esCreador = uidActual != null && tarea.creadorId === uidActual;
 
         const li = document.createElement('li');
         li.className = completada ? 'chore-item completada' : 'chore-item';
@@ -141,20 +157,267 @@ export function renderListaTareas(tareas, contenedor, onCompletarClick, { esAdmi
             : 'Sin asignar';
         info.appendChild(asignados);
 
+        if (origen === 'autoasignada' && tarea.estado === 'en_revision') {
+            const estadoTag = document.createElement('span');
+            estadoTag.className = 'chore-item-asignados';
+            estadoTag.textContent = 'En revisión — esperando aprobación del admin';
+            info.appendChild(estadoTag);
+        }
+
+        if (origen === 'autoasignada' && tarea.estado === 'rechazada' && tarea.motivoRechazo) {
+            const motivo = document.createElement('p');
+            motivo.className = 'admin-auditoria-error';
+            motivo.textContent = `Rechazada: ${tarea.motivoRechazo}`;
+            info.appendChild(motivo);
+        }
+
         li.appendChild(info);
 
-        // RBAC de cliente: la seguridad real está en firestore.rules
-        // (create/update/delete de `tareas` es admin-only) — esto solo
-        // evita ofrecer un botón que el backend va a rechazar.
-        if (!completada && esAdmin) {
-            const btn = document.createElement('button');
-            btn.className = 'chore-complete-btn';
-            btn.textContent = '✅ Completar';
-            btn.addEventListener('click', () => onCompletarClick(tarea.id));
-            li.appendChild(btn);
+        // Miniatura de evidencia: solo si la tarea ya tiene una (se llena
+        // al completar/enviar a revisión) — si no existe, no se fuerza
+        // ningún estado vacío/placeholder.
+        if (completada && tarea.fotoEvidenciaUrl) {
+            const foto = document.createElement('img');
+            foto.className = 'chore-item-evidencia';
+            foto.src = tarea.fotoEvidenciaUrl;
+            foto.alt = 'Evidencia de la tarea';
+            li.appendChild(foto);
+        }
+
+        // RBAC de cliente: la seguridad real está en firestore.rules —
+        // esto solo evita ofrecer un botón que el backend va a rechazar.
+        if (!completada && tarea.estado !== 'en_revision') {
+            if (origen === 'asignada' && esAdmin) {
+                const btn = document.createElement('button');
+                btn.className = 'chore-complete-btn';
+                btn.textContent = '✅ Completar';
+                btn.addEventListener('click', () => onCompletar(tarea.id));
+                li.appendChild(btn);
+            }
+
+            if (origen === 'autoasignada' && esCreador && tarea.estado === 'pendiente') {
+                const editarBtn = document.createElement('button');
+                editarBtn.className = 'chore-complete-btn';
+                editarBtn.textContent = '✏️ Editar';
+                editarBtn.addEventListener('click', () => onEditar(tarea.id));
+                li.appendChild(editarBtn);
+
+                const eliminarBtn = document.createElement('button');
+                eliminarBtn.className = 'chore-complete-btn catalogo-eliminar-btn';
+                eliminarBtn.textContent = '🗑️ Eliminar';
+                eliminarBtn.addEventListener('click', () => onEliminar(tarea.id));
+                li.appendChild(eliminarBtn);
+            }
+
+            if (origen === 'autoasignada' && esCreador && tarea.estado === 'rechazada') {
+                const reenviarBtn = document.createElement('button');
+                reenviarBtn.className = 'chore-complete-btn';
+                reenviarBtn.textContent = '✏️ Editar y reenviar';
+                reenviarBtn.addEventListener('click', () => onEditar(tarea.id));
+                li.appendChild(reenviarBtn);
+            }
         }
 
         fragment.appendChild(li);
+    });
+
+    contenedor.replaceChildren(fragment);
+}
+
+// ── Panel de revisión de Admin (tareas autoasignadas en 'en_revision') ──
+// Multi-selección: solo alimenta "Aprobar seleccionadas"/"Aprobar todas"
+// (acciones masivas sin pedir texto) — el rechazo se dejó deliberadamente
+// FUERA de la selección múltiple: el motivo debe ser específico de cada
+// tarea (es lo único que le dice al creador qué corregir), así que
+// "rechazar" siempre se dispara fila por fila con su propio textarea, sin
+// un botón "Rechazar seleccionadas" que ofrecería un motivo compartido o
+// N modales en cadena por el mismo costo de clics que ya tiene ir fila por
+// fila. Documentado así por pedido explícito de dejar registrada la
+// decisión de UX (ver diagnóstico de esta fase).
+export function renderRevisionTareas(tareas, contenedor, { seleccionadas, onToggleSeleccion, onAprobar, onRechazar }) {
+    const fragment = document.createDocumentFragment();
+
+    tareas.forEach((tarea) => {
+        const li = document.createElement('li');
+        li.className = 'chore-item';
+        li.dataset.tareaId = tarea.id;
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = seleccionadas.has(tarea.id);
+        checkbox.addEventListener('change', () => onToggleSeleccion(tarea.id, checkbox.checked));
+        li.appendChild(checkbox);
+
+        const info = document.createElement('div');
+        info.className = 'chore-item-info';
+
+        const titulo = document.createElement('span');
+        titulo.className = 'chore-item-titulo';
+        titulo.textContent = tarea.titulo || 'Sin título';
+        info.appendChild(titulo);
+
+        const asignados = document.createElement('span');
+        asignados.className = 'chore-item-asignados';
+        asignados.textContent = (tarea.asignadosNombres && tarea.asignadosNombres.length)
+            ? tarea.asignadosNombres.join(', ')
+            : 'Sin asignar';
+        info.appendChild(asignados);
+
+        const meta = document.createElement('span');
+        meta.className = 'chore-item-asignados';
+        meta.textContent = `${tarea.horasAOtorgar || 0}h a otorgar si se aprueba`;
+        info.appendChild(meta);
+
+        li.appendChild(info);
+
+        if (tarea.fotoEvidenciaUrl) {
+            const foto = document.createElement('img');
+            foto.className = 'chore-item-evidencia';
+            foto.src = tarea.fotoEvidenciaUrl;
+            foto.alt = 'Evidencia de la tarea';
+            li.appendChild(foto);
+        }
+
+        const aprobarBtn = document.createElement('button');
+        aprobarBtn.className = 'chore-complete-btn';
+        aprobarBtn.textContent = '✅ Aprobar';
+        aprobarBtn.addEventListener('click', () => onAprobar(tarea.id));
+        li.appendChild(aprobarBtn);
+
+        const rechazarBtn = document.createElement('button');
+        rechazarBtn.className = 'chore-complete-btn catalogo-eliminar-btn';
+        rechazarBtn.textContent = '❌ Rechazar';
+        rechazarBtn.addEventListener('click', () => onRechazar(tarea.id));
+        li.appendChild(rechazarBtn);
+
+        fragment.appendChild(li);
+    });
+
+    contenedor.replaceChildren(fragment);
+}
+
+// ── Shape de `proyectos` con progreso ya resuelto (obtenerProyectosConProgreso) ──
+//   { id, nombre, descripcion, fechaObjetivo: 'YYYY-MM-DD'|null,
+//     estado: 'activo'|'completado'|'pausado',
+//     pasos: [ { tareaId, orden, tarea: {..tarea completa..}|null } ] (ordenados por orden),
+//     totalPasos, pasosCompletados }
+// `tarea` es null si la tarea referenciada ya se borró — este módulo no
+// inventa un placeholder de datos, solo decide cómo mostrarlo (título
+// "(tarea eliminada)").
+
+// Umbral de "fecha límite cercana" para el badge rosa — no hay un umbral
+// ya establecido en el proyecto para reusar (confirmado, ver diagnóstico
+// de esta fase), así que se fija acá como constante ajustable.
+const DIAS_FECHA_CERCANA = 7;
+
+// Parte PURA (sin DOM) de la decisión de badge, separada de
+// crearBadgeProyecto — mismo criterio que calcularSugerenciaHoras en
+// vista-tareas.js: `ahora` inyectable (default new Date()) para que la
+// rama de fecha sea testeable sin depender del día real del sistema.
+// Solo un badge por tarjeta, prioridad: fecha cercana (más urgente) >
+// activo (genérico) > nada (proyecto pausado/completado). "sin fecha = sin
+// badge" del diseño aprobado se cumple naturalmente: sin fechaObjetivo, la
+// rama de fecha cercana nunca aplica y cae al badge de activo (o a ninguno
+// si no es activo). Exportada para poder testearla directo, sin jsdom.
+export function calcularBadgeProyecto(proyecto, ahora = new Date()) {
+    if (proyecto.estado === 'activo' && proyecto.fechaObjetivo) {
+        const objetivo = new Date(proyecto.fechaObjetivo + 'T00:00:00');
+        const diasRestantes = Math.ceil((objetivo - ahora) / 86400000);
+        if (diasRestantes <= DIAS_FECHA_CERCANA) {
+            return { tipo: 'fecha', texto: proyecto.fechaObjetivo };
+        }
+    }
+    if (proyecto.estado === 'activo') {
+        return { tipo: 'activo', texto: 'Activo' };
+    }
+    return null;
+}
+
+function crearBadgeProyecto(proyecto) {
+    const info = calcularBadgeProyecto(proyecto);
+    if (!info) return null;
+    const badge = document.createElement('span');
+    badge.className = info.tipo === 'fecha' ? 'proyecto-badge proyecto-badge-fecha' : 'proyecto-badge proyecto-badge-activo';
+    badge.textContent = info.texto;
+    return badge;
+}
+
+export function renderGaleriaProyectos(proyectos, contenedor, onClickPaso, { esAdmin = false, onAgregarPaso } = {}) {
+    const fragment = document.createDocumentFragment();
+
+    proyectos.forEach((proyecto) => {
+        const card = document.createElement('div');
+        card.className = 'proyecto-card';
+        card.dataset.proyectoId = proyecto.id;
+
+        const header = document.createElement('div');
+        header.className = 'proyecto-card-header';
+
+        const nombre = document.createElement('h3');
+        nombre.className = 'proyecto-card-nombre';
+        nombre.textContent = proyecto.nombre || 'Sin nombre';
+        header.appendChild(nombre);
+
+        const badge = crearBadgeProyecto(proyecto);
+        if (badge) header.appendChild(badge);
+        card.appendChild(header);
+
+        if (proyecto.descripcion) {
+            const descripcion = document.createElement('p');
+            descripcion.className = 'proyecto-card-descripcion';
+            descripcion.textContent = proyecto.descripcion;
+            card.appendChild(descripcion);
+        }
+
+        const totalPasos = proyecto.totalPasos ?? proyecto.pasos.length;
+        const pasosCompletados = proyecto.pasosCompletados ?? 0;
+        const porcentaje = totalPasos > 0 ? Math.round((pasosCompletados / totalPasos) * 100) : 0;
+
+        const barra = document.createElement('div');
+        barra.className = 'progress-bar';
+        const relleno = document.createElement('div');
+        relleno.className = 'progress-fill proyecto-progress-fill';
+        relleno.style.width = `${porcentaje}%`;
+        barra.appendChild(relleno);
+        card.appendChild(barra);
+
+        const textoProgreso = document.createElement('p');
+        textoProgreso.className = 'proyecto-card-progreso-texto';
+        textoProgreso.textContent = `${pasosCompletados} de ${totalPasos} pasos completados`;
+        card.appendChild(textoProgreso);
+
+        const checklist = document.createElement('ul');
+        checklist.className = 'proyecto-checklist';
+        proyecto.pasos.forEach((paso) => {
+            const li = document.createElement('li');
+            li.className = 'proyecto-checklist-item';
+            li.dataset.tareaId = paso.tareaId;
+
+            const completado = paso.tarea?.estado === 'completada';
+            const marca = document.createElement('span');
+            marca.className = 'proyecto-checklist-marca';
+            marca.textContent = completado ? '✅' : '⚪';
+            li.appendChild(marca);
+
+            const titulo = document.createElement('span');
+            titulo.className = 'proyecto-checklist-titulo';
+            titulo.textContent = paso.tarea?.titulo || '(tarea eliminada)';
+            li.appendChild(titulo);
+
+            li.addEventListener('click', () => onClickPaso(paso));
+            checklist.appendChild(li);
+        });
+        card.appendChild(checklist);
+
+        if (esAdmin) {
+            const btnAgregarPaso = document.createElement('button');
+            btnAgregarPaso.className = 'chore-complete-btn';
+            btnAgregarPaso.textContent = '+ Agregar paso';
+            btnAgregarPaso.addEventListener('click', () => onAgregarPaso(proyecto.id));
+            card.appendChild(btnAgregarPaso);
+        }
+
+        fragment.appendChild(card);
     });
 
     contenedor.replaceChildren(fragment);
@@ -321,6 +584,12 @@ export function renderListaBitacora(sesiones, contenedor, onExpandirClick) {
 // `estudiantes` viene de obtenerDirectorioEstudiantes() — ya trae
 // horasTotales, ver diagnóstico de Fase 13.8. Orden descendente aplicado
 // aquí, sin mutar el array recibido.
+//
+// Carrera(s)/Clave Única/barra de progreso (2026-09-18): un estudiante con
+// perfil de antes de este cambio no tiene `carreras` todavía (`null`/
+// `undefined` hasta que inicie sesión y pase por el gate de
+// view-completar-perfil, ver main.js) — se muestra "—" en vez de inventar
+// un valor, mismo criterio "no inventar defaults" del resto del proyecto.
 export function renderResumenHoras(estudiantes, contenedor) {
     const fragment = document.createDocumentFragment();
     const ordenados = [...estudiantes].sort((a, b) => (b.horasTotales ?? 0) - (a.horasTotales ?? 0));
@@ -332,12 +601,75 @@ export function renderResumenHoras(estudiantes, contenedor) {
         nombre.textContent = nombreParaMostrar(estudiante);
         tr.appendChild(nombre);
 
+        const carrerasTd = document.createElement('td');
+        carrerasTd.textContent = estudiante.carreras?.length ? estudiante.carreras.join(', ') : '—';
+        tr.appendChild(carrerasTd);
+
+        const claveTd = document.createElement('td');
+        claveTd.textContent = estudiante.claveUnica || '—';
+        tr.appendChild(claveTd);
+
         const horas = document.createElement('td');
         horas.textContent = estudiante.horasTotales ?? 0;
         tr.appendChild(horas);
+
+        const progresoTd = document.createElement('td');
+        if (estudiante.carreras?.length) {
+            progresoTd.appendChild(crearBarraProgresoHoras(estudiante.horasTotales ?? 0, calcularHorasObjetivo(estudiante.carreras)));
+        } else {
+            progresoTd.textContent = '—';
+        }
+        tr.appendChild(progresoTd);
 
         fragment.appendChild(tr);
     });
 
     contenedor.replaceChildren(fragment);
+}
+
+// Perfil (propio) y Resumen de Horas (Admin/reportes) — misma barra en
+// ambos lugares, ver AI_CONTEXT.md. El ancho se limita a 100% aunque el
+// objetivo ya se haya superado (evita que el relleno se vea "roto" o
+// desbordado); el texto sí muestra el número real de horas, sin tope.
+export function crearBarraProgresoHoras(horasTotales, horasObjetivo) {
+    const porcentaje = horasObjetivo > 0 ? Math.round((horasTotales / horasObjetivo) * 100) : 0;
+
+    const contenedor = document.createElement('div');
+    contenedor.className = 'horas-progreso';
+
+    const barra = document.createElement('div');
+    barra.className = 'progress-bar';
+    const relleno = document.createElement('div');
+    relleno.className = 'progress-fill horas-progress-fill';
+    relleno.style.width = `${Math.min(porcentaje, 100)}%`;
+    barra.appendChild(relleno);
+    contenedor.appendChild(barra);
+
+    const texto = document.createElement('p');
+    texto.className = 'horas-progreso-texto';
+    texto.textContent = `${horasTotales} de ${horasObjetivo} horas (${porcentaje}%)`;
+    contenedor.appendChild(texto);
+
+    return contenedor;
+}
+
+// Checkboxes de carrera — usados en Setup, view-completar-perfil (gate de
+// usuarios existentes) y Perfil (edición posterior). El límite de máx. 2
+// marcadas NO se aplica acá (esto solo pinta) — lo aplica
+// aplicarLimiteCheckboxes (shared/core-ui.js) sobre el contenedor real,
+// después de insertar este fragment.
+export function crearCheckboxesCarreras(seleccionadas = []) {
+    const fragment = document.createDocumentFragment();
+    CARRERAS.forEach((carrera) => {
+        const label = document.createElement('label');
+        label.className = 'carrera-checkbox-chip';
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.value = carrera;
+        input.checked = seleccionadas.includes(carrera);
+        label.appendChild(input);
+        label.append(carrera);
+        fragment.appendChild(label);
+    });
+    return fragment;
 }

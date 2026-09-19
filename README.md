@@ -1,19 +1,26 @@
-# 🌿 Huerto Universitario — Tracker Interactivo
+# 🌿 Huerto Universitario — Gemelo Digital
 
-Una aplicación web para el seguimiento colaborativo del huerto urbano universitario. Permite al equipo visualizar el layout del huerto, rastrear fechas de siembra y trasplante, monitorear niveles de nutrientes del suelo, y recibir alertas de cosecha — todo sincronizado en tiempo real vía Firebase.
+Aplicación web (SPA) para el seguimiento colaborativo del huerto urbano universitario. El equipo visualiza el huerto como un mapa en espiral interactivo (pan/zoom + drag&drop), registra siembras/trasplantes/cosechas, administra tareas asignadas por rol, y lleva bitácora y auditoría de actividad — todo sincronizado en tiempo real vía Cloud Firestore.
 
-**[Ver demo en vivo →](https://tu-usuario.github.io/huerto-tracker)**
+**Repo:** https://github.com/taniahdzl/huerto-tracker
 
 ---
 
 ## ¿Qué hace?
 
-- **Mapa visual del huerto** — cada mesa de cultivo (cama) se muestra en un grid interactivo con indicadores de estado
-- **Alertas automáticas** — calcula cuándo cosechar, transplantar, o añadir nutrientes basándose en la base de datos de plantas
-- **Niveles de suelo** — seguimiento de Nitrógeno (N), Fósforo (P) y Potasio (K) por mesa
-- **Sincronización en tiempo real** — todo el equipo ve los mismos datos vía Firebase Realtime Database
-- **Asistente IA** — integración con Gemini API para consultas en lenguaje natural ("¿cuándo cosechamos las zanahorias?")
-- **Base de datos de 35 plantas** — con datos de fotoperiodo, consumo hídrico, temperaturas, espaciado y requerimientos de nutrientes
+- **Dashboard** — resumen del estado general del huerto y banner de bitácora reciente
+- **Gemelo digital** — mapa del huerto en espiral (SVG dibujado a mano, sin `innerHTML`), con pan/zoom (rueda, pellizco, botones) y drag&drop de plantas desde el catálogo, mobile-first con Pointer Events
+- **Tareas** — asignación y seguimiento de tareas por estudiante. Cada tarea es `tipo:'asistencia'` (otorga horas, foto de evidencia obligatoria al completar) o `tipo:'individual'` (foto opcional, horas opcionales). Las horas a otorgar se declaran explícitas al crear la tarea — el formulario sugiere 15h si se crea en sábado, editable — ya no dependen del día en que se completa
+- **Proyectos** — galería de tarjetas que *organiza* tareas existentes en pasos ordenados, sin duplicarlas (`tareas.proyectoId`, opcional). El progreso de cada tarjeta (barra + "N de M pasos") se recalcula siempre desde el estado real de las tareas referenciadas — nunca un contador aparte. Completar un paso reusa el mismo flujo/modal de Tareas, así que otorga horas exactamente igual (sin camino alterno)
+- **Catálogos** — catálogo de semillas/plantas y camas de cosecha
+- **Bitácora** — registro de sesiones de trabajo
+- **Perfil** — cada usuario gestiona su propio rol (`estudiante`/`externo`) y ve sus horas
+- **Admin** — panel de ajuste de horas + log de auditoría de actividad con filtros (solo rol `admin`)
+- **RBAC real** vía Firebase Auth + Firestore: reglas de seguridad distinguen `admin` de `estudiante`/`externo`, y ningún usuario puede autoasignarse `admin`
+
+> El asistente de IA (`js/services/ai.js`) es un **stub sin conectar** — GitHub Pages/Vercel es hosting estático, así que no hay dónde esconder una API key de Gemini sin una Cloud Function intermedia. No implementar la llamada real hasta que exista ese backend.
+
+> **Proyectos está completo en código y con tests (Firestore mockeado), pero sin confirmar en un navegador real** — mismo estado pendiente que la foto de evidencia de Storage (ver más abajo). Antes de darlo por cerrado, alguien necesita entrar y confirmar que la galería, los badges y el checklist se ven/sienten bien de verdad.
 
 ---
 
@@ -21,173 +28,101 @@ Una aplicación web para el seguimiento colaborativo del huerto urbano universit
 
 ```
 huerto-tracker/
-├── index.html        # Aplicación completa (single-file)
-├── README.md         # Este archivo
-└── data/
-    └── plantas.csv   # Base de datos de plantas (fuente original)
+├── index.html              # Shell de la SPA (~555 líneas) — solo HTML de vistas
+├── css/
+│   ├── variables.css        # Design tokens
+│   ├── main.css              # Esqueleto de página (reset, header, mecánica de vistas)
+│   └── components.css        # Widgets reutilizables (botones, modales, tarjetas, badges)
+├── js/
+│   ├── main.js               # Raíz de composición: bootstrap de sesión + nav
+│   ├── services/              # Sin DOM: firebase.js, db.js, auth.js, usuarios.js, chores.js, session.js, storage.js, proyectos.js
+│   ├── render/                 # UI pura, sin Firebase: geometría y render del espiral
+│   ├── shared/                  # Hojas compartidas entre vistas: router, core-ui, estado-app
+│   └── views/                    # Una vista por archivo (vista-dashboard, vista-gemelo, vista-tareas, vista-proyectos, ...)
+├── test/                    # node --test + jsdom + mock de Firestore/Auth en memoria
+├── scripts/
+│   ├── generate-config.js   # Genera js/services/config.js desde variables de entorno FIREBASE_* (buildCommand de Vercel)
+│   └── upload.js             # Script puntual de carga inicial de plantas.csv a Firestore (requiere serviceAccountKey.json local, no forma parte del flujo normal)
+├── firestore.rules          # Reglas de seguridad de Firestore (RBAC por rol)
+├── firestore.indexes.json   # Índices compuestos
+├── storage.rules            # Reglas de seguridad de Cloud Storage (evidencia de tareas) — archivo aparte, no vive en firestore.rules
+└── vercel.json               # Hosting + build (genera config.js en cada deploy)
 ```
 
-La app es intencionalmente un solo archivo HTML sin dependencias de build. Esto facilita el mantenimiento por futuros estudiantes de servicio social sin conocimientos avanzados de desarrollo.
+Ver `AI_CONTEXT.md` para el detalle completo y actualizado de arquitectura, dependencias entre módulos y decisiones de diseño — es la fuente de verdad técnica de este proyecto, más granular que este README.
 
 ---
 
 ## Configuración inicial
 
-### 1. Firebase Realtime Database
+### 1. Cloud Firestore
 
 1. Ve a [Firebase Console](https://console.firebase.google.com/) e inicia sesión con la cuenta del huerto
-2. Crea un nuevo proyecto (o usa uno existente)
-3. En el menú lateral ve a **Build → Realtime Database → Create Database**
-4. Elige la región más cercana (us-central suele funcionar bien desde México)
-5. Inicia en **modo de prueba** por ahora
-6. Copia la URL de la base de datos — tiene este formato:
+2. Crea (o usa) el proyecto y habilita **Firestore** (no Realtime Database)
+3. Despliega `firestore.rules` y `firestore.indexes.json` con la Firebase CLI:
+   ```bash
+   npx -y firebase-tools@latest deploy --only firestore:rules,firestore:indexes
    ```
-   https://tu-proyecto-default-rtdb.firebaseio.com
-   ```
+   Las reglas ya están versionadas en este repo y reflejan lo que corre en producción — no las reescribas desde la consola sin actualizar también el archivo.
 
-#### Reglas de seguridad recomendadas
+### 2. Configuración de Firebase para el cliente
 
-Una vez que el equipo esté listo, reemplaza las reglas en Firebase Console → Realtime Database → Rules con esto:
+`js/services/config.js` **no se commitea** (está en `.gitignore`) y `js/services/firebase.js` falla rápido si falta o si sigue con el placeholder.
 
-```json
-{
-  "rules": {
-    "beds": {
-      ".read": true,
-      ".write": "auth != null"
-    }
-  }
-}
-```
+- **Local:** copia `js/services/config.example.js` a `js/services/config.js` y reemplaza los valores reales (Firebase Console → Configuración del proyecto → General).
+- **Producción (Vercel):** no se edita `config.js` a mano — `vercel.json` corre `node scripts/generate-config.js` como `buildCommand`, que genera ese archivo a partir de las variables de entorno `FIREBASE_API_KEY`, `FIREBASE_AUTH_DOMAIN`, `FIREBASE_PROJECT_ID`, `FIREBASE_STORAGE_BUCKET`, `FIREBASE_APP_ID` (configúralas en Vercel → Settings → Environment Variables). El build falla explícitamente si falta alguna.
 
-Esto permite que cualquiera *lea* el mapa (útil para consulta rápida desde el celular) pero solo usuarios autenticados puedan *escribir*. Si quieren restringir también la lectura, cambien `.read` a `"auth != null"`.
+### 3. Cloud Storage (foto de evidencia de tareas)
 
-### 2. Gemini API Key
+Usado para la foto obligatoria de tareas `tipo:'asistencia'` (opcional en `tipo:'individual'`). Es la primera vez que el proyecto usa Storage — no hay nada que migrar.
 
-1. Ve a [Google AI Studio](https://aistudio.google.com/app/apikey)
-2. Haz click en **Create API Key**
-3. Copia la key — empieza con `AIza...`
+> ⚠️ **Requiere el plan Blaze de Firebase** (pago por uso) desde feb-2026 — no funciona en el plan Spark gratuito. Activa Storage por primera vez desde Firebase Console → Build → Storage → Get Started (esto crea el bucket) y luego despliega las reglas:
+> ```bash
+> npx -y firebase-tools@latest deploy --only storage
+> ```
+> Mientras el proyecto siga en Spark, la funcionalidad de foto de evidencia está completa en código pero no se puede probar de verdad — la subida fallará.
 
-> ⚠️ **Importante:** No subas tu API key directamente al repositorio si este es público. Guárdala localmente en la app vía el panel de configuración (se guarda en `localStorage` del navegador de cada usuario, nunca en el repo).
+### 4. Usuarios y roles
 
-### 3. Configurar la app
-
-1. Abre la app en el navegador
-2. Haz click en **⚙ Configurar** (esquina superior derecha)
-3. Ingresa:
-   - Firebase Database URL
-   - Gemini API Key
-   - Número de columnas y filas del huerto real
-   - Nombre del huerto
-4. Guarda — los datos se sincronizan automáticamente
+No hay registro público de administradores: un usuario nuevo solo puede crearse con rol `estudiante` o `externo`; la promoción a `admin` se hace manualmente desde Firestore por quien ya sea admin.
 
 ---
 
-## Cómo usar
-
-### Agregar una mesa de cultivo
-- Haz click en **+ Mesa** para crear una nueva cama con posición en el grid
-- O arrastra una planta del catálogo izquierdo directamente sobre una mesa vacía
-
-### Registrar siembra o trasplante
-- Haz click sobre cualquier mesa → **✏ Editar**
-- Selecciona la planta, ingresa la fecha de siembra y/o trasplante
-- Ajusta los niveles de nutrientes del suelo con los sliders
-
-### Entender las alertas visuales
-| Color / efecto | Significado |
-|---|---|
-| 🔴 Rojo pulsante | Cosechar ya / nutriente crítico |
-| 🟡 Naranja pulsante | Cosechar en menos de 14 días |
-| 🟣 Morado | Necesita trasplante pronto |
-| Puntos de colores en la mesa | Alertas específicas (hover para ver detalle) |
-
-### Consultar el asistente IA
-- Abre el panel **🤖 Asistente IA** en la esquina inferior derecha
-- Ejemplos de preguntas útiles:
-  - *"¿Qué mesas necesitan atención esta semana?"*
-  - *"El potasio está bajo en la mesa A2, ¿qué hago?"*
-  - *"¿Podemos plantar cilantro junto a la tomatera?"*
-  - *"¿Cuándo es el mejor momento para cosechar la zanahoria de la mesa B1?"*
-
----
-
-## Actualizar la base de datos de plantas
-
-Las plantas están definidas en el array `PLANTS` dentro de `index.html` (línea ~18). Cada planta tiene esta estructura:
-
-```javascript
-{
-  id: 'NOMBRE_ID',
-  name: 'Nombre visible',
-  type: 'hoja|raíz|fruto|flor|tallo|semilla',
-  emoji: '🌿',
-  daysSeed: [min, max],        // días desde siembra hasta cosecha
-  daysTransplant: [min, max],  // días desde trasplante hasta cosecha (null si no aplica)
-  rootDepth: [min, max],       // profundidad de raíz en cm
-  N: 1.5,                      // requerimiento de nitrógeno (relativo)
-  P: 1.0,                      // requerimiento de fósforo
-  K: 1.2,                      // requerimiento de potasio
-  waterMm: [min, max],         // consumo hídrico mm/semana
-  minTemp: 5,                  // temperatura mínima °C
-  optTemp: '15-22',            // temperatura óptima
-  maxTemp: 30,
-  photoperiod: '6-8',          // horas de luz requeridas
-  spacing: [min, max],         // cm entre plantas
-  rowSpacing: 40               // cm entre hileras
-}
-```
-
-Para agregar una planta nueva, copia un objeto existente, modifica los valores según el CSV fuente, y agrégalo al array.
-
----
-
-## Despliegue en GitHub Pages
+## Desarrollo y pruebas
 
 ```bash
-# Clonar el repositorio
-git clone https://github.com/tu-usuario/huerto-tracker.git
-cd huerto-tracker
-
-# Hacer cambios...
-
-# Subir cambios
-git add .
-git commit -m "descripción del cambio"
-git push origin main
+npm install     # única dependencia real: jsdom
+npm test        # corre test/*.test.js (node --test + jsdom + mock de Firestore/Auth)
 ```
 
-GitHub Pages se actualiza automáticamente en 1-2 minutos tras cada push. La URL del sitio es:
-```
-https://tu-usuario.github.io/huerto-tracker
-```
+- Usa siempre `npm test`, no `node --test` a secas — el script pasa `--experimental-test-module-mocks`, necesario para el mock de Firestore.
+- CI corre la misma suite en cada push/PR a `main` vía `.github/workflows/test.yml`.
+- Para servir la app localmente, cualquier servidor estático simple funciona (ej. `npx serve .`) una vez que `js/services/config.js` existe.
 
 ---
 
-## Para futuros estudiantes de servicio social
+## Reglas de trabajo vigentes
 
-Si estás tomando el relevo de este proyecto, esto es lo mínimo que necesitas saber:
+- **Mobile-first** — Pointer Events en vez de la API nativa de drag&drop (no dispara en touch).
+- **Nunca `innerHTML`**, ni siquiera en SVG (`createElementNS`/`setAttribute` siempre).
+- Toda escritura a Firestore pasa por un wrapper de log de auditoría (`_logActividad`).
+- La geometría del mapa en espiral vive únicamente en `js/render/geometria-espiral.js` — ningún otro módulo recalcula trigonometría por su cuenta.
+- No inventar valores por defecto ante datos faltantes — se documenta el fallback explícito o se lanza error.
+- No agregar `"type": "module"` a `package.json` — `scripts/generate-config.js` y `scripts/upload.js` usan `require()` de CommonJS y eso rompería el build de producción.
 
-1. **Para cambios de contenido** (agregar plantas, ajustar días de cosecha) — solo edita `index.html` y haz push
-2. **Para ver los datos actuales** — abre la app, los datos vienen de Firebase automáticamente
-3. **Si la app deja de sincronizar** — probablemente expiró el plan gratuito de Firebase o cambiaron las reglas; revisa la consola del navegador (F12) para ver el error
-4. **Si el asistente IA no responde** — la API key de Gemini puede haber expirado o alcanzado el límite gratuito; genera una nueva en Google AI Studio
-5. **Contacto de quien construyó esto** — ver sección de créditos abajo
+Detalle completo, historial de fases y decisiones de diseño: ver `AI_CONTEXT.md`.
 
 ---
 
-## Tecnologías usadas
+## Despliegue
 
-- **HTML/CSS/JS** vanilla — sin frameworks, sin build tools, fácil de mantener
-- **Firebase Realtime Database** — sincronización en tiempo real entre dispositivos
-- **Google Gemini API** — asistente de IA para consultas agronómicas
-- **GitHub Pages** — hosting gratuito y despliegue automático
+El sitio se despliega en **Vercel**, no en GitHub Pages. Cada push a `main` dispara un deploy; el `buildCommand` regenera `js/services/config.js` desde las variables de entorno del proyecto en Vercel antes de publicar.
 
 ---
 
 ## Créditos
 
-Desarrollado como proyecto de **Servicio Social Universitario** por **[Tania Hdz Lira]** · [therna24@itam.mx]
+Desarrollado como proyecto de **Servicio Social Universitario** por **Tania Hdz Lira**.
 
 Datos agronómicos basados en el catálogo de plantas del huerto universitario.
 

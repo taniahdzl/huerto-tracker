@@ -7,8 +7,10 @@
 // en módulos por vista).
 
 import { AuthService } from '../services/auth.js';
-import { obtenerUsuario, actualizarRolPropio, actualizarNombrePropio } from '../services/usuarios.js';
-import { mostrarToast } from '../shared/core-ui.js';
+import { obtenerUsuario, actualizarRolPropio, actualizarNombrePropio, actualizarCarrerasYClavePropia } from '../services/usuarios.js';
+import { crearCheckboxesCarreras, crearBarraProgresoHoras } from '../render/render.js';
+import { calcularHorasObjetivo } from '../shared/catalogos.js';
+import { mostrarToast, aplicarLimiteCheckboxes } from '../shared/core-ui.js';
 import { navegarA } from '../shared/router.js';
 
 const perfilNombreInput      = document.getElementById('perfilNombreInput');
@@ -17,10 +19,25 @@ const perfilGuardarNombreBtn = document.getElementById('perfilGuardarNombreBtn')
 const perfilEmail            = document.getElementById('perfilEmail');
 const perfilRolTexto         = document.getElementById('perfilRolTexto');
 const perfilHoras            = document.getElementById('perfilHoras');
+const perfilBarraProgreso    = document.getElementById('perfilBarraProgreso');
 const perfilRolSelectorGroup = document.getElementById('perfilRolSelectorGroup');
 const perfilRolSelect        = document.getElementById('perfilRolSelect');
 const perfilGuardarRolBtn    = document.getElementById('perfilGuardarRolBtn');
 const perfilLogoutBtn        = document.getElementById('perfilLogoutBtn');
+
+// Carrera(s) + clave única (2026-09-18) — mismo patrón editar/guardar que
+// el nombre arriba, pero con UN botón para los dos campos (viven en la
+// misma unidad de edición: no tiene sentido guardar solo la carrera sin la
+// clave o viceversa, ambos se completan juntos en el mismo gate al crear
+// la cuenta).
+const perfilCarrerasTexto           = document.getElementById('perfilCarrerasTexto');
+const perfilCarrerasGroup           = document.getElementById('perfilCarrerasGroup');
+const perfilClaveTexto               = document.getElementById('perfilClaveTexto');
+const perfilClaveInput               = document.getElementById('perfilClaveInput');
+const perfilEditarCarrerasClaveBtn   = document.getElementById('perfilEditarCarrerasClaveBtn');
+const perfilGuardarCarrerasClaveBtn  = document.getElementById('perfilGuardarCarrerasClaveBtn');
+
+aplicarLimiteCheckboxes(perfilCarrerasGroup, 2);
 
 export function irAVistaPerfil() {
     navegarA('view-perfil');
@@ -40,7 +57,29 @@ async function cargarYRenderizarVistaPerfil() {
         perfilNombreInput.value = perfil.nombre || '';
         bloquearEdicionNombre();
         perfilRolTexto.textContent = perfil.rol;
-        perfilHoras.textContent = `${perfil.horasTotales ?? 0} horas`;
+
+        const horasTotales = perfil.horasTotales ?? 0;
+        perfilHoras.textContent = `${horasTotales} horas`;
+        // Un perfil que llegó a Perfil sin pasar por el gate de
+        // view-completar-perfil (no debería pasar, ver main.js caso 2b) no
+        // tiene `carreras` todavía — sin objetivo no hay barra que pintar,
+        // mismo criterio "no inventar defaults" del resto del proyecto.
+        perfilBarraProgreso.replaceChildren();
+        if (perfil.carreras?.length) {
+            perfilBarraProgreso.appendChild(crearBarraProgresoHoras(horasTotales, calcularHorasObjetivo(perfil.carreras)));
+        }
+
+        perfilCarrerasTexto.textContent = perfil.carreras?.length ? perfil.carreras.join(', ') : 'Sin declarar';
+        perfilClaveTexto.textContent = perfil.claveUnica || 'Sin declarar';
+        perfilCarrerasGroup.replaceChildren(crearCheckboxesCarreras(perfil.carreras || []));
+        // aplicarLimiteCheckboxes (arriba, al cargar el módulo) solo
+        // escucha 'change' sobre este contenedor — replaceChildren no
+        // dispara ese evento por sí solo, así que sin este dispatch manual
+        // el límite de 2 no se reflejaría en `disabled` hasta el próximo
+        // clic si el perfil ya trae 2 carreras marcadas de entrada.
+        perfilCarrerasGroup.dispatchEvent(new Event('change'));
+        perfilClaveInput.value = perfil.claveUnica || '';
+        bloquearEdicionCarrerasClave();
 
         // Un admin nunca se auto-degrada desde aquí — ese cambio, si algún
         // día hace falta, lo hace OTRO admin, no autoservicio.
@@ -116,7 +155,49 @@ async function handleGuardarNombrePropio() {
     }
 }
 
+// Carrera(s) + clave única — mismo criterio de bloqueo/edición que el
+// nombre arriba, un solo par Editar/Guardar para ambos campos (ver
+// comentario junto a su declaración de consts).
+function bloquearEdicionCarrerasClave() {
+    perfilCarrerasTexto.style.display = '';
+    perfilCarrerasGroup.style.display = 'none';
+    perfilClaveTexto.style.display = '';
+    perfilClaveInput.style.display = 'none';
+    perfilEditarCarrerasClaveBtn.style.display = '';
+    perfilGuardarCarrerasClaveBtn.style.display = 'none';
+}
+
+function handleEditarCarrerasClave() {
+    perfilCarrerasTexto.style.display = 'none';
+    perfilCarrerasGroup.style.display = '';
+    perfilClaveTexto.style.display = 'none';
+    perfilClaveInput.style.display = '';
+    perfilEditarCarrerasClaveBtn.style.display = 'none';
+    perfilGuardarCarrerasClaveBtn.style.display = '';
+}
+
+async function handleGuardarCarrerasClavePropia() {
+    const carreras = [...perfilCarrerasGroup.querySelectorAll('input:checked')].map((cb) => cb.value);
+    const claveUnica = perfilClaveInput.value.trim();
+    const user = AuthService.getCurrentUser();
+    if (!user) return;
+
+    perfilGuardarCarrerasClaveBtn.disabled = true;
+    try {
+        await actualizarCarrerasYClavePropia(user.uid, carreras, claveUnica);
+        mostrarToast('Carrera(s) y clave actualizadas', 'green');
+        await cargarYRenderizarVistaPerfil();
+    } catch (e) {
+        console.error('[vista-perfil] Error actualizando carrera(s)/clave:', e);
+        mostrarToast(e.message || 'No se pudo actualizar', 'red');
+    } finally {
+        perfilGuardarCarrerasClaveBtn.disabled = false;
+    }
+}
+
 perfilEditarNombreBtn.addEventListener('click', handleEditarNombre);
 perfilGuardarNombreBtn.addEventListener('click', handleGuardarNombrePropio);
 perfilGuardarRolBtn.addEventListener('click', handleGuardarRolPropio);
+perfilEditarCarrerasClaveBtn.addEventListener('click', handleEditarCarrerasClave);
+perfilGuardarCarrerasClaveBtn.addEventListener('click', handleGuardarCarrerasClavePropia);
 perfilLogoutBtn.addEventListener('click', () => AuthService.logout());

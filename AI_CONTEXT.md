@@ -1,6 +1,6 @@
 # Contexto del Proyecto: Huerto Universitario (Gemelo Digital)
 
-_Última actualización: 2026-07-25. Reemplaza la versión anterior, que describía
+_Última actualización: 2026-09-06. Reemplaza la versión anterior, que describía
 un estado del proyecto (monolito en `index.html`, JS vacío, API key en
 `localStorage`) que ya no existe._
 
@@ -111,8 +111,11 @@ un estado del proyecto (monolito en `index.html`, JS vacío, API key en
   consumado; el comentario de `db.js` se corrigió para no dar a entender lo
   contrario.
 - **Cobertura de tests completa — TODOS los módulos de `js/` (Fase 23,
-  2026-07-26).** `test/*.test.js`, 223 tests en 20 archivos, corren con
-  `npm test` (= `node --experimental-test-module-mocks --test`). La Fase 21
+  2026-07-26).** `test/*.test.js`, 275 tests en 23 archivos (venía de 223
+  en 20 al cerrar la Fase 23; +16/+1 con `test/storage.test.js` y +36/+2
+  con `test/proyectos.test.js`/`test/vista-proyectos.test.js`, ambos
+  cambios del 2026-08-29 — ver bullets de Storage/Proyectos arriba),
+  corren con `npm test` (= `node --experimental-test-module-mocks --test`). La Fase 21
   (33 tests, solo los 3 módulos sin DOM ni Firebase) dejó pendiente la
   decisión de cómo cubrir el resto — se resolvió así:
   - **jsdom** (única dependencia real del proyecto — primer `package.json`,
@@ -157,9 +160,14 @@ un estado del proyecto (monolito en `index.html`, JS vacío, API key en
     específicos de la interfaz real). El gesto de pellizco (2 punteros
     simultáneos) no se probó — más infraestructura por una ganancia
     marginal sobre lo que ya cubre el zoom de rueda (misma función
-    `zoomHacia` interna). La rama de sábado de `completarTarea()`
-    (`new Date().getDay() === 6`) tampoco se probó — depende del día real
-    del sistema, sin fecha inyectable en el código.
+    `zoomHacia` interna). `comprimirImagen()` (`js/views/vista-tareas.js`,
+    Canvas API para la evidencia de tareas) tampoco se probó — jsdom no
+    implementa un `canvas.getContext('2d')`/`toBlob` reales sin el paquete
+    `canvas`, que no es dependencia de este proyecto; mismo criterio que
+    las exclusiones de arriba. La vieja rama de sábado de `completarTarea()`
+    que documentaba esta misma limitación (sin fecha inyectable) ya no
+    existe — reemplazada por `horasAOtorgar` explícito, ver bullet de
+    rediseño de tareas en la sección 1.
   - **Trampa de aislamiento encontrada 3 veces, misma causa raíz**: estado
     de MÓDULO (no de test) sobrevive entre tests dentro de un mismo archivo
     porque `node --test` corre cada ARCHIVO en un proceso propio, pero
@@ -178,6 +186,244 @@ un estado del proyecto (monolito en `index.html`, JS vacío, API key en
   pan/zoom + drag&drop), tareas, catálogos, perfil, admin — con RBAC por rol
   (`usuarios.js`/`auth.js`) y log de auditoría (`_logActividad` →
   `registro_actividad`, filtrable por tipo/persona/fecha en Admin).
+- **Rediseño de tareas: reemplaza la Regla del Sábado fija (2026-08-29).**
+  `completarTarea()` (`js/services/chores.js`) ya no consulta
+  `new Date().getDay() === 6` para otorgar 15h automáticas — ahora aplica
+  `horasAOtorgar`, campo explícito por tarea que el admin declara al
+  CREARLA (`crearTarea`). El formulario de creación sugiere 15h como
+  default editable cuando el día de creación es sábado y
+  `tipo:'asistencia'` (`calcularSugerenciaHoras`, `js/views/vista-tareas.js`
+  — fecha inyectable a propósito, testeable sin el truco frágil de
+  reemplazar `Date` global que la vieja regla necesitaba).
+  Nuevo campo `tipo: 'asistencia'|'individual'` en `tareas`, sin default
+  (`crearTarea` lanza si falta, mismo criterio "no inventar" del resto del
+  proyecto) — `asistencia` exige foto de evidencia obligatoria al
+  completar, `individual` la deja opcional. Completar ya no es un clic
+  directo: pasa por `completarTareaModal` (modal único para ambos tipos).
+  `registrarAsistencia` (hardcodeaba 15h) se eliminó por quedar muerta tras
+  el rediseño.
+- **Firebase Storage: primera integración del proyecto (2026-08-29).**
+  Antes no existía ninguna (confirmado por grep: solo `storageBucket` sin
+  usar en `config.example.js`). `js/services/storage.js` (nuevo) expone
+  `subirEvidenciaTarea(tareaId, blob)` → sube a
+  `evidencia_tareas/{tareaId}.jpg` (un archivo por tarea, sobrescribe, no
+  versiona) y devuelve la URL de descarga; `js/services/firebase.js` ganó
+  el import del SDK de Storage (mismo patrón de punto único de import,
+  nunca CDN directo desde otro módulo). Reglas en archivo NUEVO y
+  separado, `storage.rules` — NO vive dentro de `firestore.rules`
+  (servicios distintos, lenguajes de reglas distintos) — usa cross-service
+  rules (`firestore.get()`) para verificar `usuarios/{uid}.rol == 'admin'`,
+  mismo campo/valor que `isAdmin()` en Firestore pero sin forma de
+  compartir la función entre los dos archivos: si el campo de rol cambia,
+  hay que actualizar AMBOS. Orden de operaciones en `completarTarea`: la
+  subida a Storage se espera (`await`) ANTES de tocar Firestore — si
+  falla, la función lanza antes del `updateDoc` y la tarea nunca sale de
+  `'pendiente'`, nunca se marca completada sin la evidencia que se
+  suponía que llevaba.
+  **Plan Blaze activado y desplegado a producción (2026-09-18).** El
+  proyecto (`huerto-57477`) subió a Blaze, bucket regional `us-east1`
+  (dentro de la huella de `nam7`, la multi-región donde vive Firestore —
+  ver decisión de ubicación documentada ese mismo día). `firebase deploy
+  --only storage,firestore` corrió limpio, incluyendo el paso de IAM que
+  pide Cloud Storage para las cross-service rules (`firestore.get()` desde
+  `storage.rules`) — se aceptó el rol nuevo. El código de subida está
+  completo y probado con Storage mockeada (`test/storage.test.js`,
+  `test/chores.test.js`), pero NO verificado end-to-end todavía: ni la
+  compresión Canvas (jsdom no la soporta, ver "Límites conocidos de la
+  suite" más abajo) ni la subida real ni `storage.rules` contra una sesión
+  no-admin real se probaron fuera del mock — pendiente de una pasada en
+  navegador real, ver sección 3.
+- **Proyectos: galería de tarjetas que ORGANIZA tareas existentes, nunca
+  las duplica (2026-08-29).** Colección nueva, `proyectos/{id}` (`nombre`,
+  `descripcion`, `fechaObjetivo`, `estado: 'activo'|'completado'|'pausado'`,
+  `pasos: [{tareaId, orden}]`) — la relación con `tareas` es un campo
+  opcional, `tareas.proyectoId` (`null` por default, no rompe tareas
+  sueltas), NO una copia de datos. `tareas.fechaLimite` (opcional,
+  cualquier tarea, no exclusivo de Proyectos) se agregó en el mismo
+  cambio. Las horas de un paso siguen sin camino alterno: completar un
+  paso desde Proyectos reusa `abrirModalCompletarTarea()` (exportada de
+  `vista-tareas.js` para esto) → mismo `completarTarea()`/`_registrarHoras()`
+  de siempre, cero lógica de horas nueva en `proyectos.js`. El progreso de
+  cada tarjeta (`pasosCompletados`/`totalPasos`) se RECALCULA siempre
+  leyendo el estado real de cada tarea referenciada en `pasos`
+  (`obtenerProyectosConProgreso`) — nunca un contador guardado aparte;
+  verificado con un test que mete un `pasosCompletados` corrupto en el doc
+  y confirma que se ignora. `agregarPasoAProyecto` crea la tarea Y agrega
+  la referencia al array `pasos` del proyecto en un solo `writeBatch`
+  atómico (mismo patrón que `_registrarHoras`) — no pudo llamar
+  literalmente a `crearTarea()` (hace su propio `addDoc` fuera de
+  cualquier batch), así que la validación/shape de una tarea nueva se
+  extrajo a `_datosNuevaTarea()` (`chores.js`, exportada) para reusarse sin
+  duplicar el criterio en dos archivos. `arrayUnion` se agregó a
+  `firebase.js` (y a `firebase-mock.js`, con dedupe por valor) por esto —
+  primer uso en el proyecto.
+  **Vista completa en código, NO validada manualmente en navegador —
+  mismo estado que Storage.** `view-proyectos` es una vista propia (no una
+  pestaña de Tareas — la galería de tarjetas es un layout distinto al de
+  lista plana). Badge activo=verde/fecha-cercana=rosa (reusa
+  `--bg-cosecha`, mismo tono que `.admin-auditoria-error`) con la lógica
+  de "días restantes" extraída a `calcularBadgeProyecto()` (fecha
+  inyectable, mismo criterio que `calcularSugerenciaHoras` — ver bullet de
+  arriba, para no repetir el problema de fecha-no-testeable). Barra de
+  progreso: reusa `.progress-bar`/`.progress-fill`, que ya existían en el
+  CSS sin ningún consumidor. Cobertura completa vía tests con Firestore
+  mockeado (`test/proyectos.test.js`, `test/vista-proyectos.test.js`), pero
+  nadie confirmó todavía que se vea/sienta bien en un navegador real —
+  igual que Storage, esto queda pendiente de una pasada de confirmación
+  visual antes de darlo por cerrado en producción.
+- **Tareas autoasignadas con aprobación de admin (2026-09-06).** Extiende
+  `tareas` (NO colección nueva): `origen: 'asignada'|'autoasignada'`
+  (default `'asignada'` — un doc viejo sin este campo se sigue leyendo como
+  `'asignada'`, vía `.get('origen','asignada')` tanto en `firestore.rules`
+  como en `render.js`/`vista-tareas.js`, así que ninguna tarea preexistente
+  cambia de comportamiento), `creadorId` (nuevo para AMBOS orígenes —
+  antes no existía; en `'asignada'` es metadata sin uso), `motivoRechazo`
+  (nace `null`), y dos estados nuevos, `'en_revision'`/`'rechazada'`, junto
+  a los ya existentes `'pendiente'`/`'completada'`. El flujo `'asignada'`
+  (admin crea → admin completa vía `completarTarea()`) sigue exactamente
+  igual, cero cambios de comportamiento — confirmado con el resto de la
+  suite de tests en verde sin tocar sus aserciones (solo 3 tests
+  preexistentes necesitaron actualizarse por la firma nueva de
+  `renderListaTareas()` y por que `crearTareaBtn` dejó de ser admin-only,
+  ver abajo).
+  - **Flujo nuevo (autoasignada):** cualquier autenticado crea una con
+    `origen:'autoasignada'`, pudiendo incluir a otros en `asignados[]`
+    (grupal) — nace `'pendiente'`, editable/borrable libremente por su
+    creador (`editarTareaAutoasignada`/`eliminarTarea`, `chores.js`).
+    Subir evidencia (SIEMPRE obligatoria, a diferencia de
+    `completarTarea()` donde solo aplica a `tipo:'asistencia'`) mueve
+    `'pendiente'|'rechazada'` → `'en_revision'` vía `enviarARevision()` —
+    desde ahí queda CONGELADA para cualquiera que no sea admin resolviendo
+    la revisión. Admin aprueba (`aprobarTareaAutoasignada` → `'completada'`
+    + `_registrarHoras()` por el monto COMPLETO de `horasAOtorgar` a cada
+    uid de `asignados[]`, sin repartir — mismo `_registrarHoras()` de
+    siempre, cero camino de horas alterno) o rechaza
+    (`rechazarTareaAutoasignada` → `'rechazada'`, `motivoRechazo`
+    obligatorio sin excepción). Una tarea rechazada puede reenviarse desde
+    el mismo modal de edición (`editarTareaModal`, `vista-tareas.js`), que
+    muestra el motivo para que el creador sepa qué corregir.
+  - **UI:** `crearTareaModal` ganó `crearTareaOrigenGroup` (solo visible a
+    admin — un no-admin siempre crea `'autoasignada'` sin ver el
+    selector); pre-marca (no fuerza) el checkbox del propio creador en
+    modo autoasignada. `"+ Crear tarea"` (`crearTareaBtn`) dejó de ser
+    admin-only — el viejo toggle centralizado en
+    `mostrarDashboard()`/`vista-dashboard.js` (el patrón legado que la
+    skill `add-feature` ya marcaba como "no replicar" desde la fase de
+    Proyectos) se retiró para este botón, ahora siempre visible tras
+    login. Panel de revisión nuevo dentro de `view-admin`
+    (`vista-admin.js`, sección "Tareas en Revisión") — reusa la MISMA
+    lectura de `obtenerTareas()` que ya traía esa vista para el registro
+    de auditoría/resumen de horas, filtrando en cliente
+    (`origen:'autoasignada' && estado:'en_revision'`), sin query ni índice
+    nuevo. Aprobar admite individual, multi-selección
+    ("Aprobar seleccionadas") y "Aprobar todas" (con `window.confirm`);
+    **rechazar se dejó deliberadamente FUERA de la selección múltiple** —
+    el motivo debe ser específico de cada tarea (es lo único que le dice
+    al creador qué corregir), así que siempre es fila por fila con su
+    propio modal/textarea, documentado así en el código
+    (`renderRevisionTareas`, `render.js`) porque la instrucción original
+    pedía registrar esta decisión de UX explícitamente.
+  - **`firestore.rules`: reescrito el `match /tareas/{tareaId}`**, ya no
+    un `allow write: if isAdmin()` único — separado en
+    `create`/`update`/`delete` con ramas por origen/estado. Auditado con
+    la skill `firebase-security-rules-auditor` antes de cerrarlo: el
+    primer borrador dejaba que el creador cambiara `horasAOtorgar` en la
+    MISMA escritura que enviaba a revisión, sin que quedara señalado como
+    cambio posterior a la creación — se corrigió separando "editar campos"
+    de "enviar a revisión" en 2 ramas de `update`, cada una restringida
+    con `request.resource.data.diff(resource.data).affectedKeys()
+    .hasOnly([...])` a EXACTAMENTE los campos que su función real en
+    `chores.js` toca. `storage.rules` también cambió (fuera del pedido
+    original, que solo mencionaba `firestore.rules` — encontrado al
+    auditar el flujo completo): el creador de la tarea ahora puede subir
+    su propia evidencia (antes `evidencia_tareas/{id}` era admin-only en
+    Storage), resuelto vía `firestore.get()` cross-service contra
+    `tareas/{id}.creadorId`. Tuvo su propio bug encontrado en revisión:
+    el wildcard `{tareaId}` de Storage Rules captura el NOMBRE DE ARCHIVO
+    completo (`<id>.jpg`, un solo segmento de path), no el id solo —
+    `.split('.')[0]` antes de usarlo en el `firestore.get()`, si no ese
+    lookup nunca encuentra el doc y la rama del creador siempre falla.
+  - **Desplegado a producción (2026-09-18).** El 403 original
+    (`firebase deploy --only firestore:rules --dry-run`, caller sin
+    permiso para `firebaserules.googleapis.com:test`) se resolvió en la
+    consola de Firebase — `firebase deploy --only firestore:rules,storage:rules`
+    corrió limpio, ambas reglas compiladas y liberadas.
+  - **Evidencia de autoasignadas depende de Cloud Storage — ya activo**
+    (ver bullet de Storage arriba: plan Blaze activado el mismo día) —
+    mismo estado que el resto del proyecto que usa Storage: código
+    completo, testeado con Storage mockeada
+    (`test/chores.test.js`), pero la subida real (`enviarARevision`)
+    todavía no se ha probado en navegador real — pendiente de esa
+    verificación, ver sección 3, no de infraestructura.
+  - **Cobertura de tests:** 307 tests en 23 archivos (subió de 275/23 —
+    mismo número de archivos, todos los tests nuevos se agregaron a
+    archivos ya existentes: `chores.test.js`, `render.test.js`,
+    `vista-tareas.test.js`, `vista-admin.test.js`, más 1 test ajustado en
+    `vista-dashboard.test.js` por el cambio de visibilidad de
+    `crearTareaBtn`). No se probó en navegador real — mismo pendiente que
+    Storage/Proyectos.
+- **Carrera(s) + Clave Única + barra de progreso de horas (2026-09-18).**
+  Para automatizar reportes: `usuarios/{uid}` gana `carreras` (array, 1-2
+  valores de un catálogo fijo de 15 carreras) y `claveUnica` (string, 6
+  dígitos — la matrícula real trae 3 ceros de prefijo que NO se guardan,
+  no hacen falta para el reporte). El catálogo vive en
+  `js/shared/catalogos.js` — módulo hoja nuevo, sin imports, para que
+  tanto `usuarios.js` (validación) como `render.js`/las vistas (checkboxes,
+  cálculo de horas objetivo) lo consuman sin crear un ciclo services→render.
+  `horasObjetivo` NUNCA se guarda — se recalcula siempre como
+  `carreras.length * 480` (`calcularHorasObjetivo`, mismo criterio que
+  `pasosCompletados`/`totalPasos` en Proyectos: un valor derivado guardado
+  aparte se puede desincronizar, este no). Dos carreras exigen 960h, NO un
+  promedio de 480 — cada carrera suma su propio objetivo completo.
+  **Deliberadamente sin cambios en `firestore.rules`** — mismo criterio ya
+  aplicado a `nombre` (tampoco tiene regla de formato): estos campos son
+  autodeclarados sin implicación de seguridad/horas/permisos, así que la
+  validación de formato/catálogo vive solo en la capa de servicio
+  (`_validarCarreras`/`_validarClaveUnica`, `usuarios.js`), no duplicada en
+  las reglas.
+  - **Dos flujos de captura, una sola función de validación/escritura para
+    el segundo:** usuarios NUEVOS lo completan en `view-setup` junto con
+    nombre/rol (`registrarUsuario()` extendido, un solo `setDoc`). Usuarios
+    EXISTENTES (con perfil de antes de este cambio, sin estos 2 campos) se
+    interceptan al iniciar sesión con una vista nueva y mínima,
+    `view-completar-perfil` (`js/views/vista-completar-perfil.js`) —
+    gate ANTES del Dashboard, "Caso 2b" nuevo en el listener de
+    `auth:resuelto` de `main.js` (entre el "Caso 2" de auth.js, que es
+    perfil INEXISTENTE, y el "Caso 3", perfil completo) — `auth.js` expone
+    `carreras`/`claveUnica` en el mismo payload del evento (misma lectura
+    de `obtenerUsuario`, sin query extra), normalizados a `null` explícito
+    si el documento no los tiene todavía. Editar estos datos más tarde
+    desde Perfil reusa la MISMA función que resuelve el gate,
+    `actualizarCarrerasYClavePropia()` — a diferencia de `registrarUsuario`
+    (crea el documento), esta es siempre un `update` sobre un perfil que ya
+    existe, así que sirve para ambos casos sin duplicar validación.
+  - **Checkboxes de carrera, máx. 2:** `crearCheckboxesCarreras()`
+    (`render.js`) pinta el catálogo completo cada vez que se necesita
+    (Setup, view-completar-perfil, Perfil); `aplicarLimiteCheckboxes()`
+    (`shared/core-ui.js`, nuevo helper genérico) escucha `change` sobre el
+    contenedor y deshabilita (no oculta) el resto una vez marcadas 2. Un
+    `replaceChildren()` (ej. al recargar Perfil con datos ya guardados) NO
+    dispara `change` por sí solo — se despacha un `new Event('change')`
+    manual justo después para forzar el recálculo de `disabled`; esto
+    obligó a agregar `Event` (antes solo `CustomEvent`) a los globals que
+    `test/helpers/dom.js` copia del `window` de jsdom.
+  - **Barra de progreso:** `crearBarraProgresoHoras()` (`render.js`) — un
+    solo helper para DOS lugares: Perfil (propio) y Admin → "Resumen de
+    Horas por Estudiante" (ahí también se agregaron columnas de Carrera(s)
+    y Clave Única — es la tabla que ya se usaba para reportes, tiene
+    sentido que la barra viva ahí también). Reusa `.progress-bar`/
+    `.progress-fill` genéricos (los mismos de Proyectos), con su propio
+    modificador de color `.horas-progress-fill` (mismo verde primario,
+    clase separada por ser de otra feature). El ancho se limita a 100%
+    aunque el objetivo ya se haya superado; el texto sí muestra el número
+    real de horas, sin tope. Un estudiante sin `carreras` todavía (no pasó
+    por el gate) muestra "—" en vez de una barra inventada.
+  - **Cobertura de tests:** `test/catalogos.test.js` nuevo (módulo puro) +
+    `test/vista-completar-perfil.test.js` nuevo, más tests agregados a
+    `usuarios.test.js`, `auth.test.js`, `main.test.js` (caso 2b),
+    `vista-login.test.js`, `vista-perfil.test.js`, `render.test.js`. No se
+    probó en navegador real — mismo pendiente que Storage/Proyectos/
+    autoasignadas.
 
 ## 2. Mapa en espiral (Gemelo) — estado técnico
 
@@ -293,39 +539,90 @@ para ver más plantas vs. arrastrar hacia el mapa" (Fase 18.4).
       ver sección 1 y sección 2.
 - [x] Nuevo: confirmar en navegador real que la reorganización de Fase 22 no
       cambió nada — confirmado por el usuario 2026-07-26.
+- [x] Nuevo: rediseño de tareas (2026-08-29) — `tipo`/`horasAOtorgar`
+      explícitos reemplazan la Regla del Sábado fija, foto de evidencia
+      obligatoria para `tipo:'asistencia'` vía Firebase Storage (primera
+      integración del proyecto) — ver sección 1.
+- [x] Nuevo: activar Cloud Storage — plan Blaze activado y `storage.rules`
+      desplegadas (2026-09-18) — ver sección 1, bullet de Storage.
+- [ ] Nuevo: verificar end-to-end lo que el mock de Storage no cubre:
+      compresión Canvas real, subida real desde el navegador, y
+      `storage.rules` contra una sesión no-admin real.
+- [x] Nuevo: vista de Proyectos — galería de tarjetas que organiza tareas
+      existentes vía `proyectoId`, sin duplicarlas (2026-08-29) — ver
+      sección 1, bullet de Proyectos.
+- [ ] Nuevo: confirmar en navegador real la vista de Proyectos — completa
+      en código y con tests (Firestore mockeado), pero nadie la vio
+      renderizada de verdad todavía. Mismo pendiente que Storage.
+- [x] Nuevo: tareas autoasignadas con aprobación de admin (2026-09-06) —
+      `origen`/`creadorId`/`motivoRechazo` + estados `en_revision`/
+      `rechazada` sobre `tareas` existente, panel de revisión en Admin,
+      `firestore.rules`/`storage.rules` reescritos y auditados — ver
+      sección 1, bullet de Tareas autoasignadas.
+- [x] Nuevo: desplegar `firestore.rules`/`storage.rules` a producción
+      (2026-09-18) — el 403 original se resolvió en permisos de la consola
+      de Firebase, `firebase deploy --only firestore:rules,storage:rules`
+      corrió limpio.
+- [ ] Nuevo: confirmar en navegador real el flujo de autoasignadas
+      (creación, edición, envío a revisión, panel de aprobación/rechazo de
+      Admin) — mismo pendiente que Storage/Proyectos, agravado acá porque
+      la evidencia obligatoria sigue bloqueada por el plan Spark (ver
+      bullet de Storage).
+- [x] Nuevo: Carrera(s) + Clave Única + barra de progreso de horas
+      (2026-09-18) — catálogo fijo en `js/shared/catalogos.js`, gate de
+      usuarios existentes (`view-completar-perfil`), edición desde Perfil,
+      barra de progreso en Perfil y en Resumen de Horas de Admin — ver
+      sección 1, bullet de Carrera(s)/Clave Única.
+- [ ] Nuevo: confirmar en navegador real Carrera(s)/Clave Única/barra de
+      progreso — completo en código y con tests, pero nadie confirmó
+      todavía que el gate de `view-completar-perfil` y las 3 barras (Perfil,
+      Setup con checkboxes, Resumen de Horas) se vean/sientan bien en un
+      navegador real. Mismo pendiente que Storage/Proyectos/autoasignadas.
 
 ## 4. Arquitectura de módulos (Fase 19, 2026-07-24 — reorganizado en
    carpetas y `vista-gemelo.js` partido en Fase 22, 2026-07-25)
 
-`js/` tiene 24 módulos en 4 subcarpetas por capa + `main.js` suelto en la
-raíz (única excepción, como raíz de composición). De más pura a más
-orquestadora:
+`js/` tiene 27 módulos en 4 subcarpetas por capa + `main.js` suelto en la
+raíz (única excepción, como raíz de composición) — 24 desde Fase 22, +1
+por `storage.js` y +2 por `proyectos.js`/`vista-proyectos.js` (rediseño de
+tareas/proyectos, 2026-08-29). De más pura a más orquestadora:
 
 - **`js/services/`** (no conocen el DOM): `firebase.js` (único punto de
   `initializeApp()`, lee `config.js`/`config.example.js` — mismo folder),
   `db.js`, `chores.js`, `usuarios.js`, `auth.js`, `session.js`, `ai.js`
-  (stub sin usar, ver sección 1).
+  (stub sin usar, ver sección 1), `storage.js` (`subirEvidenciaTarea`, ver
+  sección 1; único import de `firebase-storage.js`, mismo criterio que el
+  resto de este folder), `proyectos.js` (nuevo — `crearProyecto`/
+  `agregarPasoAProyecto`/`obtenerProyectosConProgreso`, ver sección 1;
+  importa `_datosNuevaTarea` de `chores.js`, único import services→services
+  además de `_registrarHoras` desde `usuarios.js`).
 - **`js/render/`** (UI pura, sin Firebase): `render.js`,
   `render-spiral-2d.js`, `geometria-espiral.js`.
 - **`js/shared/`** (hojas compartidas entre vistas, sin imports salientes
   entre sí — Fase 19): `core-ui.js`
-  (`mostrarToast`/`openModal`/`closeModal`/`marcarStatus*`), `estado-app.js`
+  (`mostrarToast`/`openModal`/`closeModal`/`marcarStatus*`/
+  `aplicarLimiteCheckboxes` — el último, nuevo 2026-09-18), `estado-app.js`
   (`esAdminActual` vía `getEsAdminActual`/`setEsAdminActual`), `router.js`
   (`navegarA`/`ocultarTodasLasVistas` — A PROPÓSITO no importa ningún
   `vista-*.js`; si lo hiciera, cada vista tendría que importarlo de
-  vuelta, un ciclo entre 6+ archivos).
+  vuelta, un ciclo entre 6+ archivos), `catalogos.js` (nuevo, 2026-09-18 —
+  `CARRERAS`/`calcularHorasObjetivo`, sin imports, para que
+  `usuarios.js` (services) y `render.js` lo consuman ambos sin crear un
+  ciclo services→render).
 - **`js/views/`** (cada una con sus propios `document.getElementById` —
   sin registro central de refs DOM, cada módulo consulta directo lo que
-  usa): `vista-perfil.js`, `vista-bitacora.js`, `vista-catalogos.js`,
-  `vista-tareas.js`, `vista-admin.js`, `vista-dashboard.js`,
-  `vista-login.js`, más los 3 módulos de Gemelo — `vista-gemelo.js` (carga
-  de datos + modales de detalle), `gemelo-pan-zoom.js` (pan/zoom, Fase 22)
-  y `gemelo-drag-drop.js` (drag&drop de plantas, Fase 22; ver sección 1
-  para el porqué de la división y sección 2 para el detalle técnico).
+  usa): `vista-perfil.js`, `vista-completar-perfil.js` (nuevo, 2026-09-18),
+  `vista-bitacora.js`, `vista-catalogos.js`,
+  `vista-tareas.js`, `vista-proyectos.js` (nuevo, 2026-08-29), `vista-admin.js`,
+  `vista-dashboard.js`, `vista-login.js`, más los 3 módulos de Gemelo —
+  `vista-gemelo.js` (carga de datos + modales de detalle),
+  `gemelo-pan-zoom.js` (pan/zoom, Fase 22) y `gemelo-drag-drop.js`
+  (drag&drop de plantas, Fase 22; ver sección 1 para el porqué de la
+  división y sección 2 para el detalle técnico).
 - **`js/main.js`** (raíz de composición, en `js/` directo): bootstrap de
   `auth:resuelto` + listener delegado de `headerNav` — el único módulo al
-  que le toca importar las 5 rutas con carga de datos propia
-  (`irAVistaTareas` etc.).
+  que le toca importar las 6 rutas con carga de datos propia
+  (`irAVistaTareas` etc. — Proyectos sumada 2026-08-29).
 
 Dependencias entre vistas (todas de una sola dirección, sin ciclos):
 `vista-catalogos.js` → `vista-gemelo.js` (comparte el caché de
@@ -337,17 +634,23 @@ simplificación nueva). `vista-admin.js` → `vista-tareas.js` (comparte
 re-fetch en vez de confiar en el caché). `vista-dashboard.js` →
 `vista-gemelo.js` (`iniciarHuerto`) y → `vista-bitacora.js`
 (`cargarBannerBitacora`). `vista-login.js` → `vista-dashboard.js`
-(`mostrarDashboard`). `vista-gemelo.js` → `gemelo-pan-zoom.js` →
+(`mostrarDashboard`). `vista-proyectos.js` → `vista-tareas.js` (nuevo,
+2026-08-29 — reusa `abrirModalCompletarTarea`/`calcularSugerenciaHoras`
+para no duplicar el flujo de completar tarea/sugerencia de horas al
+agregar un paso). `vista-gemelo.js` → `gemelo-pan-zoom.js` →
 `gemelo-drag-drop.js` (por `estaArrastrandoPlanta`) — `gemelo-drag-drop.js`
 NO importa de vuelta a `vista-gemelo.js`; `iniciarHuerto` se le inyecta como
 parámetro (`onSoltar`) desde el único caller, mismo criterio anti-ciclo que
 `router.js`.
 
-`vista-admin.js` fusiona dos secciones que en el `main.js` original tenían
+`vista-admin.js` fusiona secciones que en el `main.js` original tenían
 nombres parecidos pero eran distintas: el modal de ajuste de horas ("Panel
 de Admin") y el log de auditoría con filtros ("Vista de Admin") — se
 fusionaron porque ya estaban conectadas por un botón real
-(`abrirAjusteHorasBtn` abre el modal del otro "sub-módulo").
+(`abrirAjusteHorasBtn` abre el modal del otro "sub-módulo"). El panel de
+revisión de tareas autoasignadas ("Tareas en Revisión", 2026-09-06) se
+sumó como tercera sección al mismo archivo, mismo gate de rol
+(`VISTAS_ADMIN`) — ver sección 1, bullet de Tareas autoasignadas.
 
 Sin cambios en `index.html` — sigue con un solo
 `<script type="module" src="js/main.js">`; el navegador resuelve todo el

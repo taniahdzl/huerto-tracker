@@ -43,6 +43,7 @@
   <nav class="header-nav" id="headerNav">
     <button class="btn" data-vista="view-gemelo">🌱 Camas</button>
     <button class="btn" data-vista="view-tareas">📋 Tareas</button>
+    <button class="btn" data-vista="view-proyectos">🗂 Proyectos</button>
     <button class="btn" data-vista="view-catalogos">📦 Catálogos</button>
     <button class="btn" data-vista="view-perfil">👤 Perfil</button>
     <button class="btn" data-vista="view-bitacora">📓 Bitácora</button>
@@ -129,8 +130,39 @@
         <option value="externo">Colaborador Externo</option>
       </select>
     </div>
+    <!-- Carrera(s) + clave única (2026-09-18): para automatizar reportes.
+         Máx. 2 carreras — ver aplicarLimiteCheckboxes (core-ui.js),
+         aplicado por vista-login.js sobre este contenedor. -->
+    <div class="form-group">
+      <label>¿Qué carrera(s) estudias? (máx. 2)</label>
+      <div class="carreras-checkboxes" id="newUserCarrerasGroup"></div>
+    </div>
+    <div class="form-group">
+      <label for="newUserClaveInput">Clave única (6 dígitos, sin los 3 ceros iniciales)</label>
+      <input type="text" id="newUserClaveInput" placeholder="123456" maxlength="6" inputmode="numeric">
+    </div>
     <p id="setupError" class="login-error" style="display:none"></p>
     <button id="completeRegistroBtn" class="btn btn-primary" disabled>Completar Registro</button>
+  </section>
+  <!-- Completar Perfil (2026-09-18): gate para cuentas creadas ANTES de
+       carrera(s)/clave única — main.js manda aquí en vez del Dashboard si
+       auth:resuelto trae `carreras`/`claveUnica` en null (ver caso 2b en
+       main.js). A diferencia de view-setup, nombre/rol ya existen — solo
+       falta esto. -->
+  <section class="view hidden" id="view-completar-perfil">
+    <div class="form-group">
+      <label>Antes de continuar, completa tu perfil — nos falta esto para tus reportes de horas.</label>
+    </div>
+    <div class="form-group">
+      <label>¿Qué carrera(s) estudias? (máx. 2)</label>
+      <div class="carreras-checkboxes" id="completarPerfilCarrerasGroup"></div>
+    </div>
+    <div class="form-group">
+      <label for="completarPerfilClaveInput">Clave única (6 dígitos, sin los 3 ceros iniciales)</label>
+      <input type="text" id="completarPerfilClaveInput" placeholder="123456" maxlength="6" inputmode="numeric">
+    </div>
+    <p id="completarPerfilError" class="login-error" style="display:none"></p>
+    <button id="completarPerfilBtn" class="btn btn-primary" disabled>Guardar y continuar</button>
   </section>
   <section class="view hidden" id="view-gemelo">
     <div class="gemelo-layout">
@@ -202,6 +234,12 @@
     </div>
     <ul class="chore-list" id="tareasListaVista"></ul>
   </section>
+  <section class="view hidden" id="view-proyectos">
+    <div class="view-proyectos-toolbar">
+      <button class="btn btn-primary" id="crearProyectoBtn" style="display:none">+ Nuevo proyecto</button>
+    </div>
+    <div class="proyecto-galeria" id="proyectosGaleria"></div>
+  </section>
   <section class="view hidden" id="view-catalogos">
     <div class="view-catalogos-toolbar">
       <div class="filter-tabs">
@@ -231,9 +269,27 @@
       <h3>Rol actual</h3>
       <p id="perfilRolTexto"></p>
     </div>
+    <!-- Carrera(s) + clave única (2026-09-18): mismo patrón editar/guardar
+         que el nombre arriba — ver bloquearEdicionCarrerasClave/
+         handleEditarCarrerasClave en vista-perfil.js. -->
+    <div class="dashboard-card">
+      <h3>Carrera(s)</h3>
+      <p id="perfilCarrerasTexto"></p>
+      <div class="carreras-checkboxes" id="perfilCarrerasGroup" style="display:none"></div>
+    </div>
+    <div class="dashboard-card">
+      <h3>Clave única</h3>
+      <p id="perfilClaveTexto"></p>
+      <input type="text" id="perfilClaveInput" maxlength="6" inputmode="numeric" style="display:none">
+    </div>
+    <div class="perfil-nombre-acciones" id="perfilCarrerasClaveAcciones" style="margin-bottom:var(--space-4)">
+      <button class="btn" id="perfilEditarCarrerasClaveBtn" type="button">✎ Editar</button>
+      <button class="btn btn-primary" id="perfilGuardarCarrerasClaveBtn" type="button" style="display:none">Guardar</button>
+    </div>
     <div class="dashboard-card">
       <h3>Horas acumuladas</h3>
       <p id="perfilHoras"></p>
+      <div id="perfilBarraProgreso"></div>
     </div>
     <div class="form-group" id="perfilRolSelectorGroup" style="max-width:320px">
       <label for="perfilRolSelect">Cambiar rol</label>
@@ -251,10 +307,25 @@
       <button class="btn btn-danger" id="abrirAjusteHorasBtn">Ajustar Horas de un Estudiante</button>
     </div>
 
+    <!-- Panel de revisión (2026-09-06): tareas autoasignadas en
+         'en_revision' — ver renderRevisionTareas (render.js) para el
+         criterio de por qué "Rechazar seleccionadas" no existe como
+         acción masiva (el motivo debe ser específico de cada tarea). -->
+    <div class="dashboard-card" style="max-width:none">
+      <h3>Tareas en Revisión</h3>
+      <div class="admin-revision-acciones">
+        <button class="btn" id="revisionSeleccionarTodasBtn">Seleccionar todas</button>
+        <button class="btn btn-primary" id="revisionAprobarSeleccionadasBtn">Aprobar seleccionadas</button>
+        <button class="btn btn-danger" id="revisionAprobarTodasBtn">Aprobar todas</button>
+      </div>
+      <ul class="chore-list" id="revisionTareasLista"></ul>
+      <p id="revisionVacio" class="dashboard-resumen-vacio" style="display:none">No hay tareas en revisión.</p>
+    </div>
+
     <div class="dashboard-card" style="max-width:none">
       <h3>Resumen de Horas por Estudiante</h3>
       <table class="admin-table">
-        <thead><tr><th>Estudiante</th><th>Horas Totales</th></tr></thead>
+        <thead><tr><th>Estudiante</th><th>Carrera(s)</th><th>Clave Única</th><th>Horas Totales</th><th>Progreso</th></tr></thead>
         <tbody id="resumenHorasBody"></tbody>
       </table>
     </div>
@@ -340,7 +411,11 @@
   </div>
 </div>
 
-<!-- MODAL: Crear Tarea (solo admin — Tareas en sí es una vista, no modal) -->
+<!-- MODAL: Crear Tarea — visible para cualquier autenticado desde el
+     rediseño de autoasignadas (2026-09-06); crearTareaOrigenGroup solo se
+     muestra a admin (ver vista-tareas.js), quien puede elegir asignarla a
+     alguien más (flujo de siempre) o autoasignarse/proponer una — un
+     no-admin siempre crea origen:'autoasignada', sin ver este selector. -->
 <div class="modal-overlay" id="crearTareaModal">
   <div class="modal">
     <div class="modal-header">
@@ -348,15 +423,168 @@
       <button class="modal-close" id="crearTareaModalClose">×</button>
     </div>
     <div class="modal-body">
+      <div class="form-group" id="crearTareaOrigenGroup">
+        <label for="crearTareaOrigen">Tipo de asignación</label>
+        <select id="crearTareaOrigen">
+          <option value="asignada">Asignar a alguien</option>
+          <option value="autoasignada">Auto-asignarme / proponer tarea</option>
+        </select>
+      </div>
       <div class="form-group">
         <label for="crearTareaTitulo">Título</label>
         <input id="crearTareaTitulo" placeholder="Nueva tarea…">
+      </div>
+      <div class="form-group">
+        <label for="crearTareaTipo">Tipo</label>
+        <select id="crearTareaTipo">
+          <option value="">Selecciona un tipo…</option>
+          <option value="asistencia">Asistencia (otorga horas)</option>
+          <option value="individual">Individual</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="crearTareaHoras">Horas a otorgar (opcional)</label>
+        <input type="number" id="crearTareaHoras" min="0" step="0.5" placeholder="Ej: 15">
       </div>
       <div class="form-group">
         <label>Asignar a</label>
         <div id="crearTareaAssignees" class="chore-assignees"></div>
       </div>
       <button class="btn btn-primary" id="crearTareaSaveBtn">Crear</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Editar/Reenviar Tarea Autoasignada — un solo modal para 2 casos
+     (ver vista-tareas.js/renderListaTareas): 'pendiente' muestra ambos
+     botones de guardado (editar sin tocar estado, o enviar a revisión con
+     evidencia); 'rechazada' oculta "Guardar cambios" — la única salida es
+     reenviar, mostrando motivoRechazo para que el creador sepa qué
+     corregir (ver firestore.rules, que exige evidencia en esa transición
+     de todas formas). -->
+<div class="modal-overlay" id="editarTareaModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>✏️ Editar Tarea</h3>
+      <button class="modal-close" id="editarTareaModalClose">×</button>
+    </div>
+    <div class="modal-body">
+      <p id="editarTareaMotivoRechazo" class="admin-auditoria-error" style="display:none"></p>
+      <div class="form-group">
+        <label for="editarTareaTitulo">Título</label>
+        <input id="editarTareaTitulo" placeholder="Título de la tarea…">
+      </div>
+      <div class="form-group">
+        <label for="editarTareaTipo">Tipo</label>
+        <select id="editarTareaTipo">
+          <option value="asistencia">Asistencia (otorga horas)</option>
+          <option value="individual">Individual</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="editarTareaHoras">Horas a otorgar (opcional)</label>
+        <input type="number" id="editarTareaHoras" min="0" step="0.5" placeholder="Ej: 15">
+      </div>
+      <div class="form-group">
+        <label>Asignados</label>
+        <div id="editarTareaAssignees" class="chore-assignees"></div>
+      </div>
+      <div class="form-group">
+        <label for="editarTareaFoto" id="editarTareaFotoLabel">Foto de evidencia (obligatoria para enviar a revisión)</label>
+        <input type="file" id="editarTareaFoto" accept="image/*">
+        <img id="editarTareaFotoPreview" class="hidden" alt="Vista previa de la evidencia">
+      </div>
+      <button class="btn" id="editarTareaGuardarBtn">Guardar cambios</button>
+      <button class="btn btn-primary" id="editarTareaEnviarBtn">Guardar y enviar a revisión</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Completar Tarea (solo admin) — único paso de finalización para
+     AMBOS tipos de tarea; la foto es obligatoria solo si tipo:'asistencia'
+     (ver completarTareaFotoLabel en vista-tareas.js). -->
+<div class="modal-overlay" id="completarTareaModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>✅ Completar Tarea</h3>
+      <button class="modal-close" id="completarTareaModalClose">×</button>
+    </div>
+    <div class="modal-body">
+      <p id="completarTareaTitulo" class="chore-item-titulo"></p>
+      <div class="form-group">
+        <label for="completarTareaFoto" id="completarTareaFotoLabel">Foto de evidencia</label>
+        <input type="file" id="completarTareaFoto" accept="image/*">
+        <img id="completarTareaFotoPreview" class="hidden" alt="Vista previa de la evidencia">
+      </div>
+      <button class="btn btn-primary" id="completarTareaSaveBtn">Completar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Nuevo Proyecto (solo admin) -->
+<div class="modal-overlay" id="crearProyectoModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>+ Nuevo Proyecto</h3>
+      <button class="modal-close" id="crearProyectoModalClose">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label for="crearProyectoNombre">Nombre</label>
+        <input id="crearProyectoNombre" placeholder="Nombre del proyecto…">
+      </div>
+      <div class="form-group">
+        <label for="crearProyectoDescripcion">Descripción</label>
+        <input id="crearProyectoDescripcion" placeholder="Descripción breve…">
+      </div>
+      <div class="form-group">
+        <label for="crearProyectoFecha">Fecha objetivo (opcional)</label>
+        <input type="date" id="crearProyectoFecha">
+      </div>
+      <button class="btn btn-primary" id="crearProyectoSaveBtn">Crear</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Agregar Paso a un Proyecto (solo admin) — crea una tarea con
+     proyectoId ya seteado (agregarPasoAProyecto en proyectos.js), mismos
+     campos tipo/horas/fecha límite que una tarea suelta. -->
+<div class="modal-overlay" id="agregarPasoModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>+ Agregar Paso</h3>
+      <button class="modal-close" id="agregarPasoModalClose">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label for="agregarPasoTitulo">Título</label>
+        <input id="agregarPasoTitulo" placeholder="Nombre del paso…">
+      </div>
+      <div class="form-group">
+        <label for="agregarPasoTipo">Tipo</label>
+        <select id="agregarPasoTipo">
+          <option value="">Selecciona un tipo…</option>
+          <option value="asistencia">Asistencia (otorga horas)</option>
+          <option value="individual">Individual</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="agregarPasoHoras">Horas a otorgar (opcional)</label>
+        <input type="number" id="agregarPasoHoras" min="0" step="0.5" placeholder="Ej: 15">
+      </div>
+      <div class="form-group">
+        <label for="agregarPasoFechaLimite">Fecha límite (opcional)</label>
+        <input type="date" id="agregarPasoFechaLimite">
+      </div>
+      <div class="form-group">
+        <label for="agregarPasoOrden">Orden</label>
+        <input type="number" id="agregarPasoOrden" min="1" step="1">
+      </div>
+      <div class="form-group">
+        <label>Asignar a</label>
+        <div id="agregarPasoAssignees" class="chore-assignees"></div>
+      </div>
+      <button class="btn btn-primary" id="agregarPasoSaveBtn">Agregar</button>
     </div>
   </div>
 </div>
@@ -385,6 +613,26 @@
         <textarea id="adminHoursMotivo" rows="2" placeholder="15 horas de semestre anterior, ver correo del 3/marzo"></textarea>
       </div>
       <button class="btn btn-danger" id="adminSaveBtn">Ajustar Horas</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Rechazar Tarea (panel de revisión de Admin) — motivo SIEMPRE
+     obligatorio (también forzado en firestore.rules), un solo modal
+     reusado fila por fila (ver renderRevisionTareas), nunca en lote. -->
+<div class="modal-overlay" id="rechazarTareaModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>❌ Rechazar Tarea</h3>
+      <button class="modal-close" id="rechazarTareaModalClose">×</button>
+    </div>
+    <div class="modal-body">
+      <p id="rechazarTareaTitulo" class="chore-item-titulo"></p>
+      <div class="form-group">
+        <label for="rechazarTareaMotivo">Motivo (obligatorio)</label>
+        <textarea id="rechazarTareaMotivo" rows="3" placeholder="Qué falta o corregir para volver a enviarla…"></textarea>
+      </div>
+      <button class="btn btn-danger" id="rechazarTareaConfirmarBtn">Rechazar</button>
     </div>
   </div>
 </div>
