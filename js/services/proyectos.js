@@ -15,7 +15,7 @@
 import {
     db, PATHS,
     collection, doc,
-    getDoc, getDocs, addDoc, updateDoc, serverTimestamp,
+    getDoc, getDocs, addDoc, updateDoc, deleteDoc, serverTimestamp,
     writeBatch, arrayUnion
 } from './firebase.js';
 import { getUsuarioActual } from './session.js';
@@ -73,6 +73,34 @@ export async function agregarPasoAProyecto(proyectoId, datosTarea, orden) {
 
     _logActividad('AGREGAR_PASO_PROYECTO', proyectoId, `${datosTarea.titulo} (orden ${orden})`);
     return tareaRef.id;
+}
+
+// Concluir/reactivar/pausar un proyecto — transición de estado pura, sin
+// tocar `pasos` ni las tareas referenciadas. "Concluir" (2026-09-19) es
+// el caso de uso real pedido; 'pausado' ya existía en el esquema desde el
+// diseño original pero nunca tuvo UI — esta función sirve para cualquier
+// transición, no solo activo<->completado.
+export async function actualizarEstadoProyecto(proyectoId, nuevoEstado) {
+    if (!['activo', 'completado', 'pausado'].includes(nuevoEstado)) {
+        throw new Error(`[proyectos] estado inválido: ${nuevoEstado}`);
+    }
+    await updateDoc(doc(db, PATHS.proyectos, proyectoId), { estado: nuevoEstado });
+    _logActividad('ACTUALIZAR_ESTADO_PROYECTO', proyectoId, nuevoEstado);
+}
+
+// Elimina el documento del proyecto, SIN tocar las tareas referenciadas en
+// `pasos` (decisión 2026-09-19, confirmada con la usuaria) — quedan como
+// tareas sueltas con `proyectoId` apuntando a un documento que ya no
+// existe, mismo criterio que el resto del proyecto: `tareas.proyectoId` ya
+// está diseñado como opcional/tolerante a esto (ver comentario de cabecera
+// de este archivo), y borrar en cascada es una operación más destructiva
+// e irreversible de lo que se pidió. obtenerProyectosConProgreso() no se
+// ve afectado por proyectos huérfanos porque ya no hay proyecto que
+// listar; las tareas huérfanas simplemente se siguen viendo en la vista
+// de Tareas, como cualquier tarea 'asignada' normal.
+export async function eliminarProyecto(proyectoId) {
+    await deleteDoc(doc(db, PATHS.proyectos, proyectoId));
+    _logActividad('ELIMINAR_PROYECTO', proyectoId);
 }
 
 // Trae todos los proyectos y resuelve el progreso de cada uno leyendo el

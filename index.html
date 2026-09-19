@@ -236,9 +236,17 @@
   </section>
   <section class="view hidden" id="view-proyectos">
     <div class="view-proyectos-toolbar">
+      <!-- Activos/Concluidos (2026-09-19): mismo patrón que las pestañas
+           de Tareas — filtra en cliente sobre lo ya cargado, sin volver a
+           pedir a Firestore (ver renderizarVistaProyectos). -->
+      <div class="filter-tabs">
+        <button class="filter-tab active" data-filtro-proyecto="activo">Activos</button>
+        <button class="filter-tab" data-filtro-proyecto="concluido">Concluidos</button>
+      </div>
       <button class="btn btn-primary" id="crearProyectoBtn" style="display:none">+ Nuevo proyecto</button>
     </div>
     <div class="proyecto-galeria" id="proyectosGaleria"></div>
+    <p id="proyectosVacio" class="dashboard-resumen-vacio" style="display:none"></p>
   </section>
   <section class="view hidden" id="view-catalogos">
     <div class="view-catalogos-toolbar">

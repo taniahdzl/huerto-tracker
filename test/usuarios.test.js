@@ -108,6 +108,17 @@ describe('registrarUsuario', () => {
 });
 
 describe('actualizarCarrerasYClavePropia', () => {
+    test('registra en el log de actividad con `detalle` como STRING, no un objeto (renderRegistroActividad hace textContent = entrada.detalle directo)', async () => {
+        firebaseMock.seed('usuarios', { u1: { carreras: [], claveUnica: '' } });
+        setUsuarioActual({ uid: 'u1', email: 'ana@test.com' });
+
+        await actualizarCarrerasYClavePropia('u1', ['Economía', 'Derecho'], '123456');
+
+        const [entrada] = firebaseMock.leerColeccion('registro_actividad');
+        assert.equal(typeof entrada.detalle, 'string');
+        assert.equal(entrada.detalle, 'Economía, Derecho (clave 123456)');
+    });
+
     test('actualiza solo carreras/claveUnica, sin tocar el resto del perfil', async () => {
         firebaseMock.seed('usuarios', { u1: { nombre: 'Ana', rol: 'estudiante', horasTotales: 12 } });
         await actualizarCarrerasYClavePropia('u1', ['Economía', 'Derecho'], '123456');
