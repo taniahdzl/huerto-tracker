@@ -361,6 +361,68 @@ un estado del proyecto (monolito en `index.html`, JS vacío, API key en
     `vista-dashboard.test.js` por el cambio de visibilidad de
     `crearTareaBtn`). No se probó en navegador real — mismo pendiente que
     Storage/Proyectos.
+- **Carrera(s) + Clave Única + barra de progreso de horas (2026-09-18).**
+  Para automatizar reportes: `usuarios/{uid}` gana `carreras` (array, 1-2
+  valores de un catálogo fijo de 15 carreras) y `claveUnica` (string, 6
+  dígitos — la matrícula real trae 3 ceros de prefijo que NO se guardan,
+  no hacen falta para el reporte). El catálogo vive en
+  `js/shared/catalogos.js` — módulo hoja nuevo, sin imports, para que
+  tanto `usuarios.js` (validación) como `render.js`/las vistas (checkboxes,
+  cálculo de horas objetivo) lo consuman sin crear un ciclo services→render.
+  `horasObjetivo` NUNCA se guarda — se recalcula siempre como
+  `carreras.length * 480` (`calcularHorasObjetivo`, mismo criterio que
+  `pasosCompletados`/`totalPasos` en Proyectos: un valor derivado guardado
+  aparte se puede desincronizar, este no). Dos carreras exigen 960h, NO un
+  promedio de 480 — cada carrera suma su propio objetivo completo.
+  **Deliberadamente sin cambios en `firestore.rules`** — mismo criterio ya
+  aplicado a `nombre` (tampoco tiene regla de formato): estos campos son
+  autodeclarados sin implicación de seguridad/horas/permisos, así que la
+  validación de formato/catálogo vive solo en la capa de servicio
+  (`_validarCarreras`/`_validarClaveUnica`, `usuarios.js`), no duplicada en
+  las reglas.
+  - **Dos flujos de captura, una sola función de validación/escritura para
+    el segundo:** usuarios NUEVOS lo completan en `view-setup` junto con
+    nombre/rol (`registrarUsuario()` extendido, un solo `setDoc`). Usuarios
+    EXISTENTES (con perfil de antes de este cambio, sin estos 2 campos) se
+    interceptan al iniciar sesión con una vista nueva y mínima,
+    `view-completar-perfil` (`js/views/vista-completar-perfil.js`) —
+    gate ANTES del Dashboard, "Caso 2b" nuevo en el listener de
+    `auth:resuelto` de `main.js` (entre el "Caso 2" de auth.js, que es
+    perfil INEXISTENTE, y el "Caso 3", perfil completo) — `auth.js` expone
+    `carreras`/`claveUnica` en el mismo payload del evento (misma lectura
+    de `obtenerUsuario`, sin query extra), normalizados a `null` explícito
+    si el documento no los tiene todavía. Editar estos datos más tarde
+    desde Perfil reusa la MISMA función que resuelve el gate,
+    `actualizarCarrerasYClavePropia()` — a diferencia de `registrarUsuario`
+    (crea el documento), esta es siempre un `update` sobre un perfil que ya
+    existe, así que sirve para ambos casos sin duplicar validación.
+  - **Checkboxes de carrera, máx. 2:** `crearCheckboxesCarreras()`
+    (`render.js`) pinta el catálogo completo cada vez que se necesita
+    (Setup, view-completar-perfil, Perfil); `aplicarLimiteCheckboxes()`
+    (`shared/core-ui.js`, nuevo helper genérico) escucha `change` sobre el
+    contenedor y deshabilita (no oculta) el resto una vez marcadas 2. Un
+    `replaceChildren()` (ej. al recargar Perfil con datos ya guardados) NO
+    dispara `change` por sí solo — se despacha un `new Event('change')`
+    manual justo después para forzar el recálculo de `disabled`; esto
+    obligó a agregar `Event` (antes solo `CustomEvent`) a los globals que
+    `test/helpers/dom.js` copia del `window` de jsdom.
+  - **Barra de progreso:** `crearBarraProgresoHoras()` (`render.js`) — un
+    solo helper para DOS lugares: Perfil (propio) y Admin → "Resumen de
+    Horas por Estudiante" (ahí también se agregaron columnas de Carrera(s)
+    y Clave Única — es la tabla que ya se usaba para reportes, tiene
+    sentido que la barra viva ahí también). Reusa `.progress-bar`/
+    `.progress-fill` genéricos (los mismos de Proyectos), con su propio
+    modificador de color `.horas-progress-fill` (mismo verde primario,
+    clase separada por ser de otra feature). El ancho se limita a 100%
+    aunque el objetivo ya se haya superado; el texto sí muestra el número
+    real de horas, sin tope. Un estudiante sin `carreras` todavía (no pasó
+    por el gate) muestra "—" en vez de una barra inventada.
+  - **Cobertura de tests:** `test/catalogos.test.js` nuevo (módulo puro) +
+    `test/vista-completar-perfil.test.js` nuevo, más tests agregados a
+    `usuarios.test.js`, `auth.test.js`, `main.test.js` (caso 2b),
+    `vista-login.test.js`, `vista-perfil.test.js`, `render.test.js`. No se
+    probó en navegador real — mismo pendiente que Storage/Proyectos/
+    autoasignadas.
 
 ## 2. Mapa en espiral (Gemelo) — estado técnico
 
@@ -504,6 +566,16 @@ para ver más plantas vs. arrastrar hacia el mapa" (Fase 18.4).
       Admin) — mismo pendiente que Storage/Proyectos, agravado acá porque
       la evidencia obligatoria sigue bloqueada por el plan Spark (ver
       bullet de Storage).
+- [x] Nuevo: Carrera(s) + Clave Única + barra de progreso de horas
+      (2026-09-18) — catálogo fijo en `js/shared/catalogos.js`, gate de
+      usuarios existentes (`view-completar-perfil`), edición desde Perfil,
+      barra de progreso en Perfil y en Resumen de Horas de Admin — ver
+      sección 1, bullet de Carrera(s)/Clave Única.
+- [ ] Nuevo: confirmar en navegador real Carrera(s)/Clave Única/barra de
+      progreso — completo en código y con tests, pero nadie confirmó
+      todavía que el gate de `view-completar-perfil` y las 3 barras (Perfil,
+      Setup con checkboxes, Resumen de Horas) se vean/sientan bien en un
+      navegador real. Mismo pendiente que Storage/Proyectos/autoasignadas.
 
 ## 4. Arquitectura de módulos (Fase 19, 2026-07-24 — reorganizado en
    carpetas y `vista-gemelo.js` partido en Fase 22, 2026-07-25)
@@ -526,14 +598,19 @@ tareas/proyectos, 2026-08-29). De más pura a más orquestadora:
   `render-spiral-2d.js`, `geometria-espiral.js`.
 - **`js/shared/`** (hojas compartidas entre vistas, sin imports salientes
   entre sí — Fase 19): `core-ui.js`
-  (`mostrarToast`/`openModal`/`closeModal`/`marcarStatus*`), `estado-app.js`
+  (`mostrarToast`/`openModal`/`closeModal`/`marcarStatus*`/
+  `aplicarLimiteCheckboxes` — el último, nuevo 2026-09-18), `estado-app.js`
   (`esAdminActual` vía `getEsAdminActual`/`setEsAdminActual`), `router.js`
   (`navegarA`/`ocultarTodasLasVistas` — A PROPÓSITO no importa ningún
   `vista-*.js`; si lo hiciera, cada vista tendría que importarlo de
-  vuelta, un ciclo entre 6+ archivos).
+  vuelta, un ciclo entre 6+ archivos), `catalogos.js` (nuevo, 2026-09-18 —
+  `CARRERAS`/`calcularHorasObjetivo`, sin imports, para que
+  `usuarios.js` (services) y `render.js` lo consuman ambos sin crear un
+  ciclo services→render).
 - **`js/views/`** (cada una con sus propios `document.getElementById` —
   sin registro central de refs DOM, cada módulo consulta directo lo que
-  usa): `vista-perfil.js`, `vista-bitacora.js`, `vista-catalogos.js`,
+  usa): `vista-perfil.js`, `vista-completar-perfil.js` (nuevo, 2026-09-18),
+  `vista-bitacora.js`, `vista-catalogos.js`,
   `vista-tareas.js`, `vista-proyectos.js` (nuevo, 2026-08-29), `vista-admin.js`,
   `vista-dashboard.js`, `vista-login.js`, más los 3 módulos de Gemelo —
   `vista-gemelo.js` (carga de datos + modales de detalle),

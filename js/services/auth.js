@@ -16,12 +16,18 @@
 // "sin DOM", avisar antes de que se construya nada sobre este contrato.
 //
 // event.detail shape:
-//   { user: FirebaseUser | null, rol: string | null, nombre: string | null, error: Error | null }
+//   { user: FirebaseUser | null, rol: string | null, nombre: string | null,
+//     carreras: string[] | null, claveUnica: string | null, error: Error | null }
 //
 // `nombre` (Fase 14.1) viaja junto a `rol` porque sale de la misma lectura
 // de usuarios/{uid} (obtenerUsuario) — no hay una segunda consulta. Es
 // null en los mismos casos que `rol` es null (sin sesión, sin perfil, o
-// error consultando el perfil).
+// error consultando el perfil). `carreras`/`claveUnica` (2026-09-18) viajan
+// por el mismo motivo — cualquier perfil creado ANTES de este cambio los
+// trae `undefined` (no `null`, Firestore simplemente no tiene el campo);
+// se normalizan a `null` explícito acá mismo (`?? null`) para que quien
+// consuma el evento pueda comparar con `!carreras`/`!claveUnica` sin
+// distinguir undefined de null.
 //
 // El evento SOLO se dispara cuando el estado ya está resuelto —no existe
 // un estado "cargando" representado en el evento. "Cargando" es la
@@ -47,7 +53,11 @@
 //   3. Con sesión, con perfil:
 //        { user: {...}, rol: 'estudiante'|'externo'|'admin', error: null }
 //      Login válido y usuarios/{uid} existe. `rol` nunca es cadena
-//      vacía ni undefined en este caso.
+//      vacía ni undefined en este caso. `carreras`/`claveUnica` viajan
+//      junto con `rol`/`nombre` (misma lectura) — pueden ser `null` si el
+//      perfil se creó ANTES de 2026-09-18: main.js decide con ese `null`
+//      si manda a `view-completar-perfil` antes del Dashboard (caso 2b,
+//      documentado en main.js, no acá — auth.js solo expone el dato).
 //
 //   4. Con sesión, error consultando el perfil:
 //        { user: {...}, rol: null, error: Error }
@@ -88,17 +98,21 @@ export const AuthService = {
 
             let rol = null;
             let nombre = null;
+            let carreras = null;
+            let claveUnica = null;
             let error = null;
             try {
                 const perfil = await obtenerUsuario(user.uid);
                 rol = perfil ? perfil.rol : null;
                 nombre = perfil ? perfil.nombre : null;
+                carreras = perfil?.carreras ?? null;
+                claveUnica = perfil?.claveUnica ?? null;
             } catch (e) {
                 error = e;
             }
 
             document.dispatchEvent(new CustomEvent('auth:resuelto', {
-                detail: { user, rol, nombre, error }
+                detail: { user, rol, nombre, carreras, claveUnica, error }
             }));
         });
     },

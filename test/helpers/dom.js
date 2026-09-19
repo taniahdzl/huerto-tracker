@@ -26,6 +26,13 @@ function instalarGlobals(dom) {
     globalThis.window = dom.window;
     globalThis.document = dom.window.document;
     globalThis.CustomEvent = dom.window.CustomEvent;
+    // Event (no solo CustomEvent) — necesario desde que vista-perfil.js/
+    // vista-completar-perfil.js despachan `new Event('change')` a mano
+    // para forzar el recálculo de aplicarLimiteCheckboxes tras un
+    // replaceChildren (2026-09-18) — replaceChildren no dispara 'change'
+    // por sí solo. En un navegador real `Event` ya es global; bajo Node
+    // hay que copiarlo del `window` de jsdom, igual que CustomEvent.
+    globalThis.Event = dom.window.Event;
     globalThis.Node = dom.window.Node;
     globalThis.HTMLElement = dom.window.HTMLElement;
     // navigator NO se reasigna: Node 21+ ya define un global `navigator`

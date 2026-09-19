@@ -9,6 +9,7 @@
 // (Fase 14.1) para no duplicar el fallback nombre→email→id aquí.
 
 import { nombreParaMostrar } from '../services/session.js';
+import { CARRERAS, calcularHorasObjetivo } from '../shared/catalogos.js';
 
 // ── Shape de `plantas` (catalogo_semillas) ─────────────────────────
 // Verificado contra scripts/upload.js (única fuente real de estos datos):
@@ -583,6 +584,12 @@ export function renderListaBitacora(sesiones, contenedor, onExpandirClick) {
 // `estudiantes` viene de obtenerDirectorioEstudiantes() — ya trae
 // horasTotales, ver diagnóstico de Fase 13.8. Orden descendente aplicado
 // aquí, sin mutar el array recibido.
+//
+// Carrera(s)/Clave Única/barra de progreso (2026-09-18): un estudiante con
+// perfil de antes de este cambio no tiene `carreras` todavía (`null`/
+// `undefined` hasta que inicie sesión y pase por el gate de
+// view-completar-perfil, ver main.js) — se muestra "—" en vez de inventar
+// un valor, mismo criterio "no inventar defaults" del resto del proyecto.
 export function renderResumenHoras(estudiantes, contenedor) {
     const fragment = document.createDocumentFragment();
     const ordenados = [...estudiantes].sort((a, b) => (b.horasTotales ?? 0) - (a.horasTotales ?? 0));
@@ -594,12 +601,75 @@ export function renderResumenHoras(estudiantes, contenedor) {
         nombre.textContent = nombreParaMostrar(estudiante);
         tr.appendChild(nombre);
 
+        const carrerasTd = document.createElement('td');
+        carrerasTd.textContent = estudiante.carreras?.length ? estudiante.carreras.join(', ') : '—';
+        tr.appendChild(carrerasTd);
+
+        const claveTd = document.createElement('td');
+        claveTd.textContent = estudiante.claveUnica || '—';
+        tr.appendChild(claveTd);
+
         const horas = document.createElement('td');
         horas.textContent = estudiante.horasTotales ?? 0;
         tr.appendChild(horas);
+
+        const progresoTd = document.createElement('td');
+        if (estudiante.carreras?.length) {
+            progresoTd.appendChild(crearBarraProgresoHoras(estudiante.horasTotales ?? 0, calcularHorasObjetivo(estudiante.carreras)));
+        } else {
+            progresoTd.textContent = '—';
+        }
+        tr.appendChild(progresoTd);
 
         fragment.appendChild(tr);
     });
 
     contenedor.replaceChildren(fragment);
+}
+
+// Perfil (propio) y Resumen de Horas (Admin/reportes) — misma barra en
+// ambos lugares, ver AI_CONTEXT.md. El ancho se limita a 100% aunque el
+// objetivo ya se haya superado (evita que el relleno se vea "roto" o
+// desbordado); el texto sí muestra el número real de horas, sin tope.
+export function crearBarraProgresoHoras(horasTotales, horasObjetivo) {
+    const porcentaje = horasObjetivo > 0 ? Math.round((horasTotales / horasObjetivo) * 100) : 0;
+
+    const contenedor = document.createElement('div');
+    contenedor.className = 'horas-progreso';
+
+    const barra = document.createElement('div');
+    barra.className = 'progress-bar';
+    const relleno = document.createElement('div');
+    relleno.className = 'progress-fill horas-progress-fill';
+    relleno.style.width = `${Math.min(porcentaje, 100)}%`;
+    barra.appendChild(relleno);
+    contenedor.appendChild(barra);
+
+    const texto = document.createElement('p');
+    texto.className = 'horas-progreso-texto';
+    texto.textContent = `${horasTotales} de ${horasObjetivo} horas (${porcentaje}%)`;
+    contenedor.appendChild(texto);
+
+    return contenedor;
+}
+
+// Checkboxes de carrera — usados en Setup, view-completar-perfil (gate de
+// usuarios existentes) y Perfil (edición posterior). El límite de máx. 2
+// marcadas NO se aplica acá (esto solo pinta) — lo aplica
+// aplicarLimiteCheckboxes (shared/core-ui.js) sobre el contenedor real,
+// después de insertar este fragment.
+export function crearCheckboxesCarreras(seleccionadas = []) {
+    const fragment = document.createDocumentFragment();
+    CARRERAS.forEach((carrera) => {
+        const label = document.createElement('label');
+        label.className = 'carrera-checkbox-chip';
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.value = carrera;
+        input.checked = seleccionadas.includes(carrera);
+        label.appendChild(input);
+        label.append(carrera);
+        fragment.appendChild(label);
+    });
+    return fragment;
 }

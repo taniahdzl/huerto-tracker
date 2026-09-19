@@ -40,6 +40,7 @@ import { marcarStatusSinSesion } from './shared/core-ui.js';
 import { navegarA, ocultarTodasLasVistas } from './shared/router.js';
 import { setEsAdminActual } from './shared/estado-app.js';
 import { mostrarErrorLogin, mostrarErrorSetup, actualizarGatingSetup } from './views/vista-login.js';
+import { mostrarCompletarPerfil } from './views/vista-completar-perfil.js';
 import { mostrarDashboard } from './views/vista-dashboard.js';
 import { irAVistaTareas } from './views/vista-tareas.js';
 import { irAVistaProyectos } from './views/vista-proyectos.js';
@@ -54,6 +55,8 @@ const crearTareaBtn  = document.getElementById('crearTareaBtn');
 const googleLoginBtn = document.getElementById('googleLoginBtn');
 const loginOverlay   = document.getElementById('login-overlay');
 const newUserNombreInput = document.getElementById('newUserNombre');
+const newUserCarrerasGroup = document.getElementById('newUserCarrerasGroup');
+const newUserClaveInput = document.getElementById('newUserClaveInput');
 
 // ── Barra de navegación persistente del header (Fase 16) ────────────
 
@@ -93,10 +96,13 @@ headerNav.addEventListener('click', (e) => {
 // payload completo (user, rol, error) y este listener decide a dónde ir.
 // Los 4 casos del contrato, en el mismo orden que están documentados en
 // auth.js: sin sesión / con sesión sin perfil / con sesión con perfil /
-// error consultando el perfil.
+// error consultando el perfil. Un 5º caso propio de ESTE archivo (no del
+// contrato de auth.js — ver comentario junto al "Caso 2b" abajo): con
+// sesión y perfil resuelto, pero sin carrera(s)/clave única todavía
+// (2026-09-18) — manda a view-completar-perfil en vez del Dashboard.
 
 document.addEventListener('auth:resuelto', (e) => {
-    const { user, rol, nombre, error } = e.detail;
+    const { user, rol, nombre, carreras, claveUnica, error } = e.detail;
 
     // Caso 1: sin sesión. `rol` viene null pero NO significa "falta
     // Setup" — se distingue del caso 2 únicamente por `user` ser null.
@@ -133,9 +139,24 @@ document.addEventListener('auth:resuelto', (e) => {
     if (rol === null) {
         mostrarErrorSetup('');
         newUserNombreInput.value = '';
+        newUserClaveInput.value = '';
+        newUserCarrerasGroup.querySelectorAll('input:checked').forEach((cb) => { cb.checked = false; });
         actualizarGatingSetup();
         loginOverlay.classList.add('hidden');
         navegarA('view-setup');
+        return;
+    }
+
+    // Caso 2b (2026-09-18): con sesión, con perfil, pero falta completar
+    // carrera(s)/clave única — cualquier perfil creado ANTES de este cambio
+    // cae acá (auth.js normaliza esos campos a null si el documento no los
+    // tiene). Se resuelve con la MISMA lectura de perfil que ya trae el
+    // evento, sin una consulta extra. Debe ir DESPUÉS del caso 2 (rol===
+    // null) — un perfil que ni siquiera existe no tiene este problema, tiene
+    // el otro.
+    if (!carreras || carreras.length === 0 || !claveUnica) {
+        loginOverlay.classList.add('hidden');
+        mostrarCompletarPerfil(user, rol, nombre);
         return;
     }
 

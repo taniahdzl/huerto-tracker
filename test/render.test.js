@@ -16,7 +16,8 @@ const {
     emojiDePlanta, colorDePlanta, crearLeyendaCategorias,
     renderListaTareas, renderListaCatalogos, renderRegistroActividad,
     renderListaBitacora, renderResumenHoras,
-    renderGaleriaProyectos, calcularBadgeProyecto
+    renderGaleriaProyectos, calcularBadgeProyecto,
+    crearBarraProgresoHoras, crearCheckboxesCarreras
 } = await import('../js/render/render.js');
 
 describe('emojiDePlanta / colorDePlanta', () => {
@@ -262,12 +263,63 @@ describe('renderResumenHoras', () => {
         assert.deepEqual(estudiantes, copiaOriginal); // sin mutar
     });
 
-    test('usa nombreParaMostrar (nombre -> email -> id) y horasTotales default 0', () => {
+    // Columnas (2026-09-18): Estudiante, Carrera(s), Clave Única, Horas
+    // Totales, Progreso — ver thead de #view-admin en index.html.
+    test('usa nombreParaMostrar (nombre -> email -> id), horasTotales default 0, y "—" para carrera(s)/clave/progreso sin declarar', () => {
         const contenedor = document.createElement('table');
         renderResumenHoras([{ id: 'u1', email: 'sin-nombre@test.com' }], contenedor);
         const fila = contenedor.querySelector('tr');
         assert.equal(fila.children[0].textContent, 'sin-nombre@test.com');
-        assert.equal(fila.children[1].textContent, '0');
+        assert.equal(fila.children[1].textContent, '—');
+        assert.equal(fila.children[2].textContent, '—');
+        assert.equal(fila.children[3].textContent, '0');
+        assert.equal(fila.children[4].textContent, '—');
+    });
+
+    test('con carrera(s) declaradas: pinta la lista unida por coma, la clave, y la barra de progreso', () => {
+        const contenedor = document.createElement('table');
+        renderResumenHoras([{ id: 'u1', nombre: 'Ana', carreras: ['Economía', 'Derecho'], claveUnica: '123456', horasTotales: 96 }], contenedor);
+        const fila = contenedor.querySelector('tr');
+        assert.equal(fila.children[1].textContent, 'Economía, Derecho');
+        assert.equal(fila.children[2].textContent, '123456');
+        assert.match(fila.children[4].textContent, /96 de 960 horas \(10%\)/);
+    });
+});
+
+describe('crearBarraProgresoHoras', () => {
+    test('calcula el porcentaje y el ancho del relleno', () => {
+        const barra = crearBarraProgresoHoras(240, 480);
+        assert.equal(barra.querySelector('.horas-progress-fill').style.width, '50%');
+        assert.equal(barra.querySelector('.horas-progreso-texto').textContent, '240 de 480 horas (50%)');
+    });
+
+    test('objetivo superado: el texto muestra el número real (>100%) pero el ancho se limita a 100%', () => {
+        const barra = crearBarraProgresoHoras(600, 480);
+        assert.equal(barra.querySelector('.horas-progress-fill').style.width, '100%');
+        assert.equal(barra.querySelector('.horas-progreso-texto').textContent, '600 de 480 horas (125%)');
+    });
+
+    test('objetivo 0 (sin carreras) -> 0%, sin dividir entre cero', () => {
+        const barra = crearBarraProgresoHoras(5, 0);
+        assert.equal(barra.querySelector('.horas-progreso-texto').textContent, '5 de 0 horas (0%)');
+    });
+});
+
+describe('crearCheckboxesCarreras', () => {
+    test('pinta un checkbox por carrera del catálogo, marcado solo para las seleccionadas', () => {
+        const contenedor = document.createElement('div');
+        contenedor.appendChild(crearCheckboxesCarreras(['Economía']));
+        const checkboxes = [...contenedor.querySelectorAll('input[type="checkbox"]')];
+
+        assert.equal(checkboxes.length, 15);
+        assert.equal(checkboxes.filter((cb) => cb.checked).length, 1);
+        assert.equal(checkboxes.find((cb) => cb.value === 'Economía').checked, true);
+    });
+
+    test('sin argumento, nada viene marcado', () => {
+        const contenedor = document.createElement('div');
+        contenedor.appendChild(crearCheckboxesCarreras());
+        assert.equal(contenedor.querySelectorAll('input:checked').length, 0);
     });
 });
 

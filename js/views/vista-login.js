@@ -11,13 +11,25 @@ import { AuthService } from '../services/auth.js';
 import { registrarUsuario } from '../services/usuarios.js';
 import { setUsuarioActual } from '../services/session.js';
 import { mostrarDashboard } from './vista-dashboard.js';
+import { crearCheckboxesCarreras } from '../render/render.js';
+import { aplicarLimiteCheckboxes } from '../shared/core-ui.js';
 
 const googleLoginBtn      = document.getElementById('googleLoginBtn');
 const newUserNombreInput  = document.getElementById('newUserNombre');
 const newUserRoleSelect   = document.getElementById('newUserRole');
+const newUserCarrerasGroup = document.getElementById('newUserCarrerasGroup');
+const newUserClaveInput   = document.getElementById('newUserClaveInput');
 const completeRegistroBtn = document.getElementById('completeRegistroBtn');
 const loginError = document.getElementById('loginError');
 const setupError = document.getElementById('setupError');
+
+// Carrera(s) (2026-09-18): checkboxes se pintan UNA sola vez al cargar el
+// módulo (no cambian entre logins) — actualizarGatingSetup() los relee en
+// cada cambio, no hace falta re-pintarlos.
+newUserCarrerasGroup.appendChild(crearCheckboxesCarreras());
+aplicarLimiteCheckboxes(newUserCarrerasGroup, 2);
+newUserCarrerasGroup.addEventListener('change', actualizarGatingSetup);
+newUserClaveInput.addEventListener('input', actualizarGatingSetup);
 
 const LOGIN_ERROR_MESSAGES = {
     'auth/popup-closed-by-user':     'Cerraste la ventana de Google antes de terminar.',
@@ -56,10 +68,21 @@ async function handleLoginConGoogle() {
 
 // Fase 14.1: el botón arranca disabled en el HTML — solo se habilita
 // cuando el nombre no está vacío (trim). El rol siempre tiene un valor
-// válido por default (el <select> no tiene opción vacía), así que nombre
-// es la única condición real de gating.
+// válido por default (el <select> no tiene opción vacía).
+// Carrera(s)/clave única (2026-09-18) se suman al gating: 1-2 carreras
+// marcadas + clave de exactamente 6 dígitos — mismo formato que valida
+// registrarUsuario() en el servidor (defensa en profundidad, igual que el
+// resto del proyecto).
+function carrerasMarcadas() {
+    return [...newUserCarrerasGroup.querySelectorAll('input:checked')].map((cb) => cb.value);
+}
+
 export function actualizarGatingSetup() {
-    completeRegistroBtn.disabled = !newUserNombreInput.value.trim();
+    const carreras = carrerasMarcadas();
+    const claveValida = /^\d{6}$/.test(newUserClaveInput.value.trim());
+    completeRegistroBtn.disabled = !newUserNombreInput.value.trim()
+        || carreras.length < 1 || carreras.length > 2
+        || !claveValida;
 }
 
 newUserNombreInput.addEventListener('input', actualizarGatingSetup);
@@ -70,11 +93,13 @@ async function handleCompletarRegistro() {
 
     const nombre = newUserNombreInput.value.trim();
     if (!nombre) return; // el botón ya debería estar disabled — defensa en profundidad.
+    const carreras = carrerasMarcadas();
+    const claveUnica = newUserClaveInput.value.trim();
 
     completeRegistroBtn.disabled = true;
     mostrarErrorSetup('');
     try {
-        await registrarUsuario(user.uid, user.email, newUserRoleSelect.value, nombre);
+        await registrarUsuario(user.uid, user.email, newUserRoleSelect.value, nombre, carreras, claveUnica);
         // El select de Setup solo ofrece estudiante/externo (bloqueante de
         // seguridad ya validado) — nunca puede dar 'admin' aquí. No hace
         // falta ocultar #roleSelection/#googleLoginBtn: mostrarDashboard()

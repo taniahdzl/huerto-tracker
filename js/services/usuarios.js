@@ -17,6 +17,34 @@ import { getUsuarioActual } from './session.js';
 // atómica asistencia+horasTotales. Ver el comentario de cabecera de
 // _registrarHoras en chores.js para el porqué de este acoplamiento nuevo.
 import { _registrarHoras } from './chores.js';
+import { CARRERAS } from '../shared/catalogos.js';
+
+// Carrera(s) + clave única (2026-09-18): datos autodeclarados para
+// automatizar reportes, sin implicación de seguridad/permisos/horas — por
+// eso se validan aquí (capa de servicio) pero NO en firestore.rules, mismo
+// criterio ya aplicado a `nombre` (tampoco tiene regla de formato ahí).
+// Agregar el catálogo de 15 carreras a las reglas duplicaría el mismo
+// problema de sincronización que ya existe entre firestore.rules/
+// storage.rules para isAdmin() — sin ganancia real de seguridad, nadie
+// gana horas ni permisos por declarar una carrera falsa.
+function _validarCarreras(carreras) {
+    if (!Array.isArray(carreras) || carreras.length < 1 || carreras.length > 2) {
+        throw new Error('Selecciona 1 o 2 carreras.');
+    }
+    if (carreras.some((c) => !CARRERAS.includes(c))) {
+        throw new Error('Carrera inválida.');
+    }
+}
+
+// La matrícula real trae 3 ceros de prefijo (ej. "000123456") — el prefijo
+// es siempre el mismo para todos, así que para los reportes solo se guardan
+// los 6 dígitos que sí distinguen a cada persona (confirmado con la
+// usuaria 2026-09-18). Se valida el formato ya recortado, no el original.
+function _validarClaveUnica(claveUnica) {
+    if (typeof claveUnica !== 'string' || !/^\d{6}$/.test(claveUnica)) {
+        throw new Error('La clave única debe ser de 6 dígitos.');
+    }
+}
 
 function _logActividad(tipo, entidad, detalle) {
     const usuario = getUsuarioActual();
@@ -52,15 +80,19 @@ export async function obtenerDirectorioCompleto() {
     return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 }
 
-export async function registrarUsuario(uid, email, rol, nombre) {
+export async function registrarUsuario(uid, email, rol, nombre, carreras, claveUnica) {
     if (!nombre || !nombre.trim()) {
         throw new Error('El nombre es obligatorio para completar el registro.');
     }
+    _validarCarreras(carreras);
+    _validarClaveUnica(claveUnica);
     await setDoc(doc(db, PATHS.usuarios, uid), {
         email,
         rol,
         nombre: nombre.trim(),
-        horasTotales: 0
+        horasTotales: 0,
+        carreras,
+        claveUnica
     });
     // Aplica la regla del proyecto (Fase 8): toda escritura pasa por
     // _logActividad, aunque no se haya pedido explícitamente para esta
@@ -98,6 +130,21 @@ export async function actualizarNombrePropio(uid, nombre) {
     }
     await updateDoc(doc(db, PATHS.usuarios, uid), { nombre: nombre.trim() });
     _logActividad('ACTUALIZAR_NOMBRE_PROPIO', uid, nombre.trim());
+}
+
+// Carrera(s) + clave única (2026-09-18) — misma función sirve para DOS
+// flujos distintos: completar el perfil de alguien que ya tenía cuenta
+// antes de este cambio (gate en view-completar-perfil, ver main.js) y
+// editar esos datos más tarde desde Perfil. Ambos son un `update` sobre un
+// documento que YA existe, a diferencia de registrarUsuario (create) — no
+// se pudo compartir la validación llamando a registrarUsuario porque esa
+// función asume que el documento no existe todavía (rol/nombre/
+// horasTotales de un registro nuevo).
+export async function actualizarCarrerasYClavePropia(uid, carreras, claveUnica) {
+    _validarCarreras(carreras);
+    _validarClaveUnica(claveUnica);
+    await updateDoc(doc(db, PATHS.usuarios, uid), { carreras, claveUnica });
+    _logActividad('ACTUALIZAR_CARRERAS_CLAVE_PROPIA', uid, { carreras, claveUnica });
 }
 
 // Fase 13.2: ya no existe forma de "poner" horasTotales a un valor

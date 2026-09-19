@@ -44,3 +44,20 @@ export function marcarStatusSinSesion() {
     statusDot.classList.remove('online');
     statusText.textContent = 'Sin sesión';
 }
+
+// Limita cuántos checkboxes de un mismo contenedor pueden estar marcados a
+// la vez (ej. carreras: máx. 2, ver shared/catalogos.js) — deshabilita (no
+// oculta) el resto una vez alcanzado el máximo, así la persona ve que ya no
+// puede marcar más sin que la lista cambie de tamaño. Llamar una vez por
+// contenedor, después de pintar sus checkboxes (ej. tras
+// crearCheckboxesCarreras en render.js) — vuelve a evaluar el estado actual
+// de una vez (por si ya viene con `max` marcados al entrar en modo edición).
+export function aplicarLimiteCheckboxes(contenedor, max) {
+    const actualizar = () => {
+        const checkboxes = [...contenedor.querySelectorAll('input[type="checkbox"]')];
+        const marcados = checkboxes.filter((cb) => cb.checked).length;
+        checkboxes.forEach((cb) => { cb.disabled = !cb.checked && marcados >= max; });
+    };
+    contenedor.addEventListener('change', actualizar);
+    actualizar();
+}

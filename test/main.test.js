@@ -65,7 +65,7 @@ describe('auth:resuelto — caso 2: con sesión, sin perfil (Setup)', () => {
 
 describe('auth:resuelto — caso 3: con sesión y perfil', () => {
     test('rol estudiante: navega al Dashboard sin ver Admin', async () => {
-        firebaseMock.seed('usuarios', { u1: { nombre: 'Ana', rol: 'estudiante', horasTotales: 0 } });
+        firebaseMock.seed('usuarios', { u1: { nombre: 'Ana', rol: 'estudiante', horasTotales: 0, carreras: ['Economía'], claveUnica: '123456' } });
         await firebaseMock.triggerAuthState({ uid: 'u1', email: 'ana@test.com' });
         await esperar();
 
@@ -74,12 +74,43 @@ describe('auth:resuelto — caso 3: con sesión y perfil', () => {
     });
 
     test('rol admin: navega al Dashboard con Admin visible', async () => {
-        firebaseMock.seed('usuarios', { u1: { nombre: 'Ana', rol: 'admin', horasTotales: 0 } });
+        firebaseMock.seed('usuarios', { u1: { nombre: 'Ana', rol: 'admin', horasTotales: 0, carreras: ['Economía'], claveUnica: '123456' } });
         await firebaseMock.triggerAuthState({ uid: 'u1', email: 'ana@test.com' });
         await esperar();
 
         assert.equal(document.getElementById('view-dashboard').classList.contains('hidden'), false);
         assert.notEqual(document.getElementById('adminBtn').style.display, 'none');
+    });
+});
+
+describe('auth:resuelto — caso 2b: con sesión y perfil, pero falta carrera(s)/clave única (2026-09-18)', () => {
+    test('perfil sin carreras/claveUnica (creado antes de este cambio) -> view-completar-perfil, no Dashboard', async () => {
+        firebaseMock.seed('usuarios', { u1: { nombre: 'Ana', rol: 'estudiante', horasTotales: 3 } });
+        await firebaseMock.triggerAuthState({ uid: 'u1', email: 'ana@test.com' });
+        await esperar();
+
+        assert.equal(document.getElementById('view-completar-perfil').classList.contains('hidden'), false);
+        assert.equal(document.getElementById('view-dashboard').classList.contains('hidden'), true);
+    });
+
+    test('completar el formulario y guardar navega al Dashboard con el rol ya resuelto', async () => {
+        firebaseMock.seed('usuarios', { u1: { nombre: 'Ana', rol: 'admin', horasTotales: 3 } });
+        await firebaseMock.triggerAuthState({ uid: 'u1', email: 'ana@test.com' });
+        await esperar();
+
+        document.querySelector('#completarPerfilCarrerasGroup input[value="Economía"]').checked = true;
+        document.getElementById('completarPerfilCarrerasGroup').dispatchEvent(new window.Event('change', { bubbles: true }));
+        document.getElementById('completarPerfilClaveInput').value = '123456';
+        document.getElementById('completarPerfilClaveInput').dispatchEvent(new window.Event('input', { bubbles: true }));
+
+        document.getElementById('completarPerfilBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
+        await esperar();
+
+        const perfil = firebaseMock.leerDoc('usuarios', 'u1');
+        assert.deepEqual(perfil.carreras, ['Economía']);
+        assert.equal(perfil.claveUnica, '123456');
+        assert.equal(document.getElementById('view-dashboard').classList.contains('hidden'), false);
+        assert.notEqual(document.getElementById('adminBtn').style.display, 'none'); // rol admin se preservó
     });
 });
 

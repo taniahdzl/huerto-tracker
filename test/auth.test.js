@@ -60,7 +60,7 @@ describe('AuthService.init — contrato del evento auth:resuelto', () => {
     });
 
     test('caso 3: con sesión y perfil -> rol y nombre resueltos desde usuarios/{uid}', async () => {
-        firebaseMock.seed('usuarios', { u1: { rol: 'admin', nombre: 'Ana', email: 'ana@test.com' } });
+        firebaseMock.seed('usuarios', { u1: { rol: 'admin', nombre: 'Ana', email: 'ana@test.com', carreras: ['Economía'], claveUnica: '123456' } });
 
         AuthService.init();
         const promesa = esperarEvento();
@@ -69,7 +69,21 @@ describe('AuthService.init — contrato del evento auth:resuelto', () => {
 
         assert.equal(detalle.rol, 'admin');
         assert.equal(detalle.nombre, 'Ana');
+        assert.deepEqual(detalle.carreras, ['Economía']);
+        assert.equal(detalle.claveUnica, '123456');
         assert.equal(detalle.error, null);
+    });
+
+    test('caso 3, perfil de antes de 2026-09-18: sin carreras/claveUnica -> null explícito, no undefined', async () => {
+        firebaseMock.seed('usuarios', { u1: { rol: 'estudiante', nombre: 'Beto' } });
+
+        AuthService.init();
+        const promesa = esperarEvento();
+        await firebaseMock.triggerAuthState({ uid: 'u1', email: 'beto@test.com' });
+        const detalle = await promesa;
+
+        assert.equal(detalle.carreras, null);
+        assert.equal(detalle.claveUnica, null);
     });
 
     test('caso 4: con sesión pero obtenerUsuario() falla -> error poblado, rol null (se ve como caso 2 salvo por error)', async () => {

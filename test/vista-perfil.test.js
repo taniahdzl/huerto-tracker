@@ -120,6 +120,75 @@ describe('cambio de rol propio', () => {
     });
 });
 
+describe('carrera(s) + clave única (2026-09-18)', () => {
+    test('sin declarar: muestra "Sin declarar" y no pinta barra de progreso', async () => {
+        firebaseMock.seed('usuarios', { u1: { nombre: 'Ana', rol: 'estudiante', horasTotales: 0 } });
+        irAVistaPerfil();
+        await esperarMicrotareas();
+
+        assert.equal(document.getElementById('perfilCarrerasTexto').textContent, 'Sin declarar');
+        assert.equal(document.getElementById('perfilClaveTexto').textContent, 'Sin declarar');
+        assert.equal(document.getElementById('perfilBarraProgreso').children.length, 0);
+    });
+
+    test('con carrera(s) declaradas: pinta el texto y la barra de progreso hacia 480h/carrera', async () => {
+        firebaseMock.seed('usuarios', { u1: { nombre: 'Ana', rol: 'estudiante', horasTotales: 240, carreras: ['Economía'], claveUnica: '123456' } });
+        irAVistaPerfil();
+        await esperarMicrotareas();
+
+        assert.equal(document.getElementById('perfilCarrerasTexto').textContent, 'Economía');
+        assert.equal(document.getElementById('perfilClaveTexto').textContent, '123456');
+        assert.match(document.getElementById('perfilBarraProgreso').textContent, /240 de 480 horas \(50%\)/);
+    });
+
+    test('dos carreras: objetivo es 960h, no 480 (no se promedian)', async () => {
+        firebaseMock.seed('usuarios', { u1: { nombre: 'Ana', rol: 'estudiante', horasTotales: 96, carreras: ['Economía', 'Derecho'], claveUnica: '123456' } });
+        irAVistaPerfil();
+        await esperarMicrotareas();
+
+        assert.match(document.getElementById('perfilBarraProgreso').textContent, /96 de 960 horas \(10%\)/);
+    });
+
+    test('Editar habilita los checkboxes/input y muestra Guardar; Guardar exitoso persiste y vuelve a bloquear', async () => {
+        firebaseMock.seed('usuarios', { u1: { nombre: 'Ana', rol: 'estudiante', horasTotales: 0, carreras: ['Economía'], claveUnica: '123456' } });
+        irAVistaPerfil();
+        await esperarMicrotareas();
+
+        const grupo = document.getElementById('perfilCarrerasGroup');
+        const claveInput = document.getElementById('perfilClaveInput');
+        const editarBtn = document.getElementById('perfilEditarCarrerasClaveBtn');
+        const guardarBtn = document.getElementById('perfilGuardarCarrerasClaveBtn');
+
+        assert.equal(grupo.style.display, 'none');
+        editarBtn.dispatchEvent(new window.Event('click', { bubbles: true }));
+        assert.equal(grupo.style.display, '');
+        assert.equal(guardarBtn.style.display, '');
+
+        grupo.querySelector('input[value="Economía"]').checked = false;
+        grupo.querySelector('input[value="Derecho"]').checked = true;
+        grupo.dispatchEvent(new window.Event('change', { bubbles: true }));
+        claveInput.value = '654321';
+
+        guardarBtn.dispatchEvent(new window.Event('click', { bubbles: true }));
+        await esperarMicrotareas();
+
+        const perfil = firebaseMock.leerDoc('usuarios', 'u1');
+        assert.deepEqual(perfil.carreras, ['Derecho']);
+        assert.equal(perfil.claveUnica, '654321');
+        assert.equal(grupo.style.display, 'none'); // vuelve a bloquear tras éxito
+    });
+
+    test('marcar 2 carreras deja el resto de los checkboxes disabled (máx. 2)', async () => {
+        firebaseMock.seed('usuarios', { u1: { nombre: 'Ana', rol: 'estudiante', horasTotales: 0, carreras: ['Economía', 'Derecho'], claveUnica: '123456' } });
+        irAVistaPerfil();
+        await esperarMicrotareas();
+
+        document.getElementById('perfilEditarCarrerasClaveBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
+        const checkboxes = [...document.querySelectorAll('#perfilCarrerasGroup input')];
+        assert.ok(checkboxes.find((cb) => !cb.checked).disabled);
+    });
+});
+
 describe('logout', () => {
     test('perfilLogoutBtn llama a AuthService.logout()', async () => {
         firebaseMock.seed('usuarios', { u1: { nombre: 'Ana', rol: 'estudiante', horasTotales: 0 } });
