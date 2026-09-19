@@ -35,6 +35,13 @@ beforeEach(async () => {
     firebaseMock.reset();
     setEsAdminActual(false);
     await firebaseMock.triggerAuthState({ uid: 'admin1', email: 'admin@test.com' });
+    window.confirm = () => true; // jsdom no lo implementa — ver vista-catalogos.test.js
+    // filtroProyectosActual es estado de MÓDULO, no de test (mismo patrón/
+    // misma trampa que filtroTareasActual en vista-tareas.js) — un test que
+    // cambia a la pestaña "Concluidos" deja ese estado para el siguiente
+    // test del archivo si no se resetea acá. Como no está exportado, se
+    // resetea con un clic real sobre la pestaña "Activos".
+    document.querySelector('[data-filtro-proyecto="activo"]').dispatchEvent(new window.Event('click', { bubbles: true }));
 });
 
 describe('irAVistaProyectos — carga y pinta la galería', () => {
@@ -162,6 +169,89 @@ describe('modal Agregar Paso (admin-only)', () => {
         assert.equal(tarea.proyectoId, 'p1');
         assert.equal(document.getElementById('agregarPasoModal').classList.contains('open'), false);
         assert.equal(document.querySelector('.proyecto-checklist-titulo').textContent, 'Regar cama 3');
+    });
+});
+
+// Gestión de proyectos (2026-09-19): toggle Activos/Concluidos +
+// Concluir/Reactivar/Eliminar.
+describe('Toggle Activos/Concluidos', () => {
+    test('arranca en "Activos" — un proyecto completado no se ve hasta cambiar de pestaña', async () => {
+        firebaseMock.seed('proyectos', {
+            p1: { nombre: 'Activo', estado: 'activo', pasos: [] },
+            p2: { nombre: 'Concluido', estado: 'completado', pasos: [] }
+        });
+        irAVistaProyectos();
+        await esperar();
+
+        assert.equal(document.querySelector('.proyecto-card-nombre').textContent, 'Activo');
+        assert.equal(document.querySelectorAll('.proyecto-card').length, 1);
+
+        document.querySelector('[data-filtro-proyecto="concluido"]').dispatchEvent(new window.Event('click', { bubbles: true }));
+        assert.equal(document.querySelector('.proyecto-card-nombre').textContent, 'Concluido');
+    });
+
+    test('sin proyectos en la pestaña activa, muestra el mensaje de vacío (no una galería en blanco sin explicación)', async () => {
+        firebaseMock.seed('proyectos', {});
+        irAVistaProyectos();
+        await esperar();
+
+        assert.equal(document.getElementById('proyectosVacio').style.display, '');
+        assert.match(document.getElementById('proyectosVacio').textContent, /No hay proyectos activos/);
+    });
+});
+
+describe('Concluir / Reactivar / Eliminar (admin)', () => {
+    test('Concluir mueve el proyecto de "Activos" a "Concluidos"', async () => {
+        firebaseMock.seed('proyectos', { p1: { nombre: 'X', estado: 'activo', pasos: [] } });
+        setEsAdminActual(true);
+        irAVistaProyectos();
+        await esperar();
+
+        document.querySelector('.proyecto-card-acciones button:nth-child(2)').dispatchEvent(new window.Event('click', { bubbles: true }));
+        await esperar();
+
+        assert.equal(firebaseMock.leerDoc('proyectos', 'p1').estado, 'completado');
+        assert.equal(document.querySelectorAll('.proyecto-card').length, 0); // ya no está en "Activos"
+    });
+
+    test('Reactivar mueve el proyecto de "Concluidos" a "Activos"', async () => {
+        firebaseMock.seed('proyectos', { p1: { nombre: 'X', estado: 'completado', pasos: [] } });
+        setEsAdminActual(true);
+        irAVistaProyectos();
+        await esperar();
+        document.querySelector('[data-filtro-proyecto="concluido"]').dispatchEvent(new window.Event('click', { bubbles: true }));
+
+        document.querySelector('.proyecto-card-acciones button').dispatchEvent(new window.Event('click', { bubbles: true }));
+        await esperar();
+
+        assert.equal(firebaseMock.leerDoc('proyectos', 'p1').estado, 'activo');
+    });
+
+    test('Eliminar pide confirmación, borra el proyecto y NO borra sus tareas', async () => {
+        firebaseMock.seed('tareas', { t1: { titulo: 'Regar', proyectoId: 'p1' } });
+        firebaseMock.seed('proyectos', { p1: { nombre: 'X', estado: 'activo', pasos: [{ tareaId: 't1', orden: 1 }] } });
+        setEsAdminActual(true);
+        irAVistaProyectos();
+        await esperar();
+
+        document.querySelector('.catalogo-eliminar-btn').dispatchEvent(new window.Event('click', { bubbles: true }));
+        await esperar();
+
+        assert.equal(firebaseMock.leerDoc('proyectos', 'p1'), null);
+        assert.ok(firebaseMock.leerDoc('tareas', 't1'));
+    });
+
+    test('cancelar la confirmación de Eliminar no borra nada', async () => {
+        firebaseMock.seed('proyectos', { p1: { nombre: 'X', estado: 'activo', pasos: [] } });
+        setEsAdminActual(true);
+        window.confirm = () => false;
+        irAVistaProyectos();
+        await esperar();
+
+        document.querySelector('.catalogo-eliminar-btn').dispatchEvent(new window.Event('click', { bubbles: true }));
+        await esperar();
+
+        assert.ok(firebaseMock.leerDoc('proyectos', 'p1'));
     });
 });
 

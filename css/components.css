@@ -327,6 +327,7 @@
 }
 .proyecto-checklist-item:hover { background: var(--color-borde); }
 .proyecto-checklist-marca { font-size: 0.85rem; }
+.proyecto-card-acciones { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: var(--space-2); }
 
 /* ── CATÁLOGOS (Fase 13.6b) ── */
 #view-catalogos .view-catalogos-toolbar {

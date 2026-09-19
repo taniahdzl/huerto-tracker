@@ -428,6 +428,54 @@ describe('renderGaleriaProyectos', () => {
         assert.equal(contenedorNoAdmin.querySelector('.proyecto-card button'), null);
     });
 
+    // Gestión de proyectos (2026-09-19): Concluir/Reactivar/Eliminar.
+    describe('Concluir / Reactivar / Eliminar (admin)', () => {
+        test('activo: "Concluir" + "Eliminar", sin "Reactivar" — Concluir dispara onConcluir', () => {
+            const contenedor = document.createElement('div');
+            const concluidos = [];
+            renderGaleriaProyectos([proyectoBase({ estado: 'activo' })], contenedor, () => {}, {
+                esAdmin: true, onAgregarPaso: () => {}, onConcluir: (id) => concluidos.push(id), onReactivar: () => {}, onEliminar: () => {}
+            });
+
+            const botones = [...contenedor.querySelectorAll('.proyecto-card-acciones button')].map((b) => b.textContent);
+            assert.deepEqual(botones, ['+ Agregar paso', '✔ Concluir', '🗑 Eliminar']);
+
+            contenedor.querySelector('.proyecto-card-acciones button:nth-child(2)').dispatchEvent(new window.Event('click', { bubbles: true }));
+            assert.deepEqual(concluidos, ['p1']);
+        });
+
+        test('completado: "Reactivar" + "Eliminar", sin "+ Agregar paso" ni "Concluir" — Reactivar dispara onReactivar', () => {
+            const contenedor = document.createElement('div');
+            const reactivados = [];
+            renderGaleriaProyectos([proyectoBase({ estado: 'completado' })], contenedor, () => {}, {
+                esAdmin: true, onReactivar: (id) => reactivados.push(id), onEliminar: () => {}
+            });
+
+            const botones = [...contenedor.querySelectorAll('.proyecto-card-acciones button')].map((b) => b.textContent);
+            assert.deepEqual(botones, ['↩ Reactivar', '🗑 Eliminar']);
+
+            contenedor.querySelector('.proyecto-card-acciones button').dispatchEvent(new window.Event('click', { bubbles: true }));
+            assert.deepEqual(reactivados, ['p1']);
+        });
+
+        test('Eliminar dispara onEliminar con el id, sin importar el estado', () => {
+            const contenedor = document.createElement('div');
+            const eliminados = [];
+            renderGaleriaProyectos([proyectoBase({ estado: 'activo' })], contenedor, () => {}, {
+                esAdmin: true, onAgregarPaso: () => {}, onConcluir: () => {}, onEliminar: (id) => eliminados.push(id)
+            });
+
+            contenedor.querySelector('.catalogo-eliminar-btn').dispatchEvent(new window.Event('click', { bubbles: true }));
+            assert.deepEqual(eliminados, ['p1']);
+        });
+
+        test('no-admin: sin ninguno de estos botones', () => {
+            const contenedor = document.createElement('div');
+            renderGaleriaProyectos([proyectoBase()], contenedor, () => {}, { esAdmin: false });
+            assert.equal(contenedor.querySelector('.proyecto-card-acciones'), null);
+        });
+    });
+
     test('proyecto sin descripción no pinta el párrafo (sin estado vacío forzado)', () => {
         const contenedor = document.createElement('div');
         renderGaleriaProyectos([proyectoBase({ descripcion: '' })], contenedor, () => {});

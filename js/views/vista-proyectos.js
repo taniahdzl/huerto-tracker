@@ -16,8 +16,17 @@
 // Completar un paso reusa abrirModalCompletarTarea() (exportada de
 // vista-tareas.js) — mismo modal, mismo completarTarea()/_registrarHoras()
 // de siempre, sin camino alterno para otorgar horas.
+//
+// Gestión de proyectos (2026-09-19): Concluir/Reactivar/Eliminar, toggle
+// Activos/Concluidos. Eliminar un proyecto NO borra sus tareas (decisión
+// confirmada con la usuaria) — quedan sueltas con `proyectoId` apuntando a
+// un doc que ya no existe, mismo criterio de "no inventar cascadas
+// destructivas" del resto del proyecto (ver comentario de cabecera de
+// eliminarProyecto, proyectos.js). El toggle solo distingue
+// 'activo'/'completado' — 'pausado' existe en el esquema pero no tiene UI
+// (fuera de alcance de esta fase, ningún flujo real lo produce todavía).
 
-import { crearProyecto, agregarPasoAProyecto, obtenerProyectosConProgreso } from '../services/proyectos.js';
+import { crearProyecto, agregarPasoAProyecto, obtenerProyectosConProgreso, actualizarEstadoProyecto, eliminarProyecto } from '../services/proyectos.js';
 import { obtenerDirectorioCompleto } from '../services/usuarios.js';
 import { renderGaleriaProyectos } from '../render/render.js';
 import { nombreParaMostrar } from '../services/session.js';
@@ -27,7 +36,9 @@ import { getEsAdminActual } from '../shared/estado-app.js';
 import { abrirModalCompletarTarea, calcularSugerenciaHoras } from './vista-tareas.js';
 
 const proyectosGaleria = document.getElementById('proyectosGaleria');
+const proyectosVacio   = document.getElementById('proyectosVacio');
 const crearProyectoBtn = document.getElementById('crearProyectoBtn');
+const proyectosFilterTabs = document.querySelectorAll('#view-proyectos .filter-tab');
 
 const crearProyectoModalClose  = document.getElementById('crearProyectoModalClose');
 const crearProyectoNombre      = document.getElementById('crearProyectoNombre');
@@ -47,6 +58,7 @@ const agregarPasoSaveBtn     = document.getElementById('agregarPasoSaveBtn');
 let proyectosActuales   = [];
 let estudiantesActuales = [];
 let proyectoEnEdicion   = null;
+let filtroProyectosActual = 'activo';
 
 export function irAVistaProyectos() {
     navegarA('view-proyectos');
@@ -71,11 +83,34 @@ function renderizarVistaProyectos() {
     const esAdmin = getEsAdminActual();
     // Patrón local (estilo Catálogos) — ver cabecera del archivo.
     crearProyectoBtn.style.display = esAdmin ? '' : 'none';
-    renderGaleriaProyectos(proyectosActuales, proyectosGaleria, abrirPaso, {
+
+    // Activo == 'activo'; Concluidos == 'completado' — filtrado en cliente
+    // sobre lo ya cargado, mismo patrón que mías/todas en Tareas (sin
+    // volver a pedir a Firestore por cambiar de pestaña).
+    const estadoObjetivo = filtroProyectosActual === 'concluido' ? 'completado' : 'activo';
+    const proyectosFiltrados = proyectosActuales.filter((p) => p.estado === estadoObjetivo);
+
+    renderGaleriaProyectos(proyectosFiltrados, proyectosGaleria, abrirPaso, {
         esAdmin,
-        onAgregarPaso: abrirAgregarPasoModal
+        onAgregarPaso: abrirAgregarPasoModal,
+        onConcluir: handleConcluirProyecto,
+        onReactivar: handleReactivarProyecto,
+        onEliminar: handleEliminarProyecto
     });
+
+    proyectosVacio.textContent = filtroProyectosActual === 'concluido'
+        ? 'No hay proyectos concluidos todavía.'
+        : 'No hay proyectos activos.';
+    proyectosVacio.style.display = proyectosFiltrados.length === 0 ? '' : 'none';
 }
+
+proyectosFilterTabs.forEach((tab) => {
+    tab.addEventListener('click', () => {
+        filtroProyectosActual = tab.dataset.filtroProyecto;
+        proyectosFilterTabs.forEach((t) => t.classList.toggle('active', t === tab));
+        renderizarVistaProyectos();
+    });
+});
 
 // Clic en un paso: reutiliza abrirModalCompletarTarea (vista-tareas.js) —
 // mismo modal/flujo de completar+foto de evidencia, no se duplica acá.
@@ -214,3 +249,43 @@ async function handleAgregarPasoGuardar() {
 
 agregarPasoModalClose.addEventListener('click', () => closeModal('agregarPasoModal'));
 agregarPasoSaveBtn.addEventListener('click', handleAgregarPasoGuardar);
+
+// ── Concluir / Reactivar / Eliminar (admin) ─────────────────────────
+// Sin modal de confirmación para Concluir/Reactivar (reversible entre sí,
+// una es la inversa exacta de la otra) — sí para Eliminar (irreversible),
+// mismo window.confirm nativo que ya usa el resto del proyecto para
+// borrados (vista-catalogos.js, vista-tareas.js).
+
+async function handleConcluirProyecto(proyectoId) {
+    try {
+        await actualizarEstadoProyecto(proyectoId, 'completado');
+        mostrarToast('Proyecto concluido', 'green');
+        await cargarYRenderizarProyectos();
+    } catch (e) {
+        console.error('[vista-proyectos] Error concluyendo el proyecto:', e);
+        mostrarToast('No se pudo concluir el proyecto', 'red');
+    }
+}
+
+async function handleReactivarProyecto(proyectoId) {
+    try {
+        await actualizarEstadoProyecto(proyectoId, 'activo');
+        mostrarToast('Proyecto reactivado', 'green');
+        await cargarYRenderizarProyectos();
+    } catch (e) {
+        console.error('[vista-proyectos] Error reactivando el proyecto:', e);
+        mostrarToast('No se pudo reactivar el proyecto', 'red');
+    }
+}
+
+async function handleEliminarProyecto(proyectoId) {
+    if (!window.confirm('¿Eliminar este proyecto? Sus tareas NO se eliminan — quedan sueltas en Tareas.')) return;
+    try {
+        await eliminarProyecto(proyectoId);
+        mostrarToast('Proyecto eliminado', 'green');
+        await cargarYRenderizarProyectos();
+    } catch (e) {
+        console.error('[vista-proyectos] Error eliminando el proyecto:', e);
+        mostrarToast('No se pudo eliminar el proyecto', 'red');
+    }
+}

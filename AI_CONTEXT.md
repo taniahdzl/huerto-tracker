@@ -271,6 +271,22 @@ un estado del proyecto (monolito en `index.html`, JS vacío, API key en
   nadie confirmó todavía que se vea/sienta bien en un navegador real —
   igual que Storage, esto queda pendiente de una pasada de confirmación
   visual antes de darlo por cerrado en producción.
+- **Gestión de Proyectos: Concluir/Reactivar/Eliminar + toggle
+  Activos/Concluidos (2026-09-19).** `actualizarEstadoProyecto`/
+  `eliminarProyecto` nuevos en `proyectos.js` — el esquema ya tenía
+  `estado:'activo'|'completado'|'pausado'` desde el diseño original, solo
+  faltaba UI para moverlo. **Eliminar un proyecto NO borra sus tareas**
+  (decisión explícita, confirmada con la usuaria) — quedan sueltas con
+  `proyectoId` apuntando a un doc que ya no existe, mismo criterio que
+  `tareas.proyectoId` opcional/tolerante a esto desde el diseño original;
+  cascada destructiva se consideró y se descartó a propósito. El toggle
+  (`filtroProyectosActual`, mismo patrón de estado de módulo que
+  `filtroTareasActual` en Tareas — no se resetea al reentrar a la vista,
+  recuerda la última pestaña elegida en la sesión) solo distingue
+  'activo'/'completado' — 'pausado' sigue sin ningún flujo real que lo
+  produzca, fuera de alcance de esta fase. Cobertura vía tests con
+  Firestore mockeado; mismo pendiente de confirmación visual que el resto
+  de Proyectos.
 - **Tareas autoasignadas con aprobación de admin (2026-09-06).** Extiende
   `tareas` (NO colección nueva): `origen: 'asignada'|'autoasignada'`
   (default `'asignada'` — un doc viejo sin este campo se sigue leyendo como
@@ -578,6 +594,11 @@ para ver más plantas vs. arrastrar hacia el mapa" (Fase 18.4).
       todavía que el gate de `view-completar-perfil` y las 3 barras (Perfil,
       Setup con checkboxes, Resumen de Horas) se vean/sientan bien en un
       navegador real. Mismo pendiente que Storage/Proyectos/autoasignadas.
+- [x] Nuevo: Gestión de Proyectos — Concluir/Reactivar/Eliminar + toggle
+      Activos/Concluidos (2026-09-19) — ver sección 1, bullet de Gestión de
+      Proyectos.
+- [ ] Nuevo: confirmar en navegador real la Gestión de Proyectos. Mismo
+      pendiente que el resto de Proyectos/Storage/autoasignadas/Carrera(s).
 
 ## 4. Arquitectura de módulos (Fase 19, 2026-07-24 — reorganizado en
    carpetas y `vista-gemelo.js` partido en Fase 22, 2026-07-25)
