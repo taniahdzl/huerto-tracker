@@ -66,59 +66,71 @@ describe('obtenerTareas', () => {
 });
 
 describe('crearTarea', () => {
-    test('crea con estado pendiente, asignados por default, horasAOtorgar/fotoEvidenciaUrl en null/0 y fechaCreacion', async () => {
-        const id = await crearTarea({ titulo: 'Cosechar', tipo: 'individual' });
+    test('crea con estado pendiente, asignados por default, horasEfectivas/horasAOtorgar calculadas, fotoEvidenciaUrl null y fechaCreacion', async () => {
+        const id = await crearTarea({ titulo: 'Cosechar', tipo: 'riego' });
 
         const guardada = firebaseMock.leerDoc('tareas', id);
         assert.equal(guardada.titulo, 'Cosechar');
-        assert.equal(guardada.tipo, 'individual');
+        assert.equal(guardada.tipo, 'riego');
         assert.equal(guardada.estado, 'pendiente');
         assert.deepEqual(guardada.asignados, []);
-        assert.equal(guardada.horasAOtorgar, 0);
+        assert.equal(guardada.horasEfectivas, 0);
+        assert.equal(guardada.horasAOtorgar, 0); // 0 efectivas × cualquier multiplicador sigue siendo 0
         assert.equal(guardada.fotoEvidenciaUrl, null);
         assert.ok(guardada.fechaCreacion);
     });
 
     test('origen por default es "asignada" (no rompe tareas/llamadas viejas); "autoasignada" solo si se pide', async () => {
-        const idViejo = await crearTarea({ titulo: 'X', tipo: 'individual' });
+        const idViejo = await crearTarea({ titulo: 'X', tipo: 'riego' });
         assert.equal(firebaseMock.leerDoc('tareas', idViejo).origen, 'asignada');
 
-        const idAuto = await crearTarea({ titulo: 'Y', tipo: 'individual', origen: 'autoasignada' });
+        const idAuto = await crearTarea({ titulo: 'Y', tipo: 'riego', origen: 'autoasignada' });
         assert.equal(firebaseMock.leerDoc('tareas', idAuto).origen, 'autoasignada');
 
         // Cualquier otro valor (o typo) cae también a 'asignada' — no se
         // inventa un tercer origen silencioso.
-        const idRaro = await crearTarea({ titulo: 'Z', tipo: 'individual', origen: 'otro' });
+        const idRaro = await crearTarea({ titulo: 'Z', tipo: 'riego', origen: 'otro' });
         assert.equal(firebaseMock.leerDoc('tareas', idRaro).origen, 'asignada');
     });
 
     test('creadorId es el uid en sesión al crear; motivoRechazo nace null', async () => {
         setUsuarioActual({ uid: 'u1', email: 'ana@test.com' });
-        const id = await crearTarea({ titulo: 'X', tipo: 'individual', origen: 'autoasignada' });
+        const id = await crearTarea({ titulo: 'X', tipo: 'riego', origen: 'autoasignada' });
         const guardada = firebaseMock.leerDoc('tareas', id);
         assert.equal(guardada.creadorId, 'u1');
         assert.equal(guardada.motivoRechazo, null);
     });
 
-    test('respeta el array de asignados y horasAOtorgar si vienen en los datos', async () => {
-        const id = await crearTarea({ titulo: 'Cosechar', tipo: 'asistencia', asignados: ['u1', 'u2'], horasAOtorgar: 15 });
+    // Multiplicadores de horas (2026-09-19): horasAOtorgar SIEMPRE se
+    // calcula a partir de horasEfectivas × multiplicador del tipo — nunca
+    // se acepta un horasAOtorgar directo del caller.
+    test('respeta el array de asignados; calcula horasAOtorgar = horasEfectivas × multiplicador del tipo', async () => {
+        const id = await crearTarea({ titulo: 'Cosechar', tipo: 'riego', asignados: ['u1', 'u2'], horasEfectivas: 5 });
         const guardada = firebaseMock.leerDoc('tareas', id);
         assert.deepEqual(guardada.asignados, ['u1', 'u2']);
-        assert.equal(guardada.horasAOtorgar, 15);
+        assert.equal(guardada.horasEfectivas, 5);
+        assert.equal(guardada.horasAOtorgar, 10); // riego ×2
     });
 
-    test('rechaza sin un tipo válido — no inventa default', async () => {
+    test('redondea al entero más cercano — 4h efectivas de trabajo_fisico (×3.7) da 15, no 14.8', async () => {
+        const id = await crearTarea({ titulo: 'Sábado', tipo: 'trabajo_fisico', horasEfectivas: 4 });
+        assert.equal(firebaseMock.leerDoc('tareas', id).horasAOtorgar, 15);
+    });
+
+    test('rechaza sin un tipo válido — no inventa default, ni con los tipos viejos retirados', async () => {
         await assert.rejects(() => crearTarea({ titulo: 'Sin tipo' }));
         await assert.rejects(() => crearTarea({ titulo: 'Tipo inválido', tipo: 'otro' }));
+        await assert.rejects(() => crearTarea({ titulo: 'Tipo viejo', tipo: 'individual' }));
+        await assert.rejects(() => crearTarea({ titulo: 'Tipo viejo', tipo: 'asistencia' }));
         assert.equal(firebaseMock.leerColeccion('tareas').length, 0);
     });
 
     test('registra actividad solo si hay un usuario en sesión', async () => {
-        await crearTarea({ titulo: 'Sin sesión', tipo: 'individual' });
+        await crearTarea({ titulo: 'Sin sesión', tipo: 'riego' });
         assert.equal(firebaseMock.leerColeccion('registro_actividad').length, 0);
 
         setUsuarioActual({ uid: 'admin1', email: 'admin@test.com' });
-        await crearTarea({ titulo: 'Con sesión', tipo: 'individual' });
+        await crearTarea({ titulo: 'Con sesión', tipo: 'riego' });
         const log = firebaseMock.leerColeccion('registro_actividad');
         assert.equal(log.length, 1);
         assert.equal(log[0].tipo, 'CREAR_TAREA');
@@ -445,8 +457,9 @@ describe('Escenario: horas infladas antes de revisión (firestore.rules)', () =>
     test('paso 3 (inflar horas) es rechazado por la regla, y nunca llega inflado a revisión', async () => {
         setUsuarioActual({ uid: 'u1', email: 'ana@test.com' });
 
-        // Paso 1: crear tarea autoasignada con horasAOtorgar: 1, pendiente.
-        const id = await crearTarea({ titulo: 'Regar', tipo: 'individual', origen: 'autoasignada', horasAOtorgar: 1 });
+        // Paso 1: crear tarea autoasignada con horasAOtorgar: 1 (0.5h
+        // efectivas × riego ×2), pendiente.
+        const id = await crearTarea({ titulo: 'Regar', tipo: 'riego', origen: 'autoasignada', horasEfectivas: 0.5 });
         const tarea = firebaseMock.leerDoc('tareas', id);
         assert.equal(tarea.estado, 'pendiente');
         assert.equal(tarea.horasAOtorgar, 1);

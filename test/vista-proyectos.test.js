@@ -35,6 +35,11 @@ beforeEach(async () => {
     firebaseMock.reset();
     setEsAdminActual(false);
     await firebaseMock.triggerAuthState({ uid: 'admin1', email: 'admin@test.com' });
+    // completarTareaModal es el MISMO nodo del DOM en todo este archivo —
+    // un test que lo abre y lo deja abierto (ej. un rechazo por falta de
+    // evidencia, a propósito no lo cierra) filtra ese estado al siguiente
+    // test si no se resetea acá.
+    document.getElementById('completarTareaModal').classList.remove('open');
 });
 
 describe('irAVistaProyectos — carga y pinta la galería', () => {
@@ -152,7 +157,7 @@ describe('modal Agregar Paso (admin-only)', () => {
 
         document.querySelector('.proyecto-card button').dispatchEvent(new window.Event('click', { bubbles: true }));
         document.getElementById('agregarPasoTitulo').value = 'Regar cama 3';
-        document.getElementById('agregarPasoTipo').value = 'individual';
+        document.getElementById('agregarPasoTipo').value = 'riego';
         document.querySelector('#agregarPasoAssignees input[type="checkbox"]').checked = true;
         document.getElementById('agregarPasoSaveBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
         await esperar();
@@ -179,8 +184,13 @@ describe('clic en un paso — reutiliza abrirModalCompletarTarea de vista-tareas
         assert.equal(document.getElementById('completarTareaTitulo').textContent, 'Paso pendiente');
     });
 
-    test('completar el paso desde Proyectos otorga horas vía completarTarea/_registrarHoras y refresca el progreso de la tarjeta sin re-render manual extra', async () => {
-        firebaseMock.seed('tareas', { t1: { titulo: 'Paso', tipo: 'individual', estado: 'pendiente', asignados: ['u1'], horasAOtorgar: 5 } });
+    // Multiplicadores de horas (2026-09-19): la evidencia es SIEMPRE
+    // obligatoria ahora — el camino de éxito (con archivo real) exige
+    // comprimirImagen()/Canvas API, que jsdom no implementa (límite
+    // conocido, ver AI_CONTEXT.md). Se cubre lo testeable: sin evidencia,
+    // el paso se rechaza y el progreso de la tarjeta no cambia.
+    test('completar un paso sin evidencia se rechaza — el progreso de la tarjeta no cambia', async () => {
+        firebaseMock.seed('tareas', { t1: { titulo: 'Paso', tipo: 'riego', estado: 'pendiente', asignados: ['u1'], horasAOtorgar: 5 } });
         firebaseMock.seed('usuarios', { u1: { horasTotales: 0 } });
         firebaseMock.seed('proyectos', { p1: { nombre: 'X', estado: 'activo', pasos: [{ tareaId: 't1', orden: 1 }] } });
         setEsAdminActual(true);
@@ -193,12 +203,10 @@ describe('clic en un paso — reutiliza abrirModalCompletarTarea de vista-tareas
         document.getElementById('completarTareaSaveBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
         await esperar();
 
-        assert.equal(firebaseMock.leerDoc('tareas', 't1').estado, 'completada');
-        assert.equal(firebaseMock.leerDoc('usuarios', 'u1').horasTotales, 5); // vía el mismo _registrarHoras de siempre
-        // La galería se refrescó sola (onCompletado -> cargarYRenderizarProyectos)
-        // sin que este test dispare ningún re-render a mano.
-        assert.equal(document.querySelector('.proyecto-card-progreso-texto').textContent, '1 de 1 pasos completados');
-        assert.equal(document.querySelector('.proyecto-checklist-marca').textContent, '✅');
+        assert.equal(firebaseMock.leerDoc('tareas', 't1').estado, 'pendiente');
+        assert.equal(firebaseMock.leerDoc('usuarios', 'u1').horasTotales, 0);
+        assert.equal(document.querySelector('.proyecto-card-progreso-texto').textContent, '0 de 1 pasos completados');
+        assert.ok(document.getElementById('completarTareaModal').classList.contains('open')); // sigue abierto para reintentar
     });
 
     test('paso ya completado: el clic no abre nada (no hay vista de detalle de solo lectura)', async () => {

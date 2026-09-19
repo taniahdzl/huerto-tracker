@@ -21,7 +21,7 @@ mock.module(firebaseUrl, { namedExports: firebaseMock.exports });
 const { AuthService } = await import('../js/services/auth.js');
 const { setEsAdminActual } = await import('../js/shared/estado-app.js');
 const {
-    irAVistaTareas, getEstudiantesActuales, setEstudiantesActuales, calcularSugerenciaHoras
+    irAVistaTareas, getEstudiantesActuales, setEstudiantesActuales, calcularSugerenciaHorasEfectivas, textoPreviewHoras
 } = await import('../js/views/vista-tareas.js');
 
 AuthService.init();
@@ -85,10 +85,18 @@ describe('irAVistaTareas — carga y filtro', () => {
     });
 });
 
-describe('completar tarea — modal único, foto obligatoria solo si tipo:asistencia', () => {
+// Multiplicadores de horas (2026-09-19): las 6 categorías reemplazaron
+// tanto a 'asistencia' como a 'individual' — la evidencia es SIEMPRE
+// obligatoria ahora, sin excepción por tipo. El camino de éxito (con
+// archivo real) no se puede ejercitar en esta suite: exige
+// comprimirImagen() -> Canvas API, que jsdom no implementa (límite
+// conocido, ya documentado en AI_CONTEXT.md para otros flujos de
+// evidencia) — se cubre lo que SÍ es testeable: el rechazo sin evidencia,
+// universal ahora, no solo para un tipo.
+describe('completar tarea — modal único, foto SIEMPRE obligatoria (2026-09-19)', () => {
     test('click en "Completar" abre el modal (no completa directo) con el título de la tarea', async () => {
         setEsAdminActual(true);
-        firebaseMock.seed('tareas', { t1: { titulo: 'Regar cama 3', tipo: 'individual', estado: 'pendiente', asignados: ['u1'] } });
+        firebaseMock.seed('tareas', { t1: { titulo: 'Regar cama 3', tipo: 'riego', estado: 'pendiente', asignados: ['u1'] } });
         irAVistaTareas();
         await esperar();
 
@@ -99,34 +107,24 @@ describe('completar tarea — modal único, foto obligatoria solo si tipo:asiste
         assert.equal(firebaseMock.leerDoc('tareas', 't1').estado, 'pendiente'); // no completó solo con abrir
     });
 
-    test('tipo:individual sin foto: completa, otorga horasAOtorgar y cierra el modal', async () => {
+    test('la etiqueta de evidencia siempre dice "obligatoria", sin importar el tipo', async () => {
         setEsAdminActual(true);
-        firebaseMock.seed('tareas', { t1: { titulo: 'X', tipo: 'individual', estado: 'pendiente', asignados: ['u1'], horasAOtorgar: 3 } });
-        firebaseMock.seed('usuarios', { u1: { horasTotales: 0 } });
-        irAVistaTareas();
-        await esperar();
-
-        document.querySelector('.chore-complete-btn').dispatchEvent(new window.Event('click', { bubbles: true }));
-        document.getElementById('completarTareaSaveBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
-        await esperar();
-
-        assert.equal(firebaseMock.leerDoc('tareas', 't1').estado, 'completada');
-        assert.equal(firebaseMock.leerDoc('usuarios', 'u1').horasTotales, 3);
-        assert.equal(document.getElementById('completarTareaModal').classList.contains('open'), false);
-        // sigue siendo "mía" (asignada a u1), pero ya no debería tener botón Completar
-        assert.equal(document.querySelector('.chore-complete-btn'), null);
-    });
-
-    test('tipo:asistencia sin foto: se rechaza, la tarea NO se completa y el modal sigue abierto para reintentar', async () => {
-        setEsAdminActual(true);
-        firebaseMock.seed('tareas', { t1: { titulo: 'X', tipo: 'asistencia', estado: 'pendiente', asignados: ['u1'], horasAOtorgar: 15 } });
-        firebaseMock.seed('usuarios', { u1: { horasTotales: 0 } });
+        firebaseMock.seed('tareas', { t1: { titulo: 'X', tipo: 'hoyos_composta', estado: 'pendiente', asignados: ['u1'] } });
         irAVistaTareas();
         await esperar();
 
         document.querySelector('.chore-complete-btn').dispatchEvent(new window.Event('click', { bubbles: true }));
         assert.equal(document.getElementById('completarTareaFotoLabel').textContent, 'Foto de evidencia (obligatoria)');
+    });
 
+    test('sin foto (cualquier tipo): se rechaza, la tarea NO se completa y el modal sigue abierto para reintentar', async () => {
+        setEsAdminActual(true);
+        firebaseMock.seed('tareas', { t1: { titulo: 'X', tipo: 'riego', estado: 'pendiente', asignados: ['u1'], horasAOtorgar: 10 } });
+        firebaseMock.seed('usuarios', { u1: { horasTotales: 0 } });
+        irAVistaTareas();
+        await esperar();
+
+        document.querySelector('.chore-complete-btn').dispatchEvent(new window.Event('click', { bubbles: true }));
         document.getElementById('completarTareaSaveBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
         await esperar();
 
@@ -135,41 +133,44 @@ describe('completar tarea — modal único, foto obligatoria solo si tipo:asiste
         assert.ok(document.getElementById('completarTareaModal').classList.contains('open'));
     });
 
-    test('tipo:individual muestra la foto como opcional', async () => {
-        setEsAdminActual(true);
-        firebaseMock.seed('tareas', { t1: { titulo: 'X', tipo: 'individual', estado: 'pendiente', asignados: ['u1'] } });
-        irAVistaTareas();
-        await esperar();
-
-        document.querySelector('.chore-complete-btn').dispatchEvent(new window.Event('click', { bubbles: true }));
-        assert.equal(document.getElementById('completarTareaFotoLabel').textContent, 'Foto de evidencia (opcional)');
-    });
-
     test('no-admin nunca ve el botón Completar', async () => {
         setEsAdminActual(false);
-        firebaseMock.seed('tareas', { t1: { titulo: 'X', tipo: 'individual', estado: 'pendiente', asignados: ['u1'] } });
+        firebaseMock.seed('tareas', { t1: { titulo: 'X', tipo: 'riego', estado: 'pendiente', asignados: ['u1'] } });
         irAVistaTareas();
         await esperar();
         assert.equal(document.querySelector('.chore-complete-btn'), null);
     });
 });
 
-describe('calcularSugerenciaHoras', () => {
-    test('15 solo si tipo:asistencia Y la fecha es sábado', () => {
+describe('calcularSugerenciaHorasEfectivas', () => {
+    test('4 (horas EFECTIVAS, no a otorgar) solo si tipo:trabajo_fisico Y la fecha es sábado', () => {
         // Constructor local (año, mes 0-indexado, día) a propósito — un
         // ISO string ('2026-08-29') se parsea como medianoche UTC y en un
         // huso horario detrás de UTC (México, EE.UU.) cae en el día
         // ANTERIOR al evaluarse en hora local, dando un falso viernes.
         const sabado = new Date(2026, 7, 29);   // sábado real, confirmado
         const domingo = new Date(2026, 7, 30);
-        assert.equal(calcularSugerenciaHoras('asistencia', sabado), 15);
-        assert.equal(calcularSugerenciaHoras('asistencia', domingo), '');
-        assert.equal(calcularSugerenciaHoras('individual', sabado), '');
-        assert.equal(calcularSugerenciaHoras('', sabado), '');
+        assert.equal(calcularSugerenciaHorasEfectivas('trabajo_fisico', sabado), 4);
+        assert.equal(calcularSugerenciaHorasEfectivas('trabajo_fisico', domingo), '');
+        assert.equal(calcularSugerenciaHorasEfectivas('riego', sabado), '');
+        assert.equal(calcularSugerenciaHorasEfectivas('', sabado), '');
     });
 
     test('default de fecha es "ahora" — no lanza sin segundo argumento', () => {
-        assert.doesNotThrow(() => calcularSugerenciaHoras('individual'));
+        assert.doesNotThrow(() => calcularSugerenciaHorasEfectivas('trabajo_fisico'));
+    });
+});
+
+describe('textoPreviewHoras', () => {
+    test('vacío sin tipo o sin horas efectivas', () => {
+        assert.equal(textoPreviewHoras('', 4), '');
+        assert.equal(textoPreviewHoras('riego', 0), '');
+        assert.equal(textoPreviewHoras('riego', null), '');
+    });
+
+    test('calcula y formatea "X horas efectivas × multiplicador = Yh a acreditar"', () => {
+        assert.equal(textoPreviewHoras('riego', 5), '5 horas efectivas × multiplicador = 10h a acreditar');
+        assert.equal(textoPreviewHoras('trabajo_fisico', 4), '4 horas efectivas × multiplicador = 15h a acreditar');
     });
 });
 
@@ -244,7 +245,7 @@ describe('modal Crear Tarea', () => {
         document.getElementById('crearTareaBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
 
         document.getElementById('crearTareaTitulo').value = 'Regar cama 3';
-        document.getElementById('crearTareaTipo').value = 'individual';
+        document.getElementById('crearTareaTipo').value = 'riego';
         document.querySelector('#crearTareaAssignees input[type="checkbox"]').checked = true;
         document.getElementById('crearTareaSaveBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
         await esperar();
@@ -253,36 +254,53 @@ describe('modal Crear Tarea', () => {
         assert.equal(document.getElementById('crearTareaModal').classList.contains('open'), false);
     });
 
-    test('seleccionar tipo dispara la sugerencia de horas vía calcularSugerenciaHoras (individual siempre vacío, no depende del día real)', async () => {
+    test('seleccionar tipo dispara la sugerencia de horas EFECTIVAS (riego siempre vacío, no depende del día real)', async () => {
         firebaseMock.seed('tareas', {});
         irAVistaTareas();
         await esperar();
         document.getElementById('crearTareaBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
 
         const tipoSelect = document.getElementById('crearTareaTipo');
-        tipoSelect.value = 'individual';
+        tipoSelect.value = 'riego';
         tipoSelect.dispatchEvent(new window.Event('change', { bubbles: true }));
 
         assert.equal(document.getElementById('crearTareaHoras').value, '');
     });
 
-    test('respeta horasAOtorgar del formulario al crear', async () => {
+    test('actualizar el preview al escribir horas efectivas (sin esperar al submit)', async () => {
+        firebaseMock.seed('tareas', {});
+        irAVistaTareas();
+        await esperar();
+        document.getElementById('crearTareaBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
+
+        document.getElementById('crearTareaTipo').value = 'riego';
+        document.getElementById('crearTareaHoras').value = '5';
+        document.getElementById('crearTareaHoras').dispatchEvent(new window.Event('input', { bubbles: true }));
+
+        assert.equal(document.getElementById('crearTareaHorasPreview').textContent, '5 horas efectivas × multiplicador = 10h a acreditar');
+    });
+
+    // Multiplicadores de horas (2026-09-19): horasAOtorgar YA NO viene del
+    // formulario — se calcula desde horasEfectivas × multiplicador del
+    // tipo (chores.js).
+    test('calcula horasAOtorgar desde horasEfectivas × multiplicador del tipo al crear', async () => {
         firebaseMock.seed('tareas', {});
         firebaseMock.seed('usuarios', { u1: { nombre: 'Ana', rol: 'estudiante' } });
         irAVistaTareas();
         await esperar();
         document.getElementById('crearTareaBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
 
-        document.getElementById('crearTareaTitulo').value = 'Asistencia sábado';
-        document.getElementById('crearTareaTipo').value = 'asistencia';
-        document.getElementById('crearTareaHoras').value = '15';
+        document.getElementById('crearTareaTitulo').value = 'Sábado';
+        document.getElementById('crearTareaTipo').value = 'trabajo_fisico';
+        document.getElementById('crearTareaHoras').value = '4';
         document.querySelector('#crearTareaAssignees input[type="checkbox"]').checked = true;
         document.getElementById('crearTareaSaveBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
         await esperar();
 
         const [tarea] = firebaseMock.leerColeccion('tareas');
-        assert.equal(tarea.tipo, 'asistencia');
-        assert.equal(tarea.horasAOtorgar, 15);
+        assert.equal(tarea.tipo, 'trabajo_fisico');
+        assert.equal(tarea.horasEfectivas, 4);
+        assert.equal(tarea.horasAOtorgar, 15); // 4 × 3.7 = 14.8 -> redondea a 15
     });
 });
 
@@ -306,7 +324,7 @@ describe('Crear Tarea — autoasignadas (2026-09-06)', () => {
         assert.equal(propio.checked, true);
 
         document.getElementById('crearTareaTitulo').value = 'Regar mi cama';
-        document.getElementById('crearTareaTipo').value = 'individual';
+        document.getElementById('crearTareaTipo').value = 'riego';
         document.getElementById('crearTareaSaveBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
         await esperar();
 
@@ -330,7 +348,7 @@ describe('Crear Tarea — autoasignadas (2026-09-06)', () => {
         origenSelect.dispatchEvent(new window.Event('change', { bubbles: true }));
 
         document.getElementById('crearTareaTitulo').value = 'Proponer tarea';
-        document.getElementById('crearTareaTipo').value = 'individual';
+        document.getElementById('crearTareaTipo').value = 'riego';
         document.querySelector('input[value="u2"]').checked = true;
         document.getElementById('crearTareaSaveBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
         await esperar();
@@ -349,7 +367,7 @@ describe('Crear Tarea — autoasignadas (2026-09-06)', () => {
         document.getElementById('crearTareaBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
 
         document.getElementById('crearTareaTitulo').value = 'Asignar a Ana';
-        document.getElementById('crearTareaTipo').value = 'individual';
+        document.getElementById('crearTareaTipo').value = 'riego';
         document.querySelector('input[value="u1"]').checked = true;
         document.getElementById('crearTareaSaveBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
         await esperar();

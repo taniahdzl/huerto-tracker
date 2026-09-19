@@ -14,6 +14,7 @@ import {
 } from './firebase.js';
 import { getUsuarioActual } from './session.js';
 import { subirEvidenciaTarea } from './storage.js';
+import { esTipoValido, calcularHorasAOtorgar } from '../shared/tipos-tarea.js';
 
 function _logActividad(tipo, entidad, detalle) {
     const usuario = getUsuarioActual();
@@ -34,15 +35,25 @@ export async function obtenerTareas() {
 }
 
 // Rediseño de tareas (reemplaza la Regla del Sábado, ver completarTarea):
-// `tipo` decide si la tarea otorga horas de asistencia o es un encargo
-// individual — sin default, mismo criterio "no inventar ante datos
-// faltantes" que el resto del proyecto, así que se rechaza explícito en
-// vez de dejar pasar una tarea sin tipo. `horasAOtorgar` es la cantidad
-// EXPLÍCITA declarada al crear (la UI sugiere 15 si es sábado y
-// tipo:'asistencia', editable — ver calcularSugerenciaHoras en
-// vista-tareas.js) — completarTarea ya no decide horas por el día en que
-// se completa, sino que aplica lo ya declarado aquí. `fotoEvidenciaUrl`
-// nace null y se llena al completar (ver completarTarea), nunca al crear.
+// `tipo` decide el MULTIPLICADOR de horas — ver TIPOS_TAREA
+// (shared/tipos-tarea.js), sin default, mismo criterio "no inventar ante
+// datos faltantes" que el resto del proyecto, así que se rechaza explícito
+// en vez de dejar pasar una tarea sin tipo válido.
+//
+// Multiplicadores de horas (2026-09-19, reemplaza tipo:'asistencia'|
+// 'individual'): la persona SIEMPRE declara `horasEfectivas` (trabajo
+// real) — `horasAOtorgar` se CALCULA acá (horasEfectivas × multiplicador
+// del tipo, redondeado) y queda CONGELADO en el documento, mismo criterio
+// ya aplicado a horasAOtorgar/asignados de autoasignadas (2026-09-06): si
+// el multiplicador de un tipo cambia en el futuro, no debe alterar
+// retroactivamente horas ya otorgadas. La UI sugiere 4h efectivas si es
+// sábado y tipo:'trabajo_fisico' (editable — ver
+// calcularSugerenciaHorasEfectivas en vista-tareas.js, 4×3.7=14.8 ->
+// redondea a 15). `fotoEvidenciaUrl`
+// nace null y se llena al completar (ver completarTarea), nunca al crear
+// — la evidencia es SIEMPRE obligatoria ahora (las 6 categorías
+// reemplazan tanto a 'asistencia' como a 'individual'; ya no existe un
+// tipo sin necesidad de evidencia).
 //
 // `proyectoId` (null por default — una tarea suelta no rompe nada) y
 // `fechaLimite` (opcional, string 'YYYY-MM-DD'|null, cualquier tarea, no
@@ -75,9 +86,10 @@ export async function obtenerTareas() {
 // `origen` — cae en el default 'asignada', correcto: agregar un paso es
 // coordinación de admin, no autoservicio (ver firestore.rules).
 export function _datosNuevaTarea(datos) {
-    if (datos.tipo !== 'asistencia' && datos.tipo !== 'individual') {
-        throw new Error(`[chores] tipo requerido: 'asistencia'|'individual', recibió: ${datos.tipo}`);
+    if (!esTipoValido(datos.tipo)) {
+        throw new Error(`[chores] tipo inválido: ${datos.tipo}`);
     }
+    const horasEfectivas = Number(datos.horasEfectivas) || 0;
     return {
         titulo: datos.titulo,
         tipo: datos.tipo,
@@ -86,7 +98,8 @@ export function _datosNuevaTarea(datos) {
         estado: 'pendiente',
         motivoRechazo: null,
         asignados: datos.asignados || [],
-        horasAOtorgar: datos.horasAOtorgar || 0,
+        horasEfectivas,
+        horasAOtorgar: calcularHorasAOtorgar(datos.tipo, horasEfectivas),
         fotoEvidenciaUrl: null,
         proyectoId: datos.proyectoId || null,
         fechaLimite: datos.fechaLimite || null,
@@ -206,10 +219,11 @@ export async function obtenerAsistenciasPorFecha(fecha) {
 // Reemplaza la Regla del Sábado: las horas a otorgar ya se declararon
 // explícitamente al CREAR la tarea (horasAOtorgar, ver crearTarea) — esta
 // función ya no consulta el día en que se completa, solo aplica lo
-// declarado. `archivoEvidencia` es un Blob ya comprimido (o null/undefined
-// si la tarea no lleva foto — tipo:'individual', o tipo:'asistencia' cuya
-// obligatoriedad ya validó el caller antes de llegar aquí, ver
-// vista-tareas.js). Orden de operaciones a propósito: la subida a Storage
+// declarado. `archivoEvidencia` es un Blob ya comprimido — la evidencia es
+// SIEMPRE obligatoria (2026-09-19, las 6 categorías de tipo reemplazaron
+// tanto a 'asistencia' como a 'individual'; ya no hay un tipo sin
+// necesidad de evidencia), validado por el caller antes de llegar aquí
+// (ver vista-tareas.js). Orden de operaciones a propósito: la subida a Storage
 // va PRIMERO y se espera (`await`) antes de tocar Firestore — si falla,
 // la función lanza antes del updateDoc y la tarea se queda en 'pendiente',
 // nunca se marca completada sin la evidencia que se suponía que llevaba.
@@ -243,9 +257,8 @@ export async function completarTarea(tareaId, arrayDeAsignados, { horasAOtorgar 
 // congelada ahí incluso si algo llamara estas funciones fuera de orden).
 
 // El creador sube evidencia y pide revisión: 'pendiente'|'rechazada' ->
-// 'en_revision'. A diferencia de completarTarea() (donde la foto solo es
-// obligatoria si tipo:'asistencia'), acá es SIEMPRE obligatoria sin
-// importar tipo — se valida acá Y en firestore.rules
+// 'en_revision'. La foto es SIEMPRE obligatoria (mismo criterio que
+// completarTarea() desde 2026-09-19) — se valida acá Y en firestore.rules
 // (fotoEvidenciaUrl is string). Limpia motivoRechazo de un rechazo
 // anterior: al reenviar, esa observación ya se está atendiendo — que no
 // se siga mostrando como si aplicara a la evidencia nueva.

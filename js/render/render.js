@@ -111,7 +111,10 @@ export function crearLeyendaCategorias() {
 // 14.6b) las reutiliza para el panel de arrastre de view-gemelo.
 
 // ── Shape de `tareas` ────────────────────────────────────────────
-//   { id, titulo, tipo: "asistencia"|"individual",
+//   { id, titulo, tipo: clave de TIPOS_TAREA (shared/tipos-tarea.js —
+//     'riego'|'trabajo_fisico'|'redes'|'comunidad'|'investigacion'|
+//     'hoyos_composta'; tareas viejas pueden traer 'asistencia'|
+//     'individual', ya no válidos para nuevas escrituras),
 //     origen: "asignada"|"autoasignada", creadorId: uid|null,
 //     estado: "pendiente"|"en_revision"|"completada"|"rechazada",
 //     motivoRechazo: string|null, asignados: [uid,...],
@@ -311,8 +314,8 @@ export function renderRevisionTareas(tareas, contenedor, { seleccionadas, onTogg
 const DIAS_FECHA_CERCANA = 7;
 
 // Parte PURA (sin DOM) de la decisión de badge, separada de
-// crearBadgeProyecto — mismo criterio que calcularSugerenciaHoras en
-// vista-tareas.js: `ahora` inyectable (default new Date()) para que la
+// crearBadgeProyecto — mismo criterio que calcularSugerenciaHorasEfectivas
+// en vista-tareas.js: `ahora` inyectable (default new Date()) para que la
 // rama de fecha sea testeable sin depender del día real del sistema.
 // Solo un badge por tarjeta, prioridad: fecha cercana (más urgente) >
 // activo (genérico) > nada (proyecto pausado/completado). "sin fecha = sin

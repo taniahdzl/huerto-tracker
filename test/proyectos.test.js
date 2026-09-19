@@ -65,7 +65,7 @@ describe('agregarPasoAProyecto', () => {
 
         const tareaId = await agregarPasoAProyecto(
             proyectoId,
-            { titulo: 'Regar cama 3', tipo: 'individual', asignados: ['u1'] },
+            { titulo: 'Regar cama 3', tipo: 'riego', asignados: ['u1'] },
             1
         );
 
@@ -81,8 +81,8 @@ describe('agregarPasoAProyecto', () => {
 
     test('varios pasos se acumulan en pasos[] sin pisarse (arrayUnion, no un set plano)', async () => {
         const proyectoId = await crearProyecto({ nombre: 'Proyecto X' });
-        const t1 = await agregarPasoAProyecto(proyectoId, { titulo: 'Paso 1', tipo: 'individual' }, 1);
-        const t2 = await agregarPasoAProyecto(proyectoId, { titulo: 'Paso 2', tipo: 'individual' }, 2);
+        const t1 = await agregarPasoAProyecto(proyectoId, { titulo: 'Paso 1', tipo: 'riego' }, 1);
+        const t2 = await agregarPasoAProyecto(proyectoId, { titulo: 'Paso 2', tipo: 'riego' }, 2);
 
         const proyecto = firebaseMock.leerDoc('proyectos', proyectoId);
         assert.deepEqual(
@@ -100,15 +100,15 @@ describe('agregarPasoAProyecto', () => {
         assert.deepEqual(firebaseMock.leerDoc('proyectos', proyectoId).pasos, []);
     });
 
-    test('respeta horasAOtorgar y fechaLimite si vienen en los datos del paso', async () => {
+    test('calcula horasAOtorgar desde horasEfectivas × multiplicador; respeta fechaLimite si viene', async () => {
         const proyectoId = await crearProyecto({ nombre: 'Proyecto X' });
         const tareaId = await agregarPasoAProyecto(
             proyectoId,
-            { titulo: 'Asistencia sábado', tipo: 'asistencia', horasAOtorgar: 15, fechaLimite: '2026-09-05' },
+            { titulo: 'Sábado', tipo: 'trabajo_fisico', horasEfectivas: 4, fechaLimite: '2026-09-05' },
             1
         );
         const tarea = firebaseMock.leerDoc('tareas', tareaId);
-        assert.equal(tarea.horasAOtorgar, 15);
+        assert.equal(tarea.horasAOtorgar, 15); // 4 × 3.7 = 14.8 -> redondea a 15
         assert.equal(tarea.fechaLimite, '2026-09-05');
     });
 });
