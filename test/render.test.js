@@ -15,7 +15,7 @@ instalarDomVacio();
 const {
     emojiDePlanta, colorDePlanta, crearLeyendaCategorias,
     renderListaTareas, renderListaCatalogos, renderRegistroActividad,
-    renderListaBitacora, renderResumenHoras,
+    renderListaBitacora, renderResumenHoras, renderRevisionTareas,
     renderGaleriaProyectos, calcularBadgeProyecto,
     crearBarraProgresoHoras, crearCheckboxesCarreras
 } = await import('../js/render/render.js');
@@ -283,6 +283,36 @@ describe('renderResumenHoras', () => {
         assert.equal(fila.children[1].textContent, 'Economía, Derecho');
         assert.equal(fila.children[2].textContent, '123456');
         assert.match(fila.children[4].textContent, /96 de 960 horas \(10%\)/);
+    });
+});
+
+describe('renderRevisionTareas', () => {
+    const NOOP = { seleccionadas: new Set(), onToggleSeleccion: () => {}, onAprobar: () => {}, onRechazar: () => {} };
+
+    test('sin evidencia: no pinta ningún link/imagen', () => {
+        const contenedor = document.createElement('ul');
+        renderRevisionTareas([{ id: 't1', titulo: 'Regar' }], contenedor, NOOP);
+        assert.equal(contenedor.querySelector('.chore-item-evidencia-link'), null);
+    });
+
+    // 2026-09-19: el admin necesita poder juzgar la foto antes de aprobar/
+    // rechazar, no solo ver que existe — por eso acá el thumbnail es más
+    // grande que en la lista normal de tareas (chore-item-evidencia-grande,
+    // no chore-item-evidencia) y está envuelto en un link a la imagen
+    // completa, para no depender de entrar a la consola de Firebase Storage.
+    test('con evidencia: envuelve el thumbnail grande en un link a la URL completa, en pestaña nueva', () => {
+        const contenedor = document.createElement('ul');
+        renderRevisionTareas([{ id: 't1', titulo: 'Regar', fotoEvidenciaUrl: 'https://ejemplo.com/foto.jpg' }], contenedor, NOOP);
+
+        const link = contenedor.querySelector('.chore-item-evidencia-link');
+        assert.equal(link.tagName, 'A');
+        assert.equal(link.href, 'https://ejemplo.com/foto.jpg');
+        assert.equal(link.target, '_blank');
+        assert.equal(link.rel, 'noopener');
+
+        const img = link.querySelector('img');
+        assert.equal(img.className, 'chore-item-evidencia-grande');
+        assert.equal(img.src, 'https://ejemplo.com/foto.jpg');
     });
 });
 
