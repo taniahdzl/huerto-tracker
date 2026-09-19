@@ -25,15 +25,51 @@
 // eliminarProyecto, proyectos.js). El toggle solo distingue
 // 'activo'/'completado' — 'pausado' existe en el esquema pero no tiene UI
 // (fuera de alcance de esta fase, ningún flujo real lo produce todavía).
+//
+// Autonomía en pasos de Proyectos (2026-09-19): "+ Agregar paso" dejó de
+// ser admin-only — mismo criterio ya aplicado a "+ Crear tarea" en Tareas
+// (2026-09-06). agregarPasoOrigenGroup/agregarPasoOrdenGroup (HTML) solo
+// se muestran a admin, igual que crearTareaOrigenGroup en vista-tareas.js
+// — un no-admin siempre crea vía agregarPasoPropio (proyectos.js), sin ver
+// ninguno de los dos selectores. Editar/enviar a revisión un paso propio
+// reusa abrirEditarTareaModal() (exportada de vista-tareas.js) — mismo
+// modal/flujo que ya tiene Tareas, sin duplicar lógica de compresión/
+// subida de evidencia acá. La aprobación de admin no necesitó ningún
+// cambio: el panel "Tareas en Revisión" (vista-admin.js) ya filtra por
+// origen/estado sobre TODAS las tareas, sin importar si tienen
+// `proyectoId`.
+//
+// admin vs. no-admin al guardar "Agregar Paso" son dos caminos DISTINTOS
+// (ver handleAgregarPasoGuardar) — admin sigue usando agregarPasoAProyecto
+// (batch, escribe /proyectos.pasos); no-admin usa agregarPasoPropio (nunca
+// toca /proyectos). No es una simplificación cosmética: firestore.rules
+// deja /proyectos estrictamente admin-only — un primer diseño que
+// permitía a un no-admin actualizar `pasos` directamente resultó
+// explotable en auditoría (cualquiera podía inyectar referencias falsas
+// sin crear ninguna tarea real) y se descartó. Ver comentario de cabecera
+// de agregarPasoPropio/obtenerProyectosConProgreso (proyectos.js) para el
+// diseño que sí se usó.
+//
+// Bug real encontrado al testear (no solo del test): abrirEditarTareaModal
+// puebla sus checkboxes de asignados desde el `estudiantesActuales` de
+// vista-tareas.js (su propio caché de módulo, separado del de este
+// archivo) — si la persona nunca visitó Tareas antes de entrar a
+// Proyectos, ese caché sigue vacío y el modal de edición se abre sin
+// ningún estudiante para marcar, bloqueando el guardado ("Selecciona al
+// menos un estudiante"). Se sincroniza con setEstudiantesActuales() —ya
+// exportada de antes para vista-admin.js— justo antes de abrir el modal,
+// con el directorio que Proyectos YA cargó (obtenerDirectorioCompleto en
+// cargarYRenderizarProyectos), sin pedirlo dos veces.
 
-import { crearProyecto, agregarPasoAProyecto, obtenerProyectosConProgreso, actualizarEstadoProyecto, eliminarProyecto } from '../services/proyectos.js';
+import { crearProyecto, agregarPasoAProyecto, agregarPasoPropio, obtenerProyectosConProgreso, actualizarEstadoProyecto, eliminarProyecto } from '../services/proyectos.js';
 import { obtenerDirectorioCompleto } from '../services/usuarios.js';
 import { renderGaleriaProyectos } from '../render/render.js';
 import { nombreParaMostrar } from '../services/session.js';
 import { mostrarToast, openModal, closeModal } from '../shared/core-ui.js';
 import { navegarA } from '../shared/router.js';
 import { getEsAdminActual } from '../shared/estado-app.js';
-import { abrirModalCompletarTarea, calcularSugerenciaHoras } from './vista-tareas.js';
+import { AuthService } from '../services/auth.js';
+import { abrirModalCompletarTarea, abrirEditarTareaModal, calcularSugerenciaHoras, setEstudiantesActuales as setEstudiantesActualesTareas } from './vista-tareas.js';
 
 const proyectosGaleria = document.getElementById('proyectosGaleria');
 const proyectosVacio   = document.getElementById('proyectosVacio');
@@ -47,10 +83,13 @@ const crearProyectoFecha       = document.getElementById('crearProyectoFecha');
 const crearProyectoSaveBtn     = document.getElementById('crearProyectoSaveBtn');
 
 const agregarPasoModalClose  = document.getElementById('agregarPasoModalClose');
+const agregarPasoOrigenGroup = document.getElementById('agregarPasoOrigenGroup');
+const agregarPasoOrigen      = document.getElementById('agregarPasoOrigen');
 const agregarPasoTitulo      = document.getElementById('agregarPasoTitulo');
 const agregarPasoTipo        = document.getElementById('agregarPasoTipo');
 const agregarPasoHoras       = document.getElementById('agregarPasoHoras');
 const agregarPasoFechaLimite = document.getElementById('agregarPasoFechaLimite');
+const agregarPasoOrdenGroup  = document.getElementById('agregarPasoOrdenGroup');
 const agregarPasoOrden       = document.getElementById('agregarPasoOrden');
 const agregarPasoAssignees   = document.getElementById('agregarPasoAssignees');
 const agregarPasoSaveBtn     = document.getElementById('agregarPasoSaveBtn');
@@ -112,17 +151,36 @@ proyectosFilterTabs.forEach((tab) => {
     });
 });
 
-// Clic en un paso: reutiliza abrirModalCompletarTarea (vista-tareas.js) —
-// mismo modal/flujo de completar+foto de evidencia, no se duplica acá.
-// Solo admin + paso pendiente abre algo: mismo criterio de RBAC de cliente
-// que renderListaTareas (la seguridad real está en firestore.rules, esto
-// solo evita ofrecer una acción que el backend rechazaría). Un paso ya
-// completado no abre nada — no existe una vista de detalle de solo
-// lectura para una tarea completada, el check + el progreso de la tarjeta
-// ya comunican el estado, no se inventa un modal nuevo para eso.
+// Clic en un paso — se bifurca según origen (2026-09-19), mismo criterio
+// de RBAC de cliente que renderListaTareas (la seguridad real está en
+// firestore.rules, esto solo evita ofrecer una acción que el backend
+// rechazaría):
+//   'asignada'     -> solo admin + pendiente, reusa abrirModalCompletarTarea
+//                      (sin cambios, comportamiento de siempre).
+//   'autoasignada' -> solo el CREADOR, y solo mientras 'pendiente'/
+//                      'rechazada' (editable) — reusa abrirEditarTareaModal
+//                      (vista-tareas.js). 'en_revision'/'completada' quedan
+//                      congeladas — no se inventa una vista de detalle de
+//                      solo lectura para ninguno de los dos orígenes.
 function abrirPaso(paso) {
-    if (!getEsAdminActual() || !paso.tarea || paso.tarea.estado === 'completada') return;
-    abrirModalCompletarTarea(paso.tarea, { onCompletado: cargarYRenderizarProyectos });
+    if (!paso.tarea) return;
+    const tarea = paso.tarea;
+    const origen = tarea.origen === 'autoasignada' ? 'autoasignada' : 'asignada';
+
+    if (origen === 'autoasignada') {
+        const uid = AuthService.getCurrentUser()?.uid;
+        const esCreador = uid != null && tarea.creadorId === uid;
+        if (esCreador && ['pendiente', 'rechazada'].includes(tarea.estado)) {
+            // Sincroniza el caché de vista-tareas.js ANTES de abrir el
+            // modal — ver comentario de cabecera de este archivo.
+            setEstudiantesActualesTareas(estudiantesActuales);
+            abrirEditarTareaModal(tarea, { onGuardado: cargarYRenderizarProyectos });
+        }
+        return;
+    }
+
+    if (!getEsAdminActual() || tarea.estado === 'completada') return;
+    abrirModalCompletarTarea(tarea, { onCompletado: cargarYRenderizarProyectos });
 }
 
 // ── Modal "Nuevo Proyecto" (admin) ──────────────────────────────────
@@ -184,20 +242,41 @@ function poblarAssigneesAgregarPaso() {
     });
 }
 
+// Mismo criterio que actualizarPreseleccionPropia en vista-tareas.js: en
+// modo autoasignada (siempre para no-admin; opcional para admin vía el
+// selector) se pre-marca — no se fuerza — el checkbox del propio usuario.
+function actualizarPreseleccionPropiaPaso() {
+    const uid = AuthService.getCurrentUser()?.uid;
+    const origenEfectivo = getEsAdminActual() ? agregarPasoOrigen.value : 'autoasignada';
+    if (origenEfectivo !== 'autoasignada' || !uid) return;
+    const propio = agregarPasoAssignees.querySelector(`input[value="${uid}"]`);
+    if (propio) propio.checked = true;
+}
+
 function abrirAgregarPasoModal(proyectoId) {
     proyectoEnEdicion = proyectoId;
     const proyecto = proyectosActuales.find((p) => p.id === proyectoId);
+    const esAdmin = getEsAdminActual();
 
+    agregarPasoOrigenGroup.style.display = esAdmin ? '' : 'none';
+    agregarPasoOrigen.value = 'asignada';
     agregarPasoTitulo.value = '';
     agregarPasoTipo.value = '';
     agregarPasoHoras.value = '';
     agregarPasoFechaLimite.value = '';
+    // Orden es admin-only (2026-09-19) — un paso autoasignado no participa
+    // del array `pasos` con orden manual (ver agregarPasoPropio,
+    // proyectos.js), así que no tiene sentido pedirlo a un no-admin.
+    agregarPasoOrdenGroup.style.display = esAdmin ? '' : 'none';
     // Siguiente número libre como sugerencia — orden es informativo, no
     // bloqueante (confirmado en requisitos), el admin puede cambiarlo.
     agregarPasoOrden.value = (proyecto?.pasos.length || 0) + 1;
     poblarAssigneesAgregarPaso();
+    actualizarPreseleccionPropiaPaso();
     openModal('agregarPasoModal');
 }
+
+agregarPasoOrigen.addEventListener('change', actualizarPreseleccionPropiaPaso);
 
 // Misma sugerencia de horas que crearTareaModal — la regla ("15h si es
 // sábado y tipo:'asistencia'") no es exclusiva del formulario de Tareas,
@@ -230,11 +309,24 @@ async function handleAgregarPasoGuardar() {
 
     const horasAOtorgar = agregarPasoHoras.value ? Number(agregarPasoHoras.value) : 0;
     const fechaLimite = agregarPasoFechaLimite.value || null;
-    const orden = agregarPasoOrden.value ? Number(agregarPasoOrden.value) : 1;
+    const esAdmin = getEsAdminActual();
 
     agregarPasoSaveBtn.disabled = true;
     try {
-        await agregarPasoAProyecto(proyectoEnEdicion, { titulo, tipo, asignados, horasAOtorgar, fechaLimite }, orden);
+        if (esAdmin) {
+            // Un no-admin nunca ve agregarPasoOrigenGroup — pero esta rama
+            // solo corre si esAdmin=true, así que agregarPasoOrigen.value
+            // sí refleja una elección real del formulario.
+            const origen = agregarPasoOrigen.value;
+            const orden = agregarPasoOrden.value ? Number(agregarPasoOrden.value) : 1;
+            await agregarPasoAProyecto(proyectoEnEdicion, { titulo, tipo, asignados, horasAOtorgar, fechaLimite, origen }, orden);
+        } else {
+            // No-admin: SIEMPRE agregarPasoPropio (autoasignada, sin tocar
+            // /proyectos — ver comentario de cabecera de ese archivo) —
+            // nunca agregarPasoAProyecto, que requeriría permiso de
+            // escritura sobre /proyectos que un no-admin no tiene.
+            await agregarPasoPropio(proyectoEnEdicion, { titulo, tipo, asignados, horasAOtorgar, fechaLimite });
+        }
         closeModal('agregarPasoModal');
         mostrarToast('Paso agregado', 'green');
         proyectoEnEdicion = null;

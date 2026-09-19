@@ -199,7 +199,7 @@ export function renderListaTareas(tareas, contenedor, callbacks, { esAdmin = fal
                 const editarBtn = document.createElement('button');
                 editarBtn.className = 'chore-complete-btn';
                 editarBtn.textContent = '✏️ Editar';
-                editarBtn.addEventListener('click', () => onEditar(tarea.id));
+                editarBtn.addEventListener('click', () => onEditar(tarea));
                 li.appendChild(editarBtn);
 
                 const eliminarBtn = document.createElement('button');
@@ -213,7 +213,7 @@ export function renderListaTareas(tareas, contenedor, callbacks, { esAdmin = fal
                 const reenviarBtn = document.createElement('button');
                 reenviarBtn.className = 'chore-complete-btn';
                 reenviarBtn.textContent = '✏️ Editar y reenviar';
-                reenviarBtn.addEventListener('click', () => onEditar(tarea.id));
+                reenviarBtn.addEventListener('click', () => onEditar(tarea));
                 li.appendChild(reenviarBtn);
             }
         }
@@ -409,20 +409,29 @@ export function renderGaleriaProyectos(proyectos, contenedor, onClickPaso, { esA
         });
         card.appendChild(checklist);
 
+        // "+ Agregar paso" (2026-09-19): dejó de ser admin-only — cualquier
+        // autenticado puede agregar su propio paso (origen:'autoasignada'),
+        // mismo criterio ya aplicado a "+ Crear tarea" en Tareas
+        // (2026-09-06). Solo tiene sentido en un proyecto activo — uno
+        // concluido no debería seguir creciendo (si hace falta reabrirlo,
+        // "Reactivar", admin-only, existe justo para eso).
+        // Concluir/Reactivar/Eliminar SÍ siguen admin-only — son decisiones
+        // sobre el proyecto completo, no autoservicio.
+        const acciones = document.createElement('div');
+        acciones.className = 'proyecto-card-acciones';
+        let tieneAcciones = false;
+
+        if (proyecto.estado === 'activo') {
+            const btnAgregarPaso = document.createElement('button');
+            btnAgregarPaso.className = 'chore-complete-btn';
+            btnAgregarPaso.textContent = '+ Agregar paso';
+            btnAgregarPaso.addEventListener('click', () => onAgregarPaso(proyecto.id));
+            acciones.appendChild(btnAgregarPaso);
+            tieneAcciones = true;
+        }
+
         if (esAdmin) {
-            const acciones = document.createElement('div');
-            acciones.className = 'proyecto-card-acciones';
-
-            // "+ Agregar paso" solo tiene sentido en un proyecto activo —
-            // un proyecto concluido no debería seguir creciendo (si hace
-            // falta reabrirlo, "Reactivar" existe justo para eso).
             if (proyecto.estado === 'activo') {
-                const btnAgregarPaso = document.createElement('button');
-                btnAgregarPaso.className = 'chore-complete-btn';
-                btnAgregarPaso.textContent = '+ Agregar paso';
-                btnAgregarPaso.addEventListener('click', () => onAgregarPaso(proyecto.id));
-                acciones.appendChild(btnAgregarPaso);
-
                 const btnConcluir = document.createElement('button');
                 btnConcluir.className = 'chore-complete-btn';
                 btnConcluir.textContent = '✔ Concluir';
@@ -441,9 +450,10 @@ export function renderGaleriaProyectos(proyectos, contenedor, onClickPaso, { esA
             btnEliminar.textContent = '🗑 Eliminar';
             btnEliminar.addEventListener('click', () => onEliminar(proyecto.id));
             acciones.appendChild(btnEliminar);
-
-            card.appendChild(acciones);
+            tieneAcciones = true;
         }
+
+        if (tieneAcciones) card.appendChild(acciones);
 
         fragment.appendChild(card);
     });

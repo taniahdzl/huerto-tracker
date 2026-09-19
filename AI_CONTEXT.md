@@ -287,6 +287,40 @@ un estado del proyecto (monolito en `index.html`, JS vacío, API key en
   produzca, fuera de alcance de esta fase. Cobertura vía tests con
   Firestore mockeado; mismo pendiente de confirmación visual que el resto
   de Proyectos.
+- **Autonomía en pasos de Proyectos (2026-09-19).** "+ Agregar paso" dejó
+  de ser admin-only — cualquier autenticado puede agregar su propio paso
+  (autoasignada), editarlo/enviarlo a revisión, con la misma autonomía que
+  ya tenían las tareas sueltas (2026-09-06). Editar/enviar a revisión
+  reusa `abrirEditarTareaModal()` de `vista-tareas.js` (ahora exportada,
+  recibe la tarea ya resuelta en vez de un id — mismo criterio que
+  `abrirModalCompletarTarea`), con un `onGuardado` opcional para que
+  Proyectos refresque su propia galería. Al reusarla se encontró un bug
+  real (no solo de test): esa función puebla sus checkboxes de asignados
+  desde el `estudiantesActuales` de `vista-tareas.js` — si la persona
+  nunca visitó Tareas antes de entrar a Proyectos, ese caché seguía vacío
+  y el guardado quedaba bloqueado ("Selecciona al menos un estudiante");
+  se resuelve sincronizándolo con `setEstudiantesActuales()` (ya exportada
+  de antes para `vista-admin.js`) justo antes de abrir el modal.
+  **Diseño de datos, revisado tras auditoría de seguridad:** el primer
+  borrador dejaba que un no-admin hiciera un `update` parcial sobre
+  `proyectos/{id}.pasos` (append de 1 elemento, `hasOnly(['pasos'])` +
+  `size+1`) — la skill `firebase-security-rules-auditor` lo marcó como
+  hallazgo "major": esa regla no verificaba que el elemento agregado
+  correspondiera a una tarea real y propia, así que cualquier autenticado
+  podía inyectar referencias falsas en `pasos` de CUALQUIER proyecto sin
+  crear ninguna tarea. Se descartó en vez de parchear (la alternativa,
+  `getAfter()` + indexado de listas, tenía sintaxis no confirmable sin el
+  simulador real de Firebase) — el diseño final es más simple: un paso
+  autoasignado NUNCA escribe en `/proyectos` (que sigue admin-only sin
+  excepciones, sin cambios en `firestore.rules`). Se crea como una tarea
+  normal vía `crearTarea()` (ya permitido, reglas ya auditadas) con
+  `proyectoId` seteado; `agregarPasoPropio()` (`proyectos.js`) es ese
+  atajo. `obtenerProyectosConProgreso()` ahora hace una query adicional
+  por `proyectoId` para recogerlos y los anexa al final de `pasos`
+  (`orden: null` — no participan del orden manual de los pasos asignados
+  por admin, se ordenan por `fechaCreacion`). Cobertura vía tests con
+  Firestore mockeado; mismo pendiente de confirmación visual que el resto
+  de Proyectos.
 - **Tareas autoasignadas con aprobación de admin (2026-09-06).** Extiende
   `tareas` (NO colección nueva): `origen: 'asignada'|'autoasignada'`
   (default `'asignada'` — un doc viejo sin este campo se sigue leyendo como
@@ -599,6 +633,14 @@ para ver más plantas vs. arrastrar hacia el mapa" (Fase 18.4).
       Proyectos.
 - [ ] Nuevo: confirmar en navegador real la Gestión de Proyectos. Mismo
       pendiente que el resto de Proyectos/Storage/autoasignadas/Carrera(s).
+- [x] Nuevo: Autonomía en pasos de Proyectos (2026-09-19) — "+ Agregar
+      paso" dejó de ser admin-only; diseño revisado tras auditoría de
+      seguridad (un paso propio nunca escribe en `/proyectos`) — ver
+      sección 1, bullet de Autonomía en pasos de Proyectos.
+- [ ] Nuevo: confirmar en navegador real la autonomía en pasos de
+      Proyectos (crear/editar/enviar a revisión un paso propio, que el
+      panel de revisión de Admin lo apruebe igual que una autoasignada
+      suelta). Mismo pendiente que el resto de Proyectos.
 
 ## 4. Arquitectura de módulos (Fase 19, 2026-07-24 — reorganizado en
    carpetas y `vista-gemelo.js` partido en Fase 22, 2026-07-25)

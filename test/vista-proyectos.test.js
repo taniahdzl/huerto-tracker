@@ -23,6 +23,7 @@ mock.module(firebaseUrl, { namedExports: firebaseMock.exports });
 
 const { AuthService } = await import('../js/services/auth.js');
 const { setEsAdminActual } = await import('../js/shared/estado-app.js');
+const { setUsuarioActual } = await import('../js/services/session.js');
 const { irAVistaProyectos } = await import('../js/views/vista-proyectos.js');
 
 AuthService.init();
@@ -35,6 +36,11 @@ beforeEach(async () => {
     firebaseMock.reset();
     setEsAdminActual(false);
     await firebaseMock.triggerAuthState({ uid: 'admin1', email: 'admin@test.com' });
+    // AuthService y session.js son estados independientes — main.js los
+    // conecta en producción (auth:resuelto -> setUsuarioActual), pero este
+    // archivo no importa main.js, así que hay que fijarlo a mano para que
+    // _logActividad/creadorId (chores.js) vean un uid real.
+    setUsuarioActual({ uid: 'admin1', email: 'admin@test.com' });
     window.confirm = () => true; // jsdom no lo implementa — ver vista-catalogos.test.js
     // filtroProyectosActual es estado de MÓDULO, no de test (mismo patrón/
     // misma trampa que filtroTareasActual en vista-tareas.js) — un test que
@@ -42,6 +48,12 @@ beforeEach(async () => {
     // test del archivo si no se resetea acá. Como no está exportado, se
     // resetea con un clic real sobre la pestaña "Activos".
     document.querySelector('[data-filtro-proyecto="activo"]').dispatchEvent(new window.Event('click', { bubbles: true }));
+    // completarTareaModal/editarTareaModal (vista-tareas.js) son el MISMO
+    // nodo del DOM en todo este archivo — un test que los abre y no los
+    // cierra (ej. solo verifica que se abrieron) deja la clase 'open'
+    // filtrándose al siguiente test si no se resetea acá.
+    document.getElementById('completarTareaModal').classList.remove('open');
+    document.getElementById('editarTareaModal').classList.remove('open');
 });
 
 describe('irAVistaProyectos — carga y pinta la galería', () => {
@@ -110,13 +122,68 @@ describe('modal Nuevo Proyecto (admin-only, patrón local estilo Catálogos)', (
     });
 });
 
-describe('modal Agregar Paso (admin-only)', () => {
-    test('no-admin no ve el botón "+ Agregar paso" en ninguna tarjeta', async () => {
+describe('modal Agregar Paso', () => {
+    // Autonomía en pasos de Proyectos (2026-09-19): "+ Agregar paso" dejó
+    // de ser admin-only. El selector de origen SÍ sigue siendo admin-only
+    // (mismo criterio que crearTareaOrigenGroup en Tareas).
+    test('no-admin SÍ ve "+ Agregar paso", pero sin el selector de origen — abre el modal directo en modo autoasignada', async () => {
         firebaseMock.seed('proyectos', { p1: { nombre: 'X', estado: 'activo', pasos: [] } });
+        firebaseMock.seed('usuarios', { u1: { nombre: 'Ana', rol: 'estudiante' } });
         setEsAdminActual(false);
         irAVistaProyectos();
         await esperar();
-        assert.equal(document.querySelector('.proyecto-card button'), null);
+
+        const boton = document.querySelector('.proyecto-card button');
+        assert.ok(boton);
+        boton.dispatchEvent(new window.Event('click', { bubbles: true }));
+
+        assert.equal(document.getElementById('agregarPasoOrigenGroup').style.display, 'none');
+        assert.ok(document.getElementById('agregarPasoModal').classList.contains('open'));
+        // Autoasignada: el propio uid en sesión (admin1, ver beforeEach) se
+        // pre-marca — aunque en este seed no exista como estudiante real,
+        // el checkbox solo se marca si existe en #agregarPasoAssignees.
+    });
+
+    test('no-admin: al guardar, crea el paso con origen:autoasignada y creadorId propio, con el propio uid pre-marcado', async () => {
+        firebaseMock.seed('proyectos', { p1: { nombre: 'X', estado: 'activo', pasos: [] } });
+        firebaseMock.seed('usuarios', { admin1: { nombre: 'Yo', rol: 'estudiante' }, u2: { nombre: 'Beto', rol: 'estudiante' } });
+        setEsAdminActual(false);
+        irAVistaProyectos();
+        await esperar();
+
+        document.querySelector('.proyecto-card button').dispatchEvent(new window.Event('click', { bubbles: true }));
+        assert.equal(document.querySelector('#agregarPasoAssignees input[value="admin1"]').checked, true); // pre-marcado
+
+        document.getElementById('agregarPasoTitulo').value = 'Mi propio riego';
+        document.getElementById('agregarPasoTipo').value = 'individual';
+        document.getElementById('agregarPasoSaveBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
+        await esperar();
+
+        const [tarea] = firebaseMock.leerColeccion('tareas');
+        assert.equal(tarea.origen, 'autoasignada');
+        assert.equal(tarea.creadorId, 'admin1');
+        assert.deepEqual(tarea.asignados, ['admin1']);
+        assert.equal(tarea.proyectoId, 'p1');
+        // Clave del rediseño post-auditoría: un no-admin NUNCA escribe en
+        // /proyectos — el array `pasos` del documento debe seguir vacío.
+        assert.deepEqual(firebaseMock.leerDoc('proyectos', 'p1').pasos, []);
+    });
+
+    test('admin: ve el selector de origen, default "asignada" — sin marcar el propio uid a menos que elija autoasignada', async () => {
+        firebaseMock.seed('proyectos', { p1: { nombre: 'X', estado: 'activo', pasos: [] } });
+        firebaseMock.seed('usuarios', { admin1: { nombre: 'Yo', rol: 'admin' } });
+        setEsAdminActual(true);
+        irAVistaProyectos();
+        await esperar();
+
+        document.querySelector('.proyecto-card button').dispatchEvent(new window.Event('click', { bubbles: true }));
+        assert.notEqual(document.getElementById('agregarPasoOrigenGroup').style.display, 'none');
+        assert.equal(document.getElementById('agregarPasoOrigen').value, 'asignada');
+        assert.equal(document.querySelector('#agregarPasoAssignees input[value="admin1"]').checked, false);
+
+        document.getElementById('agregarPasoOrigen').value = 'autoasignada';
+        document.getElementById('agregarPasoOrigen').dispatchEvent(new window.Event('change', { bubbles: true }));
+        assert.equal(document.querySelector('#agregarPasoAssignees input[value="admin1"]').checked, true);
     });
 
     test('abrir el modal puebla checkboxes de estudiantes y sugiere el siguiente orden', async () => {
@@ -311,5 +378,59 @@ describe('clic en un paso — reutiliza abrirModalCompletarTarea de vista-tareas
 
         document.querySelector('.proyecto-checklist-item').dispatchEvent(new window.Event('click', { bubbles: true }));
         assert.equal(document.getElementById('completarTareaModal').classList.contains('open'), false);
+    });
+});
+
+// Autonomía en pasos de Proyectos (2026-09-19): el CREADOR de un paso
+// autoasignado puede editarlo/reenviarlo a revisión — reusa
+// abrirEditarTareaModal (vista-tareas.js), no completarTareaModal.
+describe('clic en un paso autoasignado — reutiliza abrirEditarTareaModal de vista-tareas.js', () => {
+    test('el creador, con el paso pendiente: abre editarTareaModal (no completarTareaModal)', async () => {
+        firebaseMock.seed('tareas', { t1: { titulo: 'Mi riego', tipo: 'individual', origen: 'autoasignada', creadorId: 'admin1', estado: 'pendiente', asignados: ['admin1'] } });
+        firebaseMock.seed('proyectos', { p1: { nombre: 'X', estado: 'activo', pasos: [{ tareaId: 't1', orden: 1 }] } });
+        irAVistaProyectos();
+        await esperar();
+
+        document.querySelector('.proyecto-checklist-item').dispatchEvent(new window.Event('click', { bubbles: true }));
+
+        assert.ok(document.getElementById('editarTareaModal').classList.contains('open'));
+        assert.equal(document.getElementById('completarTareaModal').classList.contains('open'), false);
+        assert.equal(document.getElementById('editarTareaTitulo').value, 'Mi riego');
+    });
+
+    test('guardar cambios refresca la galería de Proyectos (onGuardado), sin duplicar la tarea', async () => {
+        firebaseMock.seed('tareas', { t1: { titulo: 'Mi riego', tipo: 'individual', origen: 'autoasignada', creadorId: 'admin1', estado: 'pendiente', asignados: ['admin1'] } });
+        firebaseMock.seed('proyectos', { p1: { nombre: 'X', estado: 'activo', pasos: [{ tareaId: 't1', orden: 1 }] } });
+        firebaseMock.seed('usuarios', { admin1: { nombre: 'Yo', rol: 'estudiante' } });
+        irAVistaProyectos();
+        await esperar();
+
+        document.querySelector('.proyecto-checklist-item').dispatchEvent(new window.Event('click', { bubbles: true }));
+        document.getElementById('editarTareaTitulo').value = 'Mi riego (corregido)';
+        document.getElementById('editarTareaGuardarBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
+        await esperar();
+
+        assert.equal(firebaseMock.leerColeccion('tareas').length, 1);
+        assert.equal(document.querySelector('.proyecto-checklist-titulo').textContent, 'Mi riego (corregido)');
+    });
+
+    test('NO es el creador (otro asignado del grupo): el clic no abre nada', async () => {
+        firebaseMock.seed('tareas', { t1: { titulo: 'Grupal', tipo: 'individual', origen: 'autoasignada', creadorId: 'otro-uid', estado: 'pendiente', asignados: ['admin1', 'otro-uid'] } });
+        firebaseMock.seed('proyectos', { p1: { nombre: 'X', estado: 'activo', pasos: [{ tareaId: 't1', orden: 1 }] } });
+        irAVistaProyectos();
+        await esperar();
+
+        document.querySelector('.proyecto-checklist-item').dispatchEvent(new window.Event('click', { bubbles: true }));
+        assert.equal(document.getElementById('editarTareaModal').classList.contains('open'), false);
+    });
+
+    test('en_revision: congelada incluso para el creador', async () => {
+        firebaseMock.seed('tareas', { t1: { titulo: 'Mi riego', origen: 'autoasignada', creadorId: 'admin1', estado: 'en_revision', asignados: ['admin1'] } });
+        firebaseMock.seed('proyectos', { p1: { nombre: 'X', estado: 'activo', pasos: [{ tareaId: 't1', orden: 1 }] } });
+        irAVistaProyectos();
+        await esperar();
+
+        document.querySelector('.proyecto-checklist-item').dispatchEvent(new window.Event('click', { bubbles: true }));
+        assert.equal(document.getElementById('editarTareaModal').classList.contains('open'), false);
     });
 });

@@ -5,9 +5,10 @@
 // completarTareaModal). Rediseño de tareas (tipo/horas explícitas/foto de
 // evidencia, reemplaza la Regla del Sábado fija de chores.js): completar ya
 // no es un clic directo, pasa por completarTareaModal para poder pedir la
-// foto cuando corresponde. abrirModalCompletarTarea() está exportada para
-// que vista-proyectos.js reuse este mismo flujo desde un paso de proyecto
-// (ver su comentario).
+// foto cuando corresponde. abrirModalCompletarTarea()/abrirEditarTareaModal()
+// están exportadas para que vista-proyectos.js reuse estos mismos flujos
+// desde un paso de proyecto (ver sus comentarios) — autonomía en pasos
+// autoasignados de Proyectos, 2026-09-19.
 //
 // Tareas autoasignadas con aprobación de admin (2026-09-06): "+ Crear
 // tarea" dejó de ser admin-only — cualquier autenticado puede proponerse
@@ -77,6 +78,7 @@ let filtroTareasActual  = 'mias';
 let tareaEnCompletar    = null;
 let tareaEnEdicion      = null;
 let onCompletadoExterno = null;
+let onGuardadoExterno   = null;
 
 export function getEstudiantesActuales() {
     return estudiantesActuales;
@@ -390,10 +392,19 @@ crearTareaSaveBtn.addEventListener('click', handleCrearTareaGuardar);
 // separadas — firestore.rules las restringe cada una a EXACTAMENTE los
 // campos que toca (ver diagnóstico de esta fase), así que no pueden
 // combinarse en una sola llamada aunque acá se disparen una tras otra.
-function abrirEditarTareaModal(tareaId) {
-    const tarea = tareasActuales.find((t) => t.id === tareaId);
+//
+// Exportada (2026-09-19) — vista-proyectos.js la reusa para que el
+// creador de un paso autoasignado pueda editarlo/reenviarlo sin duplicar
+// este flujo (mismo criterio que abrirModalCompletarTarea). Recibe la
+// tarea YA RESUELTA, no un id + lookup en tareasActuales — mismo motivo
+// que abrirModalCompletarTarea: tareasActuales no está garantizado si se
+// navega directo a Proyectos. `onGuardado` (opcional) se dispara ADEMÁS
+// de cargarYRenderizarVistaTareas() tras un guardado o envío a revisión
+// exitoso, para que el caller (Proyectos) refresque su propia vista.
+export function abrirEditarTareaModal(tarea, { onGuardado = null } = {}) {
     if (!tarea) return;
     tareaEnEdicion = tarea;
+    onGuardadoExterno = onGuardado;
 
     if (tarea.estado === 'rechazada' && tarea.motivoRechazo) {
         editarTareaMotivoRechazo.textContent = `Rechazada: ${tarea.motivoRechazo}`;
@@ -461,6 +472,10 @@ async function handleEditarTareaGuardar() {
         mostrarToast('Tarea actualizada', 'green');
         tareaEnEdicion = null;
         await cargarYRenderizarVistaTareas();
+        if (onGuardadoExterno) {
+            onGuardadoExterno();
+            onGuardadoExterno = null;
+        }
     } catch (e) {
         console.error('[vista-tareas] Error editando tarea:', e);
         mostrarToast('No se pudo guardar la tarea', 'red');
@@ -493,6 +508,10 @@ async function handleEditarTareaEnviar() {
         mostrarToast('Tarea enviada a revisión', 'green');
         tareaEnEdicion = null;
         await cargarYRenderizarVistaTareas();
+        if (onGuardadoExterno) {
+            onGuardadoExterno();
+            onGuardadoExterno = null;
+        }
     } catch (e) {
         console.error('[vista-tareas] Error enviando tarea a revisión:', e);
         mostrarToast('No se pudo enviar la tarea a revisión — intenta de nuevo', 'red');

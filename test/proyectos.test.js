@@ -17,7 +17,7 @@ const firebaseMock = createFirebaseMock();
 mock.module(firebaseUrl, { namedExports: firebaseMock.exports });
 
 const {
-    crearProyecto, agregarPasoAProyecto, obtenerProyectosConProgreso,
+    crearProyecto, agregarPasoAProyecto, agregarPasoPropio, obtenerProyectosConProgreso,
     actualizarEstadoProyecto, eliminarProyecto
 } = await import('../js/services/proyectos.js');
 
@@ -114,6 +114,31 @@ describe('agregarPasoAProyecto', () => {
         assert.equal(tarea.horasAOtorgar, 15);
         assert.equal(tarea.fechaLimite, '2026-09-05');
     });
+
+    // Autonomía en pasos de Proyectos (2026-09-19): sin cambios en esta
+    // función — `origen` ya viajaba por _datosNuevaTarea (chores.js) desde
+    // el diseño original, agregarPasoAProyecto() nunca lo bloqueó.
+    test('acepta origen:autoasignada con creadorId propio (autonomía en pasos, 2026-09-19)', async () => {
+        setUsuarioActual({ uid: 'u1', email: 'ana@test.com' });
+        const proyectoId = await crearProyecto({ nombre: 'Proyecto X' });
+
+        const tareaId = await agregarPasoAProyecto(
+            proyectoId,
+            { titulo: 'Mi propio riego', tipo: 'individual', asignados: ['u1'], origen: 'autoasignada' },
+            1
+        );
+
+        const tarea = firebaseMock.leerDoc('tareas', tareaId);
+        assert.equal(tarea.origen, 'autoasignada');
+        assert.equal(tarea.creadorId, 'u1');
+        assert.equal(tarea.estado, 'pendiente');
+    });
+
+    test('sin `origen` explícito, sigue cayendo en "asignada" (default, comportamiento sin cambios)', async () => {
+        const proyectoId = await crearProyecto({ nombre: 'Proyecto X' });
+        const tareaId = await agregarPasoAProyecto(proyectoId, { titulo: 'Paso normal', tipo: 'individual', asignados: ['u1'] }, 1);
+        assert.equal(firebaseMock.leerDoc('tareas', tareaId).origen, 'asignada');
+    });
 });
 
 // Gestión de proyectos (2026-09-19): concluir/reactivar/eliminar.
@@ -207,5 +232,35 @@ describe('obtenerProyectosConProgreso', () => {
 
         const [proyecto] = await obtenerProyectosConProgreso();
         assert.equal(proyecto.pasosCompletados, 0); // recalculado, ignora el 99 corrupto
+    });
+
+    // Autonomía en pasos de Proyectos (2026-09-19, rediseño post-auditoría):
+    // un paso autoasignado nunca está en `pasos` — se resuelve vía query
+    // por proyectoId y se anexa al final.
+    test('incluye pasos autoasignados (proyectoId, sin estar en `pasos`) al final, después de los pasos con orden manual', async () => {
+        const proyectoId = await crearProyecto({ nombre: 'X' });
+        await agregarPasoAProyecto(proyectoId, { titulo: 'Asignado por admin', tipo: 'individual', asignados: ['admin1'] }, 1);
+        setUsuarioActual({ uid: 'u1', email: 'ana@test.com' });
+        await agregarPasoPropio(proyectoId, { titulo: 'Mi propio paso', tipo: 'individual', asignados: ['u1'] });
+
+        const [proyecto] = await obtenerProyectosConProgreso();
+
+        assert.equal(proyecto.totalPasos, 2);
+        assert.equal(proyecto.pasos[0].tarea.titulo, 'Asignado por admin');
+        assert.equal(proyecto.pasos[0].orden, 1);
+        assert.equal(proyecto.pasos[1].tarea.titulo, 'Mi propio paso');
+        assert.equal(proyecto.pasos[1].orden, null); // sin orden manual
+        // El documento real del proyecto nunca se tocó para el paso propio.
+        assert.equal(firebaseMock.leerDoc('proyectos', proyectoId).pasos.length, 1);
+    });
+
+    test('un paso autoasignado que se completa cuenta en pasosCompletados igual que uno asignado', async () => {
+        const proyectoId = await crearProyecto({ nombre: 'X' });
+        setUsuarioActual({ uid: 'u1', email: 'ana@test.com' });
+        const tareaId = await agregarPasoPropio(proyectoId, { titulo: 'Mi paso', tipo: 'individual', asignados: ['u1'] });
+        firebaseMock.seed('tareas', { [tareaId]: { ...firebaseMock.leerDoc('tareas', tareaId), estado: 'completada' } });
+
+        const [proyecto] = await obtenerProyectosConProgreso();
+        assert.equal(proyecto.pasosCompletados, 1);
     });
 });
