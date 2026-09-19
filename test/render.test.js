@@ -99,9 +99,15 @@ describe('renderListaTareas', () => {
         assert.equal(contenedor.querySelector('.chore-item-titulo').textContent, 'Sin título');
     });
 
-    test('muestra miniatura de evidencia solo si la tarea está completada Y tiene fotoEvidenciaUrl', () => {
+    // 2026-09-19: la evidencia se muestra en 'completada' Y 'en_revision'
+    // (antes solo completada — mientras esperaba aprobación, ni el propio
+    // creador podía ver qué había mandado). Thumbnail grande envuelto en
+    // un link a la imagen completa, mismo tratamiento que el panel de
+    // revisión de Admin.
+    test('muestra evidencia (clicable, tamaño grande) en completada Y en_revision, nunca en otros estados ni sin fotoEvidenciaUrl', () => {
         const casos = [
             { estado: 'completada', fotoEvidenciaUrl: 'https://x/foto.jpg', esperaFoto: true },
+            { estado: 'en_revision', fotoEvidenciaUrl: 'https://x/foto.jpg', esperaFoto: true },
             { estado: 'completada', fotoEvidenciaUrl: null, esperaFoto: false },
             { estado: 'pendiente', fotoEvidenciaUrl: 'https://x/foto.jpg', esperaFoto: false }
         ];
@@ -109,9 +115,31 @@ describe('renderListaTareas', () => {
         casos.forEach(({ estado, fotoEvidenciaUrl, esperaFoto }) => {
             const contenedor = document.createElement('ul');
             renderListaTareas([{ id: 't1', titulo: 'X', estado, fotoEvidenciaUrl }], contenedor, NOOP);
-            const img = contenedor.querySelector('.chore-item-evidencia');
-            assert.equal(!!img, esperaFoto, `estado=${estado} fotoEvidenciaUrl=${fotoEvidenciaUrl}`);
-            if (esperaFoto) assert.equal(img.src, 'https://x/foto.jpg');
+            const link = contenedor.querySelector('.chore-item-evidencia-link');
+            assert.equal(!!link, esperaFoto, `estado=${estado} fotoEvidenciaUrl=${fotoEvidenciaUrl}`);
+            if (esperaFoto) {
+                assert.equal(link.href, 'https://x/foto.jpg');
+                assert.equal(link.target, '_blank');
+                assert.equal(link.querySelector('.chore-item-evidencia-grande').src, 'https://x/foto.jpg');
+            }
+        });
+    });
+
+    // "✅ Aprobada" (2026-09-19) — derivado de origen+estado, sin campo
+    // nuevo: una autoasignada solo llega a 'completada' vía aprobación.
+    test('"✅ Aprobada": solo autoasignada + completada — no en asignada completada ni en autoasignada sin completar', () => {
+        const casos = [
+            { origen: 'autoasignada', estado: 'completada', esperaTag: true },
+            { origen: 'asignada', estado: 'completada', esperaTag: false },
+            { origen: 'autoasignada', estado: 'en_revision', esperaTag: false },
+            { origen: 'autoasignada', estado: 'pendiente', esperaTag: false }
+        ];
+
+        casos.forEach(({ origen, estado, esperaTag }) => {
+            const contenedor = document.createElement('ul');
+            renderListaTareas([{ id: 't1', titulo: 'X', origen, estado, creadorId: 'u1' }], contenedor, NOOP, { uidActual: 'u1' });
+            const tag = contenedor.querySelector('.chore-item-aprobada');
+            assert.equal(!!tag, esperaTag, `origen=${origen} estado=${estado}`);
         });
     });
 

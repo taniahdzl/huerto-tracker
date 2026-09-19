@@ -230,6 +230,14 @@
         <button class="filter-tab active" data-filtro="mias">Asignadas a mí</button>
         <button class="filter-tab" data-filtro="todas">Todas</button>
       </div>
+      <!-- Abiertas/Cerradas (2026-09-19): segunda dimensión de filtro,
+           independiente de mías/todas — ver renderizarVistaTareas
+           (vista-tareas.js), que combina ambas (AND) sobre lo ya
+           cacheado. -->
+      <div class="filter-tabs">
+        <button class="filter-tab active" data-filtro-estado="abiertas">Abiertas</button>
+        <button class="filter-tab" data-filtro-estado="cerradas">Cerradas</button>
+      </div>
       <button class="btn btn-primary" id="crearTareaBtn" style="display:none">+ Crear tarea</button>
     </div>
     <ul class="chore-list" id="tareasListaVista"></ul>
@@ -463,6 +471,14 @@
         <input type="number" id="crearTareaHoras" min="0" step="0.5" placeholder="Ej: 4">
         <p class="horas-preview" id="crearTareaHorasPreview"></p>
       </div>
+      <!-- Fecha realizada (2026-09-19): default hoy (ver abrirCrearTareaModal),
+           editable a una fecha pasada — para registrar trabajo que ya pasó
+           (ej. "el riego de ayer") sin que quede fechado al momento de
+           escribirlo. Nunca a futuro (max=hoy). -->
+      <div class="form-group">
+        <label for="crearTareaFechaRealizada">Fecha en que se hizo/hará</label>
+        <input type="date" id="crearTareaFechaRealizada">
+      </div>
       <div class="form-group">
         <label>Asignar a</label>
         <div id="crearTareaAssignees" class="chore-assignees"></div>
@@ -603,6 +619,14 @@
       <div class="form-group">
         <label for="agregarPasoFechaLimite">Fecha límite (opcional)</label>
         <input type="date" id="agregarPasoFechaLimite">
+      </div>
+      <!-- Fecha en que se hizo/hará (2026-09-19) — mismo campo que
+           crearTareaFechaRealizada en Tareas, default hoy (ver
+           abrirAgregarPasoModal), no a futuro. Distinta de "Fecha límite"
+           (vencimiento, arriba). -->
+      <div class="form-group">
+        <label for="agregarPasoFechaRealizada">Fecha en que se hizo/hará</label>
+        <input type="date" id="agregarPasoFechaRealizada">
       </div>
       <div class="form-group">
         <label for="agregarPasoOrden">Orden</label>

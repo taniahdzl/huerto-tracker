@@ -43,7 +43,13 @@ import { calcularHorasAOtorgar } from '../shared/tipos-tarea.js';
 
 const tareasListaVista = document.getElementById('tareasListaVista');
 const crearTareaBtn     = document.getElementById('crearTareaBtn');
-const tareasFilterTabs  = document.querySelectorAll('#view-tareas .filter-tab');
+// Dos grupos de pestañas INDEPENDIENTES (2026-09-19: se agregó
+// Abiertas/Cerradas) — cada uno con su propio selector y su propio
+// listener, para no togglear 'active' del grupo equivocado al hacer clic
+// en cualquiera de los dos (ver renderizarVistaTareas, que combina ambos
+// filtros con AND).
+const tareasFilterTabsMias   = document.querySelectorAll('#view-tareas [data-filtro]');
+const tareasFilterTabsEstado = document.querySelectorAll('#view-tareas [data-filtro-estado]');
 
 const crearTareaModalClose = document.getElementById('crearTareaModalClose');
 const crearTareaOrigenGroup = document.getElementById('crearTareaOrigenGroup');
@@ -51,6 +57,7 @@ const crearTareaOrigen     = document.getElementById('crearTareaOrigen');
 const crearTareaTitulo     = document.getElementById('crearTareaTitulo');
 const crearTareaTipo       = document.getElementById('crearTareaTipo');
 const crearTareaHoras      = document.getElementById('crearTareaHoras');
+const crearTareaFechaRealizada = document.getElementById('crearTareaFechaRealizada');
 const crearTareaHorasPreview = document.getElementById('crearTareaHorasPreview');
 const crearTareaAssignees  = document.getElementById('crearTareaAssignees');
 const crearTareaSaveBtn    = document.getElementById('crearTareaSaveBtn');
@@ -76,6 +83,7 @@ const editarTareaEnviarBtn     = document.getElementById('editarTareaEnviarBtn')
 let tareasActuales      = [];
 let estudiantesActuales = [];
 let filtroTareasActual  = 'mias';
+let filtroEstadoActual  = 'abiertas';
 let tareaEnCompletar    = null;
 let tareaEnEdicion      = null;
 let onCompletadoExterno = null;
@@ -112,12 +120,18 @@ async function cargarYRenderizarVistaTareas() {
 
 // Re-filtra/re-pinta con lo ya cacheado — no vuelve a pedir a Firestore (lo
 // usan las pestañas de filtro, que solo cambian qué se muestra, no qué
-// existe).
+// existe). Dos filtros independientes, combinados con AND: mías/todas +
+// abiertas/cerradas (2026-09-19) — "cerradas" es únicamente
+// estado:'completada' (no 'en_revision'/'rechazada', que siguen siendo
+// trabajo pendiente de algo, no historial).
 function renderizarVistaTareas() {
     const uid = AuthService.getCurrentUser()?.uid;
-    const tareasFiltradas = filtroTareasActual === 'mias'
+    let tareasFiltradas = filtroTareasActual === 'mias'
         ? tareasActuales.filter((t) => (t.asignados || []).includes(uid))
         : tareasActuales;
+    tareasFiltradas = filtroEstadoActual === 'cerradas'
+        ? tareasFiltradas.filter((t) => t.estado === 'completada')
+        : tareasFiltradas.filter((t) => t.estado !== 'completada');
 
     // Denormalización de nombres para pintar (mismo patrón que
     // plantaNombre/plantaTipo en camas) — render.js no conoce el
@@ -128,6 +142,13 @@ function renderizarVistaTareas() {
         asignadosNombres: (t.asignados || []).map((uid2) => estudiantesPorUid.get(uid2) || uid2)
     }));
 
+    // Orden por fecha (2026-09-19), más reciente primero — fechaRealizada
+    // si existe (el día en que el trabajo pasó, editable a una fecha
+    // pasada), con fallback a fechaCreacion (Timestamp de Firestore) para
+    // tareas de antes de este campo. _fechaOrden es un número (ms) para
+    // comparar ambas fuentes con el mismo criterio sin mezclar tipos.
+    tareasEnriquecidas.sort((a, b) => _fechaOrden(b) - _fechaOrden(a));
+
     renderListaTareas(
         tareasEnriquecidas,
         tareasListaVista,
@@ -136,10 +157,23 @@ function renderizarVistaTareas() {
     );
 }
 
-tareasFilterTabs.forEach((tab) => {
+function _fechaOrden(tarea) {
+    if (tarea.fechaRealizada) return new Date(`${tarea.fechaRealizada}T00:00:00`).getTime();
+    return tarea.fechaCreacion?.toMillis?.() ?? 0;
+}
+
+tareasFilterTabsMias.forEach((tab) => {
     tab.addEventListener('click', () => {
         filtroTareasActual = tab.dataset.filtro;
-        tareasFilterTabs.forEach((t) => t.classList.toggle('active', t === tab));
+        tareasFilterTabsMias.forEach((t) => t.classList.toggle('active', t === tab));
+        renderizarVistaTareas();
+    });
+});
+
+tareasFilterTabsEstado.forEach((tab) => {
+    tab.addEventListener('click', () => {
+        filtroEstadoActual = tab.dataset.filtroEstado;
+        tareasFilterTabsEstado.forEach((t) => t.classList.toggle('active', t === tab));
         renderizarVistaTareas();
     });
 });
@@ -305,6 +339,20 @@ function actualizarPreseleccionPropia() {
     if (propio) propio.checked = true;
 }
 
+// 'YYYY-MM-DD' en hora LOCAL (no UTC — un simple .toISOString() corre el
+// riesgo de mostrar el día anterior/siguiente según el huso horario, mismo
+// cuidado ya documentado para los inputs date de auditoriaFiltroDesde/
+// Hasta en vista-admin.js). `fecha` inyectable, mismo criterio que
+// calcularSugerenciaHorasEfectivas — testeable sin depender del día real
+// del sistema. Exportada: vista-proyectos.js la reusa para el mismo
+// default en agregarPasoModal, sin duplicar el formateo.
+export function fechaHoyLocal(fecha = new Date()) {
+    const y = fecha.getFullYear();
+    const m = String(fecha.getMonth() + 1).padStart(2, '0');
+    const d = String(fecha.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+}
+
 function abrirCrearTareaModal() {
     // estudiantesActuales ya está fresco: este botón solo es visible
     // dentro de view-tareas, que siempre se recarga al entrar.
@@ -315,6 +363,9 @@ function abrirCrearTareaModal() {
     crearTareaTipo.value = '';
     crearTareaHoras.value = '';
     crearTareaHorasPreview.textContent = '';
+    const hoy = fechaHoyLocal();
+    crearTareaFechaRealizada.max = hoy; // nunca a futuro (fechaLimite es para eso)
+    crearTareaFechaRealizada.value = hoy;
     poblarAssignees(crearTareaAssignees);
     actualizarPreseleccionPropia();
     openModal('crearTareaModal');
@@ -381,6 +432,7 @@ async function handleCrearTareaGuardar() {
     // horasEfectivas, no horasAOtorgar (2026-09-19) — chores.js calcula y
     // congela horasAOtorgar = horasEfectivas × multiplicador del tipo.
     const horasEfectivas = crearTareaHoras.value ? Number(crearTareaHoras.value) : 0;
+    const fechaRealizada = crearTareaFechaRealizada.value || fechaHoyLocal();
     // Un no-admin nunca ve crearTareaOrigenGroup — siempre 'autoasignada'
     // sin importar qué value tenga el <select> oculto (defensivo, aunque
     // hoy el select ya se resetea a 'asignada' en abrirCrearTareaModal).
@@ -388,7 +440,7 @@ async function handleCrearTareaGuardar() {
 
     crearTareaSaveBtn.disabled = true;
     try {
-        await crearTarea({ titulo, tipo, asignados, horasEfectivas, origen });
+        await crearTarea({ titulo, tipo, asignados, horasEfectivas, origen, fechaRealizada });
         closeModal('crearTareaModal');
         mostrarToast('Tarea creada', 'green');
         await cargarYRenderizarVistaTareas();

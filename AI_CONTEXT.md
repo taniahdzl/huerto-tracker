@@ -440,6 +440,43 @@ un estado del proyecto (monolito en `index.html`, JS vacío, API key en
     `vista-login.test.js`, `vista-perfil.test.js`, `render.test.js`. No se
     probó en navegador real — mismo pendiente que Storage/Proyectos/
     autoasignadas.
+- **Tareas: toggle Abiertas/Cerradas, `fechaRealizada`, evidencia visible
+  en revisión, indicador "✅ Aprobada" (2026-09-19).**
+  - **Toggle Abiertas/Cerradas:** segunda pestaña de filtro en Tareas,
+    independiente de mías/todas y combinada con AND
+    (`filtroEstadoActual`, mismo patrón de estado de módulo que
+    `filtroTareasActual` — no se resetea al reentrar). "Cerradas" es
+    únicamente `estado:'completada'` — `en_revision`/`rechazada` siguen
+    siendo trabajo pendiente de algo, no historial, así que quedan en
+    "Abiertas".
+  - **`fechaRealizada`** ('YYYY-MM-DD', nuevo campo en `tareas`): el día en
+    que el trabajo REALMENTE pasó — distinta de `fechaCreacion` (server
+    timestamp, inmutable, cuándo se creó el doc) y de `fechaLimite`
+    (vencimiento futuro, solo pasos de Proyectos). Existe para poder
+    registrar trabajo pasado ("el riego de ayer") sin que quede fechado al
+    momento de escribirlo. Se llena SOLO al crear (default hoy, editable a
+    una fecha pasada, `max` bloquea el futuro) — no es editable después
+    (si se equivocaron, borran y crean de nuevo, mismo criterio ya
+    aplicado a horasAOtorgar/asignados de autoasignadas). `_datosNuevaTarea`
+    no le inventa un default — el default "hoy" vive en la UI
+    (`fechaHoyLocal()`, `vista-tareas.js`, exportada — vista-proyectos.js
+    la reusa para el mismo campo en `agregarPasoModal`, sin duplicar el
+    formateo de fecha local). Tareas viejas (sin este campo) ordenan por
+    `fechaCreacion` como fallback (`renderizarVistaTareas` ordena la lista
+    ANTES de pasarla a `renderListaTareas`, que sigue sin saber de fechas
+    — mismo criterio de mantener `render.js` puro).
+  - **Evidencia visible durante `en_revision`:** antes solo se mostraba en
+    `completada` — mientras una autoasignada esperaba aprobación, ni su
+    propio creador podía ver qué había mandado. Ahora el thumbnail (más
+    grande que antes, `chore-item-evidencia-grande`, envuelto en un link a
+    la imagen completa en pestaña nueva — mismo tratamiento ya usado en el
+    panel de revisión de Admin) aparece en ambos estados.
+  - **"✅ Aprobada":** sin campo nuevo — se deriva de
+    `origen==='autoasignada' && estado==='completada'`, la única forma de
+    llegar ahí es vía `aprobarTareaAutoasignada()`. Una 'asignada'
+    completada no la lleva (su ciclo nunca pasó por revisión).
+  - Cobertura vía tests con Firestore mockeado; mismo pendiente de
+    confirmación visual que el resto de Tareas/Proyectos.
 - **Multiplicadores de horas por tipo de actividad — reemplaza
   `tipo:'asistencia'|'individual'` (2026-09-19).** `js/shared/
   tipos-tarea.js` (nuevo, módulo hoja sin imports — mismo criterio que
@@ -650,6 +687,13 @@ para ver más plantas vs. arrastrar hacia el mapa" (Fase 18.4).
       todavía que el gate de `view-completar-perfil` y las 3 barras (Perfil,
       Setup con checkboxes, Resumen de Horas) se vean/sientan bien en un
       navegador real. Mismo pendiente que Storage/Proyectos/autoasignadas.
+- [x] Nuevo: Tareas — toggle Abiertas/Cerradas, `fechaRealizada`,
+      evidencia visible en revisión, indicador "✅ Aprobada" (2026-09-19) —
+      ver sección 1, bullet correspondiente.
+- [ ] Nuevo: confirmar en navegador real el toggle Abiertas/Cerradas, el
+      campo de fecha (Crear Tarea y Agregar Paso), la evidencia visible en
+      revisión, y el indicador "✅ Aprobada". Mismo pendiente que el resto
+      de Tareas/Proyectos.
 - [x] Nuevo: Multiplicadores de horas por tipo de actividad — reemplaza
       tipo:'asistencia'|'individual' por 6 categorías con multiplicador
       (2026-09-19) — ver sección 1, bullet correspondiente.

@@ -33,7 +33,7 @@ import { nombreParaMostrar } from '../services/session.js';
 import { mostrarToast, openModal, closeModal } from '../shared/core-ui.js';
 import { navegarA } from '../shared/router.js';
 import { getEsAdminActual } from '../shared/estado-app.js';
-import { abrirModalCompletarTarea, calcularSugerenciaHorasEfectivas, textoPreviewHoras } from './vista-tareas.js';
+import { abrirModalCompletarTarea, calcularSugerenciaHorasEfectivas, textoPreviewHoras, fechaHoyLocal } from './vista-tareas.js';
 
 const proyectosGaleria = document.getElementById('proyectosGaleria');
 const proyectosVacio   = document.getElementById('proyectosVacio');
@@ -52,6 +52,7 @@ const agregarPasoTipo        = document.getElementById('agregarPasoTipo');
 const agregarPasoHoras       = document.getElementById('agregarPasoHoras');
 const agregarPasoHorasPreview = document.getElementById('agregarPasoHorasPreview');
 const agregarPasoFechaLimite = document.getElementById('agregarPasoFechaLimite');
+const agregarPasoFechaRealizada = document.getElementById('agregarPasoFechaRealizada');
 const agregarPasoOrden       = document.getElementById('agregarPasoOrden');
 const agregarPasoAssignees   = document.getElementById('agregarPasoAssignees');
 const agregarPasoSaveBtn     = document.getElementById('agregarPasoSaveBtn');
@@ -194,6 +195,9 @@ function abrirAgregarPasoModal(proyectoId) {
     agregarPasoHoras.value = '';
     agregarPasoHorasPreview.textContent = '';
     agregarPasoFechaLimite.value = '';
+    const hoy = fechaHoyLocal();
+    agregarPasoFechaRealizada.max = hoy;
+    agregarPasoFechaRealizada.value = hoy;
     // Siguiente número libre como sugerencia — orden es informativo, no
     // bloqueante (confirmado en requisitos), el admin puede cambiarlo.
     agregarPasoOrden.value = (proyecto?.pasos.length || 0) + 1;
@@ -241,11 +245,12 @@ async function handleAgregarPasoGuardar() {
     // handleCrearTareaGuardar (vista-tareas.js).
     const horasEfectivas = agregarPasoHoras.value ? Number(agregarPasoHoras.value) : 0;
     const fechaLimite = agregarPasoFechaLimite.value || null;
+    const fechaRealizada = agregarPasoFechaRealizada.value || fechaHoyLocal();
     const orden = agregarPasoOrden.value ? Number(agregarPasoOrden.value) : 1;
 
     agregarPasoSaveBtn.disabled = true;
     try {
-        await agregarPasoAProyecto(proyectoEnEdicion, { titulo, tipo, asignados, horasEfectivas, fechaLimite }, orden);
+        await agregarPasoAProyecto(proyectoEnEdicion, { titulo, tipo, asignados, horasEfectivas, fechaLimite, fechaRealizada }, orden);
         closeModal('agregarPasoModal');
         mostrarToast('Paso agregado', 'green');
         proyectoEnEdicion = null;

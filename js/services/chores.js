@@ -108,7 +108,18 @@ export function _datosNuevaTarea(datos) {
         // backlog que se va completando, ya descartado explícitamente.
         // (fechaLimite, arriba, es un campo distinto y separado — opcional,
         // agregado después, ver comentario de la sección de arriba).
-        fechaCreacion: serverTimestamp()
+        fechaCreacion: serverTimestamp(),
+        // fechaRealizada (2026-09-19): 'YYYY-MM-DD', el día en que el
+        // trabajo REALMENTE pasó — distinta de fechaCreacion (server
+        // timestamp, cuándo se creó el documento) y de fechaLimite
+        // (vencimiento futuro, solo pasos de Proyectos). Existe para poder
+        // registrar trabajo pasado ("el riego de ayer") sin que quede
+        // fechado al momento de escribirlo. El formulario (vista-tareas.js/
+        // vista-proyectos.js) siempre manda un valor (default hoy, editable
+        // a una fecha pasada) — null solo es posible si algún caller no lo
+        // manda explícitamente, no se inventa un default acá para no
+        // duplicar "hoy" en dos lugares con posible desincronía de reloj.
+        fechaRealizada: datos.fechaRealizada || null
     };
 }
 

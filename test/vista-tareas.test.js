@@ -21,7 +21,8 @@ mock.module(firebaseUrl, { namedExports: firebaseMock.exports });
 const { AuthService } = await import('../js/services/auth.js');
 const { setEsAdminActual } = await import('../js/shared/estado-app.js');
 const {
-    irAVistaTareas, getEstudiantesActuales, setEstudiantesActuales, calcularSugerenciaHorasEfectivas, textoPreviewHoras
+    irAVistaTareas, getEstudiantesActuales, setEstudiantesActuales,
+    calcularSugerenciaHorasEfectivas, textoPreviewHoras, fechaHoyLocal
 } = await import('../js/views/vista-tareas.js');
 
 AuthService.init();
@@ -35,6 +36,12 @@ beforeEach(async () => {
     setEsAdminActual(false);
     window.confirm = () => true; // jsdom no lo implementa — ver vista-catalogos.test.js
     await firebaseMock.triggerAuthState({ uid: 'u1', email: 'ana@test.com' });
+    // filtroTareasActual/filtroEstadoActual son estado de MÓDULO, no de
+    // test (mismo patrón/misma trampa que filtroProyectosActual en
+    // vista-proyectos.js) — un test que cambia de pestaña deja ese estado
+    // para el siguiente test del archivo si no se resetea acá.
+    document.querySelector('[data-filtro="mias"]').dispatchEvent(new window.Event('click', { bubbles: true }));
+    document.querySelector('[data-filtro-estado="abiertas"]').dispatchEvent(new window.Event('click', { bubbles: true }));
 });
 
 describe('irAVistaTareas — carga y filtro', () => {
@@ -82,6 +89,54 @@ describe('irAVistaTareas — carga y filtro', () => {
         tabTodas.dispatchEvent(new window.Event('click', { bubbles: true }));
 
         assert.equal(document.querySelector('.chore-item-asignados').textContent, 'Ana, sin-nombre@test.com');
+    });
+});
+
+// Toggle Abiertas/Cerradas + orden por fecha (2026-09-19) — filtro
+// independiente de mías/todas, combinado con AND (ver renderizarVistaTareas).
+describe('Toggle Abiertas/Cerradas', () => {
+    test('arranca en "Abiertas": excluye completada, incluye pendiente/en_revision/rechazada', async () => {
+        firebaseMock.seed('tareas', {
+            t1: { titulo: 'Pendiente', estado: 'pendiente', asignados: ['u1'] },
+            t2: { titulo: 'Completada', estado: 'completada', asignados: ['u1'] },
+            t3: { titulo: 'En revisión', estado: 'en_revision', asignados: ['u1'], origen: 'autoasignada' }
+        });
+        irAVistaTareas();
+        await esperar();
+        document.querySelector('[data-filtro="todas"]').dispatchEvent(new window.Event('click', { bubbles: true }));
+
+        const titulos = [...document.querySelectorAll('#tareasListaVista .chore-item-titulo')].map((el) => el.textContent).sort();
+        assert.deepEqual(titulos, ['En revisión', 'Pendiente']);
+    });
+
+    test('"Cerradas" muestra solo completada', async () => {
+        firebaseMock.seed('tareas', {
+            t1: { titulo: 'Pendiente', estado: 'pendiente', asignados: ['u1'] },
+            t2: { titulo: 'Completada', estado: 'completada', asignados: ['u1'] }
+        });
+        irAVistaTareas();
+        await esperar();
+        document.querySelector('[data-filtro="todas"]').dispatchEvent(new window.Event('click', { bubbles: true }));
+        document.querySelector('[data-filtro-estado="cerradas"]').dispatchEvent(new window.Event('click', { bubbles: true }));
+
+        const titulos = [...document.querySelectorAll('#tareasListaVista .chore-item-titulo')].map((el) => el.textContent);
+        assert.deepEqual(titulos, ['Completada']);
+        assert.ok(document.querySelector('[data-filtro-estado="cerradas"]').classList.contains('active'));
+        // El otro grupo de pestañas (mías/todas) no se desactivó por error.
+        assert.ok(document.querySelector('[data-filtro="todas"]').classList.contains('active'));
+    });
+
+    test('orden: más reciente primero por fechaRealizada, con fallback a fechaCreacion para tareas sin ese campo', async () => {
+        firebaseMock.seed('tareas', {
+            t1: { titulo: 'Vieja (con fecha)', estado: 'pendiente', asignados: ['u1'], fechaRealizada: '2026-09-01' },
+            t2: { titulo: 'Reciente (con fecha)', estado: 'pendiente', asignados: ['u1'], fechaRealizada: '2026-09-18' }
+        });
+        irAVistaTareas();
+        await esperar();
+        document.querySelector('[data-filtro="todas"]').dispatchEvent(new window.Event('click', { bubbles: true }));
+
+        const titulos = [...document.querySelectorAll('#tareasListaVista .chore-item-titulo')].map((el) => el.textContent);
+        assert.deepEqual(titulos, ['Reciente (con fecha)', 'Vieja (con fecha)']);
     });
 });
 
@@ -186,6 +241,36 @@ describe('modal Crear Tarea', () => {
         const checkboxes = document.querySelectorAll('#crearTareaAssignees input[type="checkbox"]');
         assert.equal(checkboxes.length, 2);
         assert.ok(document.getElementById('crearTareaModal').classList.contains('open'));
+    });
+
+    // fechaRealizada (2026-09-19): default hoy, editable a una fecha
+    // pasada — nunca a futuro (fechaLimite es para eso).
+    test('el campo de fecha realizada arranca en hoy, con max=hoy (nunca a futuro)', async () => {
+        firebaseMock.seed('tareas', {});
+        irAVistaTareas();
+        await esperar();
+        document.getElementById('crearTareaBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
+
+        const input = document.getElementById('crearTareaFechaRealizada');
+        assert.equal(input.value, fechaHoyLocal());
+        assert.equal(input.max, fechaHoyLocal());
+    });
+
+    test('respeta una fecha pasada elegida a mano, en vez del default de hoy', async () => {
+        firebaseMock.seed('tareas', {});
+        firebaseMock.seed('usuarios', { u1: { nombre: 'Ana', rol: 'estudiante' } });
+        irAVistaTareas();
+        await esperar();
+        document.getElementById('crearTareaBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
+
+        document.getElementById('crearTareaTitulo').value = 'Riego de ayer';
+        document.getElementById('crearTareaTipo').value = 'riego';
+        document.getElementById('crearTareaFechaRealizada').value = '2026-09-17';
+        document.getElementById('crearTareaSaveBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
+        await esperar();
+
+        const [tarea] = firebaseMock.leerColeccion('tareas');
+        assert.equal(tarea.fechaRealizada, '2026-09-17');
     });
 
     test('rechaza guardar sin título', async () => {

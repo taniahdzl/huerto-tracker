@@ -114,6 +114,12 @@ describe('agregarPasoAProyecto', () => {
         assert.equal(tarea.horasAOtorgar, 15); // 4 × 3.7 = 14.8 -> redondea a 15
         assert.equal(tarea.fechaLimite, '2026-09-05');
     });
+
+    test('respeta fechaRealizada si viene en los datos del paso (2026-09-19)', async () => {
+        const proyectoId = await crearProyecto({ nombre: 'Proyecto X' });
+        const tareaId = await agregarPasoAProyecto(proyectoId, { titulo: 'Paso', tipo: 'riego', fechaRealizada: '2026-09-18' }, 1);
+        assert.equal(firebaseMock.leerDoc('tareas', tareaId).fechaRealizada, '2026-09-18');
+    });
 });
 
 // Gestión de proyectos (2026-09-19): concluir/reactivar/eliminar.

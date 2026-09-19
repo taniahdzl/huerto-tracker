@@ -167,6 +167,19 @@ export function renderListaTareas(tareas, contenedor, callbacks, { esAdmin = fal
             info.appendChild(estadoTag);
         }
 
+        // "✅ Aprobada" (2026-09-19): se deriva de origen+estado, sin campo
+        // nuevo — una autoasignada solo llega a 'completada' vía la
+        // aprobación de admin (aprobarTareaAutoasignada), nunca por otro
+        // camino, así que esta combinación ES la señal de "fue aprobada".
+        // Una 'asignada' completada no lleva esta etiqueta — su ciclo
+        // nunca pasó por revisión, "completada" ya lo dice todo.
+        if (origen === 'autoasignada' && completada) {
+            const aprobadaTag = document.createElement('span');
+            aprobadaTag.className = 'chore-item-aprobada';
+            aprobadaTag.textContent = '✅ Aprobada';
+            info.appendChild(aprobadaTag);
+        }
+
         if (origen === 'autoasignada' && tarea.estado === 'rechazada' && tarea.motivoRechazo) {
             const motivo = document.createElement('p');
             motivo.className = 'admin-auditoria-error';
@@ -176,15 +189,25 @@ export function renderListaTareas(tareas, contenedor, callbacks, { esAdmin = fal
 
         li.appendChild(info);
 
-        // Miniatura de evidencia: solo si la tarea ya tiene una (se llena
-        // al completar/enviar a revisión) — si no existe, no se fuerza
-        // ningún estado vacío/placeholder.
-        if (completada && tarea.fotoEvidenciaUrl) {
+        // Evidencia: visible en 'completada' Y 'en_revision' (2026-09-19 —
+        // antes solo se mostraba completada, así que mientras una
+        // autoasignada esperaba aprobación, ni su propio creador podía ver
+        // qué había mandado). Thumbnail grande + link a la imagen completa
+        // en pestaña nueva, mismo tratamiento que ya usa el panel de
+        // revisión de Admin (renderRevisionTareas) — sin él, verla en
+        // tamaño real exigiría entrar a la consola de Firebase Storage.
+        if ((completada || tarea.estado === 'en_revision') && tarea.fotoEvidenciaUrl) {
+            const link = document.createElement('a');
+            link.className = 'chore-item-evidencia-link';
+            link.href = tarea.fotoEvidenciaUrl;
+            link.target = '_blank';
+            link.rel = 'noopener';
             const foto = document.createElement('img');
-            foto.className = 'chore-item-evidencia';
+            foto.className = 'chore-item-evidencia-grande';
             foto.src = tarea.fotoEvidenciaUrl;
-            foto.alt = 'Evidencia de la tarea';
-            li.appendChild(foto);
+            foto.alt = 'Ver evidencia completa';
+            link.appendChild(foto);
+            li.appendChild(link);
         }
 
         // RBAC de cliente: la seguridad real está en firestore.rules —
