@@ -144,7 +144,11 @@ export async function actualizarCarrerasYClavePropia(uid, carreras, claveUnica) 
     _validarCarreras(carreras);
     _validarClaveUnica(claveUnica);
     await updateDoc(doc(db, PATHS.usuarios, uid), { carreras, claveUnica });
-    _logActividad('ACTUALIZAR_CARRERAS_CLAVE_PROPIA', uid, { carreras, claveUnica });
+    // `detalle` es siempre string|null en el resto del proyecto (ver
+    // cualquier otro _logActividad de este archivo/db.js/chores.js) — el
+    // registro de auditoría (renderRegistroActividad, render.js) hace
+    // `.textContent = entrada.detalle` directo, sin serializar objetos.
+    _logActividad('ACTUALIZAR_CARRERAS_CLAVE_PROPIA', uid, `${carreras.join(', ')} (clave ${claveUnica})`);
 }
 
 // Fase 13.2: ya no existe forma de "poner" horasTotales a un valor
