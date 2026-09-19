@@ -220,16 +220,19 @@ un estado del proyecto (monolito en `index.html`, JS vacío, API key en
   falla, la función lanza antes del `updateDoc` y la tarea nunca sale de
   `'pendiente'`, nunca se marca completada sin la evidencia que se
   suponía que llevaba.
-  **Pendiente de activar — bloqueado por plan de Firebase, no por el
-  código.** Cloud Storage requiere el plan Blaze (pago por uso) desde
-  feb-2026; el proyecto (`huerto-57477`) sigue en Spark —
-  `firebase deploy --only storage` falla con 403 hasta actualizar el
-  plan. El código de subida está completo y probado con Storage
-  mockeada (`test/storage.test.js`, `test/chores.test.js`), pero NO
-  verificado end-to-end: ni la compresión Canvas (jsdom no la soporta,
-  ver "Límites conocidos de la suite" más abajo) ni la subida real ni
-  `storage.rules` contra una sesión no-admin real se probaron fuera del
-  mock.
+  **Plan Blaze activado y desplegado a producción (2026-09-18).** El
+  proyecto (`huerto-57477`) subió a Blaze, bucket regional `us-east1`
+  (dentro de la huella de `nam7`, la multi-región donde vive Firestore —
+  ver decisión de ubicación documentada ese mismo día). `firebase deploy
+  --only storage,firestore` corrió limpio, incluyendo el paso de IAM que
+  pide Cloud Storage para las cross-service rules (`firestore.get()` desde
+  `storage.rules`) — se aceptó el rol nuevo. El código de subida está
+  completo y probado con Storage mockeada (`test/storage.test.js`,
+  `test/chores.test.js`), pero NO verificado end-to-end todavía: ni la
+  compresión Canvas (jsdom no la soporta, ver "Límites conocidos de la
+  suite" más abajo) ni la subida real ni `storage.rules` contra una sesión
+  no-admin real se probaron fuera del mock — pendiente de una pasada en
+  navegador real, ver sección 3.
 - **Proyectos: galería de tarjetas que ORGANIZA tareas existentes, nunca
   las duplica (2026-08-29).** Colección nueva, `proyectos/{id}` (`nombre`,
   `descripcion`, `fechaObjetivo`, `estado: 'activo'|'completado'|'pausado'`,
@@ -340,20 +343,18 @@ un estado del proyecto (monolito en `index.html`, JS vacío, API key en
     completo (`<id>.jpg`, un solo segmento de path), no el id solo —
     `.split('.')[0]` antes de usarlo en el `firestore.get()`, si no ese
     lookup nunca encuentra el doc y la rama del creador siempre falla.
-  - **NO desplegado a producción todavía.** El intento de
-    `firebase deploy --only firestore:rules --dry-run` devolvió 403 (el
-    caller no tiene permiso para `firebaserules.googleapis.com:test` en
-    `huerto-57477`) — no se pudo validar la compilación de las reglas
-    contra el backend real, solo revisión manual + la skill auditora.
-    Pendiente que el usuario haga el deploy real
-    (`firebase deploy --only firestore:rules,storage:rules`) y confirme
-    permisos en la consola de Firebase si ese 403 se repite.
-  - **Evidencia de autoasignadas depende de Cloud Storage, que sigue
-    bloqueado por el plan Spark** (ver bullet de Storage arriba, sin
-    cambios en ese bloqueo) — mismo estado que el resto del proyecto que
-    usa Storage: código completo, testeado con Storage mockeada
-    (`test/chores.test.js`), pero la subida real (`enviarARevision`) no se
-    puede probar end-to-end hasta activar Blaze.
+  - **Desplegado a producción (2026-09-18).** El 403 original
+    (`firebase deploy --only firestore:rules --dry-run`, caller sin
+    permiso para `firebaserules.googleapis.com:test`) se resolvió en la
+    consola de Firebase — `firebase deploy --only firestore:rules,storage:rules`
+    corrió limpio, ambas reglas compiladas y liberadas.
+  - **Evidencia de autoasignadas depende de Cloud Storage — ya activo**
+    (ver bullet de Storage arriba: plan Blaze activado el mismo día) —
+    mismo estado que el resto del proyecto que usa Storage: código
+    completo, testeado con Storage mockeada
+    (`test/chores.test.js`), pero la subida real (`enviarARevision`)
+    todavía no se ha probado en navegador real — pendiente de esa
+    verificación, ver sección 3, no de infraestructura.
   - **Cobertura de tests:** 307 tests en 23 archivos (subió de 275/23 —
     mismo número de archivos, todos los tests nuevos se agregaron a
     archivos ya existentes: `chores.test.js`, `render.test.js`,
@@ -542,10 +543,11 @@ para ver más plantas vs. arrastrar hacia el mapa" (Fase 18.4).
       explícitos reemplazan la Regla del Sábado fija, foto de evidencia
       obligatoria para `tipo:'asistencia'` vía Firebase Storage (primera
       integración del proyecto) — ver sección 1.
-- [ ] Nuevo: activar Cloud Storage (requiere plan Blaze, el proyecto sigue
-      en Spark) y verificar end-to-end lo que el mock no cubre: compresión
-      Canvas real, subida real, y `storage.rules` contra una sesión
-      no-admin real — ver sección 1, bullet de Storage.
+- [x] Nuevo: activar Cloud Storage — plan Blaze activado y `storage.rules`
+      desplegadas (2026-09-18) — ver sección 1, bullet de Storage.
+- [ ] Nuevo: verificar end-to-end lo que el mock de Storage no cubre:
+      compresión Canvas real, subida real desde el navegador, y
+      `storage.rules` contra una sesión no-admin real.
 - [x] Nuevo: vista de Proyectos — galería de tarjetas que organiza tareas
       existentes vía `proyectoId`, sin duplicarlas (2026-08-29) — ver
       sección 1, bullet de Proyectos.
@@ -557,10 +559,10 @@ para ver más plantas vs. arrastrar hacia el mapa" (Fase 18.4).
       `rechazada` sobre `tareas` existente, panel de revisión en Admin,
       `firestore.rules`/`storage.rules` reescritos y auditados — ver
       sección 1, bullet de Tareas autoasignadas.
-- [ ] Nuevo: desplegar `firestore.rules`/`storage.rules` a producción — el
-      dry-run de `firebase deploy --only firestore:rules` dio 403 (permiso
-      insuficiente en `huerto-57477`), nunca se validó contra el backend
-      real. Confirmar permisos en la consola de Firebase con el usuario.
+- [x] Nuevo: desplegar `firestore.rules`/`storage.rules` a producción
+      (2026-09-18) — el 403 original se resolvió en permisos de la consola
+      de Firebase, `firebase deploy --only firestore:rules,storage:rules`
+      corrió limpio.
 - [ ] Nuevo: confirmar en navegador real el flujo de autoasignadas
       (creación, edición, envío a revisión, panel de aprobación/rechazo de
       Admin) — mismo pendiente que Storage/Proyectos, agravado acá porque
