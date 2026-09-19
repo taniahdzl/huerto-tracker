@@ -113,6 +113,18 @@ describe('crearTarea', () => {
         assert.equal(firebaseMock.leerColeccion('tareas').length, 0);
     });
 
+    // fechaRealizada (2026-09-19): el día en que el trabajo pasó — el
+    // caller (vista-tareas.js/vista-proyectos.js) siempre manda un valor
+    // (default hoy, editable a una fecha pasada); esta función no inventa
+    // "hoy" si no viene, para no duplicar esa lógica en dos lugares.
+    test('respeta fechaRealizada si viene en los datos; sin ella, null (no inventa "hoy")', async () => {
+        const id = await crearTarea({ titulo: 'Riego de ayer', tipo: 'individual', fechaRealizada: '2026-09-18' });
+        assert.equal(firebaseMock.leerDoc('tareas', id).fechaRealizada, '2026-09-18');
+
+        const idSinFecha = await crearTarea({ titulo: 'Sin fecha', tipo: 'individual' });
+        assert.equal(firebaseMock.leerDoc('tareas', idSinFecha).fechaRealizada, null);
+    });
+
     test('registra actividad solo si hay un usuario en sesión', async () => {
         await crearTarea({ titulo: 'Sin sesión', tipo: 'individual' });
         assert.equal(firebaseMock.leerColeccion('registro_actividad').length, 0);
