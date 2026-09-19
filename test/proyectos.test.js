@@ -16,7 +16,10 @@ const firebaseUrl = new URL('../js/services/firebase.js', import.meta.url).href;
 const firebaseMock = createFirebaseMock();
 mock.module(firebaseUrl, { namedExports: firebaseMock.exports });
 
-const { crearProyecto, agregarPasoAProyecto, obtenerProyectosConProgreso } = await import('../js/services/proyectos.js');
+const {
+    crearProyecto, agregarPasoAProyecto, obtenerProyectosConProgreso,
+    actualizarEstadoProyecto, eliminarProyecto
+} = await import('../js/services/proyectos.js');
 
 beforeEach(() => {
     firebaseMock.reset();
@@ -110,6 +113,48 @@ describe('agregarPasoAProyecto', () => {
         const tarea = firebaseMock.leerDoc('tareas', tareaId);
         assert.equal(tarea.horasAOtorgar, 15);
         assert.equal(tarea.fechaLimite, '2026-09-05');
+    });
+});
+
+// Gestión de proyectos (2026-09-19): concluir/reactivar/eliminar.
+describe('actualizarEstadoProyecto', () => {
+    test('transiciona a un estado válido y registra actividad', async () => {
+        firebaseMock.seed('proyectos', { p1: { nombre: 'X', estado: 'activo' } });
+        setUsuarioActual({ uid: 'admin1', email: 'admin@test.com' });
+
+        await actualizarEstadoProyecto('p1', 'completado');
+
+        assert.equal(firebaseMock.leerDoc('proyectos', 'p1').estado, 'completado');
+        const [log] = firebaseMock.leerColeccion('registro_actividad');
+        assert.equal(log.tipo, 'ACTUALIZAR_ESTADO_PROYECTO');
+        assert.equal(log.detalle, 'completado');
+    });
+
+    test('reactivar es la transición inversa (completado -> activo)', async () => {
+        firebaseMock.seed('proyectos', { p1: { nombre: 'X', estado: 'completado' } });
+        await actualizarEstadoProyecto('p1', 'activo');
+        assert.equal(firebaseMock.leerDoc('proyectos', 'p1').estado, 'activo');
+    });
+
+    test('rechaza un estado fuera de la whitelist, sin escribir nada', async () => {
+        firebaseMock.seed('proyectos', { p1: { nombre: 'X', estado: 'activo' } });
+        await assert.rejects(() => actualizarEstadoProyecto('p1', 'archivado'));
+        assert.equal(firebaseMock.leerDoc('proyectos', 'p1').estado, 'activo');
+    });
+});
+
+describe('eliminarProyecto', () => {
+    test('borra el documento del proyecto, SIN tocar las tareas referenciadas en sus pasos', async () => {
+        firebaseMock.seed('tareas', { t1: { titulo: 'Regar', proyectoId: 'p1' } });
+        firebaseMock.seed('proyectos', { p1: { nombre: 'X', pasos: [{ tareaId: 't1', orden: 1 }] } });
+        setUsuarioActual({ uid: 'admin1', email: 'admin@test.com' });
+
+        await eliminarProyecto('p1');
+
+        assert.equal(firebaseMock.leerDoc('proyectos', 'p1'), null);
+        assert.ok(firebaseMock.leerDoc('tareas', 't1')); // la tarea sigue existiendo, huérfana
+        const [log] = firebaseMock.leerColeccion('registro_actividad');
+        assert.equal(log.tipo, 'ELIMINAR_PROYECTO');
     });
 });
 
