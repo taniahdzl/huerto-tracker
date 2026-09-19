@@ -270,12 +270,24 @@ export function renderRevisionTareas(tareas, contenedor, { seleccionadas, onTogg
 
         li.appendChild(info);
 
+        // Más grande que en la lista normal de tareas (chore-item-evidencia
+        // a secas, 40x40) — acá el admin necesita poder juzgar la foto
+        // antes de aprobar/rechazar, no solo confirmar que existe. El link
+        // a la imagen completa (misma URL, sin transformar) evita depender
+        // de entrar a la consola de Firebase Storage para verla en tamaño
+        // real.
         if (tarea.fotoEvidenciaUrl) {
+            const link = document.createElement('a');
+            link.className = 'chore-item-evidencia-link';
+            link.href = tarea.fotoEvidenciaUrl;
+            link.target = '_blank';
+            link.rel = 'noopener';
             const foto = document.createElement('img');
-            foto.className = 'chore-item-evidencia';
+            foto.className = 'chore-item-evidencia-grande';
             foto.src = tarea.fotoEvidenciaUrl;
-            foto.alt = 'Evidencia de la tarea';
-            li.appendChild(foto);
+            foto.alt = 'Ver evidencia completa';
+            link.appendChild(foto);
+            li.appendChild(link);
         }
 
         const aprobarBtn = document.createElement('button');
