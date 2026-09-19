@@ -244,9 +244,17 @@
   </section>
   <section class="view hidden" id="view-proyectos">
     <div class="view-proyectos-toolbar">
+      <!-- Activos/Concluidos (2026-09-19): mismo patrón que las pestañas
+           de Tareas — filtra en cliente sobre lo ya cargado, sin volver a
+           pedir a Firestore (ver renderizarVistaProyectos). -->
+      <div class="filter-tabs">
+        <button class="filter-tab active" data-filtro-proyecto="activo">Activos</button>
+        <button class="filter-tab" data-filtro-proyecto="concluido">Concluidos</button>
+      </div>
       <button class="btn btn-primary" id="crearProyectoBtn" style="display:none">+ Nuevo proyecto</button>
     </div>
     <div class="proyecto-galeria" id="proyectosGaleria"></div>
+    <p id="proyectosVacio" class="dashboard-resumen-vacio" style="display:none"></p>
   </section>
   <section class="view hidden" id="view-catalogos">
     <div class="view-catalogos-toolbar">
@@ -446,13 +454,22 @@
         <label for="crearTareaTipo">Tipo</label>
         <select id="crearTareaTipo">
           <option value="">Selecciona un tipo…</option>
-          <option value="asistencia">Asistencia (otorga horas)</option>
-          <option value="individual">Individual</option>
+          <option value="riego">Riego (×2)</option>
+          <option value="trabajo_fisico">Trabajo físico / sábados (×3.7)</option>
+          <option value="redes">Redes (×1.5)</option>
+          <option value="comunidad">Comunidad (×2)</option>
+          <option value="investigacion">Investigación (×2.5)</option>
+          <option value="hoyos_composta">Hoyos/composta (×7)</option>
         </select>
       </div>
+      <!-- Multiplicadores de horas (2026-09-19): la persona declara horas
+           EFECTIVAS (trabajo real) — horasAOtorgar se calcula solo
+           (horasEfectivas × multiplicador del tipo, redondeado) y se
+           muestra en el preview de abajo, nunca se pide directo. -->
       <div class="form-group">
-        <label for="crearTareaHoras">Horas a otorgar (opcional)</label>
-        <input type="number" id="crearTareaHoras" min="0" step="0.5" placeholder="Ej: 15">
+        <label for="crearTareaHoras">Horas efectivas</label>
+        <input type="number" id="crearTareaHoras" min="0" step="0.5" placeholder="Ej: 4">
+        <p class="horas-preview" id="crearTareaHorasPreview"></p>
       </div>
       <!-- Fecha realizada (2026-09-19): default hoy (ver abrirCrearTareaModal),
            editable a una fecha pasada — para registrar trabajo que ya pasó
@@ -493,8 +510,12 @@
       <div class="form-group">
         <label for="editarTareaTipo">Tipo</label>
         <select id="editarTareaTipo">
-          <option value="asistencia">Asistencia (otorga horas)</option>
-          <option value="individual">Individual</option>
+          <option value="riego">Riego (×2)</option>
+          <option value="trabajo_fisico">Trabajo físico / sábados (×3.7)</option>
+          <option value="redes">Redes (×1.5)</option>
+          <option value="comunidad">Comunidad (×2)</option>
+          <option value="investigacion">Investigación (×2.5)</option>
+          <option value="hoyos_composta">Hoyos/composta (×7)</option>
         </select>
       </div>
       <div class="form-group">
@@ -580,13 +601,20 @@
         <label for="agregarPasoTipo">Tipo</label>
         <select id="agregarPasoTipo">
           <option value="">Selecciona un tipo…</option>
-          <option value="asistencia">Asistencia (otorga horas)</option>
-          <option value="individual">Individual</option>
+          <option value="riego">Riego (×2)</option>
+          <option value="trabajo_fisico">Trabajo físico / sábados (×3.7)</option>
+          <option value="redes">Redes (×1.5)</option>
+          <option value="comunidad">Comunidad (×2)</option>
+          <option value="investigacion">Investigación (×2.5)</option>
+          <option value="hoyos_composta">Hoyos/composta (×7)</option>
         </select>
       </div>
+      <!-- Multiplicadores de horas (2026-09-19) — ver mismo campo en
+           crearTareaModal (vista-tareas.js). -->
       <div class="form-group">
-        <label for="agregarPasoHoras">Horas a otorgar (opcional)</label>
-        <input type="number" id="agregarPasoHoras" min="0" step="0.5" placeholder="Ej: 15">
+        <label for="agregarPasoHoras">Horas efectivas</label>
+        <input type="number" id="agregarPasoHoras" min="0" step="0.5" placeholder="Ej: 4">
+        <p class="horas-preview" id="agregarPasoHorasPreview"></p>
       </div>
       <div class="form-group">
         <label for="agregarPasoFechaLimite">Fecha límite (opcional)</label>

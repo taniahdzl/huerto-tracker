@@ -39,6 +39,7 @@ import { nombreParaMostrar } from '../services/session.js';
 import { mostrarToast, openModal, closeModal } from '../shared/core-ui.js';
 import { navegarA } from '../shared/router.js';
 import { getEsAdminActual } from '../shared/estado-app.js';
+import { calcularHorasAOtorgar } from '../shared/tipos-tarea.js';
 
 const tareasListaVista = document.getElementById('tareasListaVista');
 const crearTareaBtn     = document.getElementById('crearTareaBtn');
@@ -57,6 +58,7 @@ const crearTareaTitulo     = document.getElementById('crearTareaTitulo');
 const crearTareaTipo       = document.getElementById('crearTareaTipo');
 const crearTareaHoras      = document.getElementById('crearTareaHoras');
 const crearTareaFechaRealizada = document.getElementById('crearTareaFechaRealizada');
+const crearTareaHorasPreview = document.getElementById('crearTareaHorasPreview');
 const crearTareaAssignees  = document.getElementById('crearTareaAssignees');
 const crearTareaSaveBtn    = document.getElementById('crearTareaSaveBtn');
 
@@ -197,16 +199,17 @@ export function abrirModalCompletarTarea(tarea, { onCompletado = null } = {}) {
     completarTareaFoto.value = '';
     completarTareaFotoPreview.src = '';
     completarTareaFotoPreview.classList.add('hidden');
-    completarTareaFotoLabel.textContent = tarea.tipo === 'asistencia'
-        ? 'Foto de evidencia (obligatoria)'
-        : 'Foto de evidencia (opcional)';
+    // Siempre obligatoria (2026-09-19) — las 6 categorías de tipo
+    // reemplazaron tanto a 'asistencia' como a 'individual', ya no hay un
+    // tipo sin necesidad de evidencia.
+    completarTareaFotoLabel.textContent = 'Foto de evidencia (obligatoria)';
 
     openModal('completarTareaModal');
 }
 
 // El clic en "✅ Completar" ya no completa directo — abre el modal único
-// de finalización (mismo modal para ambos tipos). La foto solo se vuelve
-// obligatoria si tipo:'asistencia' (ver handleCompletarTareaGuardar).
+// de finalización. La foto es siempre obligatoria (ver
+// handleCompletarTareaGuardar).
 function handleCompletarTareaVista(tareaId) {
     const tarea = tareasActuales.find((t) => t.id === tareaId);
     abrirModalCompletarTarea(tarea);
@@ -254,7 +257,8 @@ async function handleCompletarTareaGuardar() {
     if (!tareaEnCompletar) return;
     const archivo = completarTareaFoto.files[0] || null;
 
-    if (tareaEnCompletar.tipo === 'asistencia' && !archivo) {
+    // Siempre obligatoria (2026-09-19) — ver abrirModalCompletarTarea.
+    if (!archivo) {
         mostrarToast('Esta tarea requiere foto de evidencia', 'red');
         return;
     }
@@ -339,9 +343,9 @@ function actualizarPreseleccionPropia() {
 // riesgo de mostrar el día anterior/siguiente según el huso horario, mismo
 // cuidado ya documentado para los inputs date de auditoriaFiltroDesde/
 // Hasta en vista-admin.js). `fecha` inyectable, mismo criterio que
-// calcularSugerenciaHoras — testeable sin depender del día real del
-// sistema. Exportada: vista-proyectos.js la reusa para el mismo default en
-// agregarPasoModal, sin duplicar el formateo.
+// calcularSugerenciaHorasEfectivas — testeable sin depender del día real
+// del sistema. Exportada: vista-proyectos.js la reusa para el mismo
+// default en agregarPasoModal, sin duplicar el formateo.
 export function fechaHoyLocal(fecha = new Date()) {
     const y = fecha.getFullYear();
     const m = String(fecha.getMonth() + 1).padStart(2, '0');
@@ -358,6 +362,7 @@ function abrirCrearTareaModal() {
     crearTareaTitulo.value = '';
     crearTareaTipo.value = '';
     crearTareaHoras.value = '';
+    crearTareaHorasPreview.textContent = '';
     const hoy = fechaHoyLocal();
     crearTareaFechaRealizada.max = hoy; // nunca a futuro (fechaLimite es para eso)
     crearTareaFechaRealizada.value = hoy;
@@ -368,20 +373,40 @@ function abrirCrearTareaModal() {
 
 crearTareaOrigen.addEventListener('change', actualizarPreseleccionPropia);
 
-// Sugerencia de horas al crear: 15 solo si hoy es sábado Y el tipo
-// elegido es 'asistencia' — editable, nunca bloqueada. `fecha` es
-// inyectable (default new Date()) a propósito, para que esto sea
-// testeable sin depender del día real del sistema — a diferencia de la
-// vieja Regla del Sábado en chores.js, que documentaba esta misma
-// limitación como excluida de los tests por no aceptar una fecha
-// inyectada (ver AI_CONTEXT.md); acá se evitó desde el diseño.
-export function calcularSugerenciaHoras(tipo, fecha = new Date()) {
-    return (tipo === 'asistencia' && fecha.getDay() === 6) ? 15 : '';
+// Sugerencia de horas EFECTIVAS al crear (2026-09-19, reemplaza la
+// sugerencia de horas A OTORGAR de la Regla del Sábado): 4h efectivas
+// solo si hoy es sábado Y el tipo elegido es 'trabajo_fisico'
+// (4×3.7=14.8 -> redondea a 15, el número histórico) — editable, nunca
+// bloqueada. `fecha` es inyectable (default new Date()) a propósito, para
+// que esto sea testeable sin depender del día real del sistema — mismo
+// criterio ya documentado para la vieja Regla del Sábado (ver
+// AI_CONTEXT.md).
+export function calcularSugerenciaHorasEfectivas(tipo, fecha = new Date()) {
+    return (tipo === 'trabajo_fisico' && fecha.getDay() === 6) ? 4 : '';
+}
+
+// Preview en vivo: "horas efectivas × multiplicador = horas a acreditar"
+// — exportado para que vista-proyectos.js pinte el mismo texto en su
+// propio preview de agregarPasoModal, sin duplicar el formato.
+export function textoPreviewHoras(tipo, horasEfectivas) {
+    if (!tipo || !horasEfectivas) return '';
+    try {
+        const horasAOtorgar = calcularHorasAOtorgar(tipo, horasEfectivas);
+        return `${horasEfectivas} horas efectivas × multiplicador = ${horasAOtorgar}h a acreditar`;
+    } catch {
+        return ''; // tipo inválido — no debería pasar con un <select>, defensivo
+    }
+}
+
+function actualizarPreviewCrearTarea() {
+    crearTareaHorasPreview.textContent = textoPreviewHoras(crearTareaTipo.value, Number(crearTareaHoras.value));
 }
 
 crearTareaTipo.addEventListener('change', () => {
-    crearTareaHoras.value = calcularSugerenciaHoras(crearTareaTipo.value);
+    crearTareaHoras.value = calcularSugerenciaHorasEfectivas(crearTareaTipo.value);
+    actualizarPreviewCrearTarea();
 });
+crearTareaHoras.addEventListener('input', actualizarPreviewCrearTarea);
 
 async function handleCrearTareaGuardar() {
     const titulo = crearTareaTitulo.value.trim();
@@ -404,7 +429,9 @@ async function handleCrearTareaGuardar() {
         return;
     }
 
-    const horasAOtorgar = crearTareaHoras.value ? Number(crearTareaHoras.value) : 0;
+    // horasEfectivas, no horasAOtorgar (2026-09-19) — chores.js calcula y
+    // congela horasAOtorgar = horasEfectivas × multiplicador del tipo.
+    const horasEfectivas = crearTareaHoras.value ? Number(crearTareaHoras.value) : 0;
     const fechaRealizada = crearTareaFechaRealizada.value || fechaHoyLocal();
     // Un no-admin nunca ve crearTareaOrigenGroup — siempre 'autoasignada'
     // sin importar qué value tenga el <select> oculto (defensivo, aunque
@@ -413,7 +440,7 @@ async function handleCrearTareaGuardar() {
 
     crearTareaSaveBtn.disabled = true;
     try {
-        await crearTarea({ titulo, tipo, asignados, horasAOtorgar, origen, fechaRealizada });
+        await crearTarea({ titulo, tipo, asignados, horasEfectivas, origen, fechaRealizada });
         closeModal('crearTareaModal');
         mostrarToast('Tarea creada', 'green');
         await cargarYRenderizarVistaTareas();
@@ -455,7 +482,11 @@ function abrirEditarTareaModal(tareaId) {
     }
 
     editarTareaTitulo.value = tarea.titulo || '';
-    editarTareaTipo.value = tarea.tipo || 'individual';
+    // Sin default (2026-09-19, "individual" ya no existe en el catálogo) —
+    // si la tarea trae un tipo legacy que ya no está en el <select>
+    // (ej. 'asistencia'/'individual' de antes de este cambio), el select
+    // simplemente no lo selecciona; se deja como una elección explícita.
+    editarTareaTipo.value = tarea.tipo || '';
     editarTareaHoras.value = tarea.horasAOtorgar || '';
     poblarAssignees(editarTareaAssignees, tarea.asignados || []);
     editarTareaFoto.value = '';

@@ -35,6 +35,18 @@ beforeEach(async () => {
     firebaseMock.reset();
     setEsAdminActual(false);
     await firebaseMock.triggerAuthState({ uid: 'admin1', email: 'admin@test.com' });
+    // completarTareaModal es el MISMO nodo del DOM en todo este archivo —
+    // un test que lo abre y lo deja abierto (ej. un rechazo por falta de
+    // evidencia, a propósito no lo cierra) filtra ese estado al siguiente
+    // test si no se resetea acá.
+    document.getElementById('completarTareaModal').classList.remove('open');
+    window.confirm = () => true; // jsdom no lo implementa — ver vista-catalogos.test.js
+    // filtroProyectosActual es estado de MÓDULO, no de test (mismo patrón/
+    // misma trampa que filtroTareasActual en vista-tareas.js) — un test que
+    // cambia a la pestaña "Concluidos" deja ese estado para el siguiente
+    // test del archivo si no se resetea acá. Como no está exportado, se
+    // resetea con un clic real sobre la pestaña "Activos".
+    document.querySelector('[data-filtro-proyecto="activo"]').dispatchEvent(new window.Event('click', { bubbles: true }));
 });
 
 describe('irAVistaProyectos — carga y pinta la galería', () => {
@@ -152,7 +164,7 @@ describe('modal Agregar Paso (admin-only)', () => {
 
         document.querySelector('.proyecto-card button').dispatchEvent(new window.Event('click', { bubbles: true }));
         document.getElementById('agregarPasoTitulo').value = 'Regar cama 3';
-        document.getElementById('agregarPasoTipo').value = 'individual';
+        document.getElementById('agregarPasoTipo').value = 'riego';
         document.querySelector('#agregarPasoAssignees input[type="checkbox"]').checked = true;
         document.getElementById('agregarPasoSaveBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
         await esperar();
@@ -162,6 +174,89 @@ describe('modal Agregar Paso (admin-only)', () => {
         assert.equal(tarea.proyectoId, 'p1');
         assert.equal(document.getElementById('agregarPasoModal').classList.contains('open'), false);
         assert.equal(document.querySelector('.proyecto-checklist-titulo').textContent, 'Regar cama 3');
+    });
+});
+
+// Gestión de proyectos (2026-09-19): toggle Activos/Concluidos +
+// Concluir/Reactivar/Eliminar.
+describe('Toggle Activos/Concluidos', () => {
+    test('arranca en "Activos" — un proyecto completado no se ve hasta cambiar de pestaña', async () => {
+        firebaseMock.seed('proyectos', {
+            p1: { nombre: 'Activo', estado: 'activo', pasos: [] },
+            p2: { nombre: 'Concluido', estado: 'completado', pasos: [] }
+        });
+        irAVistaProyectos();
+        await esperar();
+
+        assert.equal(document.querySelector('.proyecto-card-nombre').textContent, 'Activo');
+        assert.equal(document.querySelectorAll('.proyecto-card').length, 1);
+
+        document.querySelector('[data-filtro-proyecto="concluido"]').dispatchEvent(new window.Event('click', { bubbles: true }));
+        assert.equal(document.querySelector('.proyecto-card-nombre').textContent, 'Concluido');
+    });
+
+    test('sin proyectos en la pestaña activa, muestra el mensaje de vacío (no una galería en blanco sin explicación)', async () => {
+        firebaseMock.seed('proyectos', {});
+        irAVistaProyectos();
+        await esperar();
+
+        assert.equal(document.getElementById('proyectosVacio').style.display, '');
+        assert.match(document.getElementById('proyectosVacio').textContent, /No hay proyectos activos/);
+    });
+});
+
+describe('Concluir / Reactivar / Eliminar (admin)', () => {
+    test('Concluir mueve el proyecto de "Activos" a "Concluidos"', async () => {
+        firebaseMock.seed('proyectos', { p1: { nombre: 'X', estado: 'activo', pasos: [] } });
+        setEsAdminActual(true);
+        irAVistaProyectos();
+        await esperar();
+
+        document.querySelector('.proyecto-card-acciones button:nth-child(2)').dispatchEvent(new window.Event('click', { bubbles: true }));
+        await esperar();
+
+        assert.equal(firebaseMock.leerDoc('proyectos', 'p1').estado, 'completado');
+        assert.equal(document.querySelectorAll('.proyecto-card').length, 0); // ya no está en "Activos"
+    });
+
+    test('Reactivar mueve el proyecto de "Concluidos" a "Activos"', async () => {
+        firebaseMock.seed('proyectos', { p1: { nombre: 'X', estado: 'completado', pasos: [] } });
+        setEsAdminActual(true);
+        irAVistaProyectos();
+        await esperar();
+        document.querySelector('[data-filtro-proyecto="concluido"]').dispatchEvent(new window.Event('click', { bubbles: true }));
+
+        document.querySelector('.proyecto-card-acciones button').dispatchEvent(new window.Event('click', { bubbles: true }));
+        await esperar();
+
+        assert.equal(firebaseMock.leerDoc('proyectos', 'p1').estado, 'activo');
+    });
+
+    test('Eliminar pide confirmación, borra el proyecto y NO borra sus tareas', async () => {
+        firebaseMock.seed('tareas', { t1: { titulo: 'Regar', proyectoId: 'p1' } });
+        firebaseMock.seed('proyectos', { p1: { nombre: 'X', estado: 'activo', pasos: [{ tareaId: 't1', orden: 1 }] } });
+        setEsAdminActual(true);
+        irAVistaProyectos();
+        await esperar();
+
+        document.querySelector('.catalogo-eliminar-btn').dispatchEvent(new window.Event('click', { bubbles: true }));
+        await esperar();
+
+        assert.equal(firebaseMock.leerDoc('proyectos', 'p1'), null);
+        assert.ok(firebaseMock.leerDoc('tareas', 't1'));
+    });
+
+    test('cancelar la confirmación de Eliminar no borra nada', async () => {
+        firebaseMock.seed('proyectos', { p1: { nombre: 'X', estado: 'activo', pasos: [] } });
+        setEsAdminActual(true);
+        window.confirm = () => false;
+        irAVistaProyectos();
+        await esperar();
+
+        document.querySelector('.catalogo-eliminar-btn').dispatchEvent(new window.Event('click', { bubbles: true }));
+        await esperar();
+
+        assert.ok(firebaseMock.leerDoc('proyectos', 'p1'));
     });
 });
 
@@ -179,8 +274,13 @@ describe('clic en un paso — reutiliza abrirModalCompletarTarea de vista-tareas
         assert.equal(document.getElementById('completarTareaTitulo').textContent, 'Paso pendiente');
     });
 
-    test('completar el paso desde Proyectos otorga horas vía completarTarea/_registrarHoras y refresca el progreso de la tarjeta sin re-render manual extra', async () => {
-        firebaseMock.seed('tareas', { t1: { titulo: 'Paso', tipo: 'individual', estado: 'pendiente', asignados: ['u1'], horasAOtorgar: 5 } });
+    // Multiplicadores de horas (2026-09-19): la evidencia es SIEMPRE
+    // obligatoria ahora — el camino de éxito (con archivo real) exige
+    // comprimirImagen()/Canvas API, que jsdom no implementa (límite
+    // conocido, ver AI_CONTEXT.md). Se cubre lo testeable: sin evidencia,
+    // el paso se rechaza y el progreso de la tarjeta no cambia.
+    test('completar un paso sin evidencia se rechaza — el progreso de la tarjeta no cambia', async () => {
+        firebaseMock.seed('tareas', { t1: { titulo: 'Paso', tipo: 'riego', estado: 'pendiente', asignados: ['u1'], horasAOtorgar: 5 } });
         firebaseMock.seed('usuarios', { u1: { horasTotales: 0 } });
         firebaseMock.seed('proyectos', { p1: { nombre: 'X', estado: 'activo', pasos: [{ tareaId: 't1', orden: 1 }] } });
         setEsAdminActual(true);
@@ -193,12 +293,10 @@ describe('clic en un paso — reutiliza abrirModalCompletarTarea de vista-tareas
         document.getElementById('completarTareaSaveBtn').dispatchEvent(new window.Event('click', { bubbles: true }));
         await esperar();
 
-        assert.equal(firebaseMock.leerDoc('tareas', 't1').estado, 'completada');
-        assert.equal(firebaseMock.leerDoc('usuarios', 'u1').horasTotales, 5); // vía el mismo _registrarHoras de siempre
-        // La galería se refrescó sola (onCompletado -> cargarYRenderizarProyectos)
-        // sin que este test dispare ningún re-render a mano.
-        assert.equal(document.querySelector('.proyecto-card-progreso-texto').textContent, '1 de 1 pasos completados');
-        assert.equal(document.querySelector('.proyecto-checklist-marca').textContent, '✅');
+        assert.equal(firebaseMock.leerDoc('tareas', 't1').estado, 'pendiente');
+        assert.equal(firebaseMock.leerDoc('usuarios', 'u1').horasTotales, 0);
+        assert.equal(document.querySelector('.proyecto-card-progreso-texto').textContent, '0 de 1 pasos completados');
+        assert.ok(document.getElementById('completarTareaModal').classList.contains('open')); // sigue abierto para reintentar
     });
 
     test('paso ya completado: el clic no abre nada (no hay vista de detalle de solo lectura)', async () => {

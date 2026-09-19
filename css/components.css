@@ -230,6 +230,10 @@
   font-size: 0.85rem; color: var(--color-texto);
 }
 .chore-form input:focus { outline: none; border-color: var(--color-primario); }
+/* Preview del cálculo de horas (2026-09-19): "horas efectivas ×
+   multiplicador = horas a acreditar" — ver actualizarPreviewHoras en
+   vista-tareas.js/vista-proyectos.js. */
+.horas-preview { font-size: 0.72rem; color: var(--color-texto); opacity: 0.7; margin: 0.3rem 0 0; }
 .chore-assignees { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: var(--space-4); }
 .chore-assignee-chip {
   display: flex; align-items: center; gap: 0.3rem;
@@ -292,11 +296,15 @@
   width: 40px; height: 40px; object-fit: cover;
   border-radius: 6px; border: 1px solid var(--color-borde);
 }
-/* Lista de Tareas (2026-09-19): más grande que el thumbnail de arriba —
-   acá la persona (el propio creador, mientras espera aprobación, o
-   cualquiera viendo una ya completada) necesita poder juzgar la foto, no
-   solo confirmar que existe. Envuelto en un link a la imagen completa en
-   pestaña nueva. */
+/* Thumbnail grande + clicable de evidencia (2026-09-19) — usado en DOS
+   lugares: el panel de revisión de Admin (renderRevisionTareas, donde el
+   admin necesita juzgar la foto antes de aprobar/rechazar) y la lista
+   normal de Tareas mientras una autoasignada está 'en_revision' o ya
+   'completada' (el propio creador, mientras espera aprobación, también
+   necesita poder ver qué mandó). En ambos casos, 40x40
+   (.chore-item-evidencia) no alcanza para juzgar la foto — más grande +
+   envuelto en un link a la imagen completa en pestaña nueva, para no
+   depender de entrar a la consola de Firebase Storage. */
 .chore-item-evidencia-link { flex-shrink: 0; }
 .chore-item-evidencia-grande {
   width: 72px; height: 72px; object-fit: cover;
@@ -342,6 +350,7 @@
 }
 .proyecto-checklist-item:hover { background: var(--color-borde); }
 .proyecto-checklist-marca { font-size: 0.85rem; }
+.proyecto-card-acciones { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: var(--space-2); }
 
 /* ── CATÁLOGOS (Fase 13.6b) ── */
 #view-catalogos .view-catalogos-toolbar {

@@ -16,7 +16,10 @@ const firebaseUrl = new URL('../js/services/firebase.js', import.meta.url).href;
 const firebaseMock = createFirebaseMock();
 mock.module(firebaseUrl, { namedExports: firebaseMock.exports });
 
-const { crearProyecto, agregarPasoAProyecto, obtenerProyectosConProgreso } = await import('../js/services/proyectos.js');
+const {
+    crearProyecto, agregarPasoAProyecto, obtenerProyectosConProgreso,
+    actualizarEstadoProyecto, eliminarProyecto
+} = await import('../js/services/proyectos.js');
 
 beforeEach(() => {
     firebaseMock.reset();
@@ -65,7 +68,7 @@ describe('agregarPasoAProyecto', () => {
 
         const tareaId = await agregarPasoAProyecto(
             proyectoId,
-            { titulo: 'Regar cama 3', tipo: 'individual', asignados: ['u1'] },
+            { titulo: 'Regar cama 3', tipo: 'riego', asignados: ['u1'] },
             1
         );
 
@@ -81,8 +84,8 @@ describe('agregarPasoAProyecto', () => {
 
     test('varios pasos se acumulan en pasos[] sin pisarse (arrayUnion, no un set plano)', async () => {
         const proyectoId = await crearProyecto({ nombre: 'Proyecto X' });
-        const t1 = await agregarPasoAProyecto(proyectoId, { titulo: 'Paso 1', tipo: 'individual' }, 1);
-        const t2 = await agregarPasoAProyecto(proyectoId, { titulo: 'Paso 2', tipo: 'individual' }, 2);
+        const t1 = await agregarPasoAProyecto(proyectoId, { titulo: 'Paso 1', tipo: 'riego' }, 1);
+        const t2 = await agregarPasoAProyecto(proyectoId, { titulo: 'Paso 2', tipo: 'riego' }, 2);
 
         const proyecto = firebaseMock.leerDoc('proyectos', proyectoId);
         assert.deepEqual(
@@ -100,22 +103,64 @@ describe('agregarPasoAProyecto', () => {
         assert.deepEqual(firebaseMock.leerDoc('proyectos', proyectoId).pasos, []);
     });
 
-    test('respeta horasAOtorgar y fechaLimite si vienen en los datos del paso', async () => {
+    test('calcula horasAOtorgar desde horasEfectivas × multiplicador; respeta fechaLimite si viene', async () => {
         const proyectoId = await crearProyecto({ nombre: 'Proyecto X' });
         const tareaId = await agregarPasoAProyecto(
             proyectoId,
-            { titulo: 'Asistencia sábado', tipo: 'asistencia', horasAOtorgar: 15, fechaLimite: '2026-09-05' },
+            { titulo: 'Sábado', tipo: 'trabajo_fisico', horasEfectivas: 4, fechaLimite: '2026-09-05' },
             1
         );
         const tarea = firebaseMock.leerDoc('tareas', tareaId);
-        assert.equal(tarea.horasAOtorgar, 15);
+        assert.equal(tarea.horasAOtorgar, 15); // 4 × 3.7 = 14.8 -> redondea a 15
         assert.equal(tarea.fechaLimite, '2026-09-05');
     });
 
     test('respeta fechaRealizada si viene en los datos del paso (2026-09-19)', async () => {
         const proyectoId = await crearProyecto({ nombre: 'Proyecto X' });
-        const tareaId = await agregarPasoAProyecto(proyectoId, { titulo: 'Paso', tipo: 'individual', fechaRealizada: '2026-09-18' }, 1);
+        const tareaId = await agregarPasoAProyecto(proyectoId, { titulo: 'Paso', tipo: 'riego', fechaRealizada: '2026-09-18' }, 1);
         assert.equal(firebaseMock.leerDoc('tareas', tareaId).fechaRealizada, '2026-09-18');
+    });
+});
+
+// Gestión de proyectos (2026-09-19): concluir/reactivar/eliminar.
+describe('actualizarEstadoProyecto', () => {
+    test('transiciona a un estado válido y registra actividad', async () => {
+        firebaseMock.seed('proyectos', { p1: { nombre: 'X', estado: 'activo' } });
+        setUsuarioActual({ uid: 'admin1', email: 'admin@test.com' });
+
+        await actualizarEstadoProyecto('p1', 'completado');
+
+        assert.equal(firebaseMock.leerDoc('proyectos', 'p1').estado, 'completado');
+        const [log] = firebaseMock.leerColeccion('registro_actividad');
+        assert.equal(log.tipo, 'ACTUALIZAR_ESTADO_PROYECTO');
+        assert.equal(log.detalle, 'completado');
+    });
+
+    test('reactivar es la transición inversa (completado -> activo)', async () => {
+        firebaseMock.seed('proyectos', { p1: { nombre: 'X', estado: 'completado' } });
+        await actualizarEstadoProyecto('p1', 'activo');
+        assert.equal(firebaseMock.leerDoc('proyectos', 'p1').estado, 'activo');
+    });
+
+    test('rechaza un estado fuera de la whitelist, sin escribir nada', async () => {
+        firebaseMock.seed('proyectos', { p1: { nombre: 'X', estado: 'activo' } });
+        await assert.rejects(() => actualizarEstadoProyecto('p1', 'archivado'));
+        assert.equal(firebaseMock.leerDoc('proyectos', 'p1').estado, 'activo');
+    });
+});
+
+describe('eliminarProyecto', () => {
+    test('borra el documento del proyecto, SIN tocar las tareas referenciadas en sus pasos', async () => {
+        firebaseMock.seed('tareas', { t1: { titulo: 'Regar', proyectoId: 'p1' } });
+        firebaseMock.seed('proyectos', { p1: { nombre: 'X', pasos: [{ tareaId: 't1', orden: 1 }] } });
+        setUsuarioActual({ uid: 'admin1', email: 'admin@test.com' });
+
+        await eliminarProyecto('p1');
+
+        assert.equal(firebaseMock.leerDoc('proyectos', 'p1'), null);
+        assert.ok(firebaseMock.leerDoc('tareas', 't1')); // la tarea sigue existiendo, huérfana
+        const [log] = firebaseMock.leerColeccion('registro_actividad');
+        assert.equal(log.tipo, 'ELIMINAR_PROYECTO');
     });
 });
 

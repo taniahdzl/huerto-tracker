@@ -111,7 +111,10 @@ export function crearLeyendaCategorias() {
 // 14.6b) las reutiliza para el panel de arrastre de view-gemelo.
 
 // ── Shape de `tareas` ────────────────────────────────────────────
-//   { id, titulo, tipo: "asistencia"|"individual",
+//   { id, titulo, tipo: clave de TIPOS_TAREA (shared/tipos-tarea.js —
+//     'riego'|'trabajo_fisico'|'redes'|'comunidad'|'investigacion'|
+//     'hoyos_composta'; tareas viejas pueden traer 'asistencia'|
+//     'individual', ya no válidos para nuevas escrituras),
 //     origen: "asignada"|"autoasignada", creadorId: uid|null,
 //     estado: "pendiente"|"en_revision"|"completada"|"rechazada",
 //     motivoRechazo: string|null, asignados: [uid,...],
@@ -293,12 +296,24 @@ export function renderRevisionTareas(tareas, contenedor, { seleccionadas, onTogg
 
         li.appendChild(info);
 
+        // Más grande que en la lista normal de tareas (chore-item-evidencia
+        // a secas, 40x40) — acá el admin necesita poder juzgar la foto
+        // antes de aprobar/rechazar, no solo confirmar que existe. El link
+        // a la imagen completa (misma URL, sin transformar) evita depender
+        // de entrar a la consola de Firebase Storage para verla en tamaño
+        // real.
         if (tarea.fotoEvidenciaUrl) {
+            const link = document.createElement('a');
+            link.className = 'chore-item-evidencia-link';
+            link.href = tarea.fotoEvidenciaUrl;
+            link.target = '_blank';
+            link.rel = 'noopener';
             const foto = document.createElement('img');
-            foto.className = 'chore-item-evidencia';
+            foto.className = 'chore-item-evidencia-grande';
             foto.src = tarea.fotoEvidenciaUrl;
-            foto.alt = 'Evidencia de la tarea';
-            li.appendChild(foto);
+            foto.alt = 'Ver evidencia completa';
+            link.appendChild(foto);
+            li.appendChild(link);
         }
 
         const aprobarBtn = document.createElement('button');
@@ -334,8 +349,8 @@ export function renderRevisionTareas(tareas, contenedor, { seleccionadas, onTogg
 const DIAS_FECHA_CERCANA = 7;
 
 // Parte PURA (sin DOM) de la decisión de badge, separada de
-// crearBadgeProyecto — mismo criterio que calcularSugerenciaHoras en
-// vista-tareas.js: `ahora` inyectable (default new Date()) para que la
+// crearBadgeProyecto — mismo criterio que calcularSugerenciaHorasEfectivas
+// en vista-tareas.js: `ahora` inyectable (default new Date()) para que la
 // rama de fecha sea testeable sin depender del día real del sistema.
 // Solo un badge por tarjeta, prioridad: fecha cercana (más urgente) >
 // activo (genérico) > nada (proyecto pausado/completado). "sin fecha = sin
@@ -365,7 +380,7 @@ function crearBadgeProyecto(proyecto) {
     return badge;
 }
 
-export function renderGaleriaProyectos(proyectos, contenedor, onClickPaso, { esAdmin = false, onAgregarPaso } = {}) {
+export function renderGaleriaProyectos(proyectos, contenedor, onClickPaso, { esAdmin = false, onAgregarPaso, onConcluir, onReactivar, onEliminar } = {}) {
     const fragment = document.createDocumentFragment();
 
     proyectos.forEach((proyecto) => {
@@ -433,11 +448,39 @@ export function renderGaleriaProyectos(proyectos, contenedor, onClickPaso, { esA
         card.appendChild(checklist);
 
         if (esAdmin) {
-            const btnAgregarPaso = document.createElement('button');
-            btnAgregarPaso.className = 'chore-complete-btn';
-            btnAgregarPaso.textContent = '+ Agregar paso';
-            btnAgregarPaso.addEventListener('click', () => onAgregarPaso(proyecto.id));
-            card.appendChild(btnAgregarPaso);
+            const acciones = document.createElement('div');
+            acciones.className = 'proyecto-card-acciones';
+
+            // "+ Agregar paso" solo tiene sentido en un proyecto activo —
+            // un proyecto concluido no debería seguir creciendo (si hace
+            // falta reabrirlo, "Reactivar" existe justo para eso).
+            if (proyecto.estado === 'activo') {
+                const btnAgregarPaso = document.createElement('button');
+                btnAgregarPaso.className = 'chore-complete-btn';
+                btnAgregarPaso.textContent = '+ Agregar paso';
+                btnAgregarPaso.addEventListener('click', () => onAgregarPaso(proyecto.id));
+                acciones.appendChild(btnAgregarPaso);
+
+                const btnConcluir = document.createElement('button');
+                btnConcluir.className = 'chore-complete-btn';
+                btnConcluir.textContent = '✔ Concluir';
+                btnConcluir.addEventListener('click', () => onConcluir(proyecto.id));
+                acciones.appendChild(btnConcluir);
+            } else if (proyecto.estado === 'completado') {
+                const btnReactivar = document.createElement('button');
+                btnReactivar.className = 'chore-complete-btn';
+                btnReactivar.textContent = '↩ Reactivar';
+                btnReactivar.addEventListener('click', () => onReactivar(proyecto.id));
+                acciones.appendChild(btnReactivar);
+            }
+
+            const btnEliminar = document.createElement('button');
+            btnEliminar.className = 'chore-complete-btn catalogo-eliminar-btn';
+            btnEliminar.textContent = '🗑 Eliminar';
+            btnEliminar.addEventListener('click', () => onEliminar(proyecto.id));
+            acciones.appendChild(btnEliminar);
+
+            card.appendChild(acciones);
         }
 
         fragment.appendChild(card);
